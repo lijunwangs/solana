@@ -40,6 +40,7 @@ use {
     solana_perf::recycler::enable_recycler_warming,
     solana_rpc::rpc_pubsub_service::PubSubConfig,
     solana_runtime::{
+        accounts_db::DEFAULT_ACCOUNTS_EXTRA_SPACE,
         accounts_index::{
             AccountIndex, AccountSecondaryIndexes, AccountSecondaryIndexesIncludeExclude,
         },
@@ -1010,6 +1011,7 @@ pub fn main() {
     let default_max_snapshot_to_retain = &DEFAULT_MAX_SNAPSHOTS_TO_RETAIN.to_string();
     let default_min_snapshot_download_speed = &DEFAULT_MIN_SNAPSHOT_DOWNLOAD_SPEED.to_string();
     let default_max_snapshot_download_abort = &MAX_SNAPSHOT_DOWNLOAD_ABORT.to_string();
+    let default_accounts_extra_space = &DEFAULT_ACCOUNTS_EXTRA_SPACE.to_string();
 
     let matches = App::new(crate_name!()).about(crate_description!())
         .version(solana_version::version!())
@@ -1779,6 +1781,16 @@ pub fn main() {
                 .hidden(true)
         )
         .arg(
+            Arg::with_name("accounts_extra_space")
+                .long("accounts-extra-space")
+                .takes_value(true)
+                .value_name("NUM")
+                .default_value(default_accounts_extra_space)
+                .help("Specify the extra accounts space allowance in percentage used \
+                       during shrinking accounts. When the overall account usage is reached \
+                       within accounts-extra-space percentage, the shrink will stop."),
+        )
+        .arg(
             Arg::with_name("no_duplicate_instance_check")
                 .long("no-duplicate-instance-check")
                 .takes_value(false)
@@ -2076,6 +2088,8 @@ pub fn main() {
     let account_indexes = process_account_indexes(&matches);
 
     let restricted_repair_only_mode = matches.is_present("restricted_repair_only_mode");
+    let accounts_extra_space = value_t_or_exit!(matches, "accounts_extra_space", f64);
+
     let mut validator_config = ValidatorConfig {
         require_tower: matches.is_present("require_tower"),
         tower_path: value_t!(matches, "tower", PathBuf).ok(),
@@ -2173,6 +2187,7 @@ pub fn main() {
         accounts_db_use_index_hash_calculation: matches.is_present("accounts_db_index_hashing"),
         tpu_coalesce_ms,
         no_wait_for_vote_to_start_leader: matches.is_present("no_wait_for_vote_to_start_leader"),
+        accounts_extra_space,
         ..ValidatorConfig::default()
     };
 
