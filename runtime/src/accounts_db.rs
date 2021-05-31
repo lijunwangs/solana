@@ -55,6 +55,7 @@ use solana_vote_program::vote_state::MAX_LOCKOUT_HISTORY;
 use std::{
     borrow::{Borrow, Cow},
     boxed::Box,
+    cmp,
     collections::{hash_map::Entry, BTreeSet, HashMap, HashSet},
     convert::TryFrom,
     io::{Error as IoError, Result as IoResult},
@@ -2234,6 +2235,43 @@ impl AccountsDb {
 
     pub fn shrink_candidate_slots(&self) -> usize {
         let shrink_slots = std::mem::take(&mut *self.shrink_candidate_slots.lock().unwrap());
+        let accounts_extra_space: f64 = 5.;
+        let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> = Vec::with_capacity(shrink_slots.len());
+        let mut total_alive: u64 = 0;
+        for (slot, slot_shrink_candidates) in &shrink_slots {
+            for store in slot_shrink_candidates.values() {
+                total_alive += self.page_align(store.alive_bytes() as u64);
+                let alive_ratio = self.page_align(store.alive_bytes() as u64) as f64 / store.total_bytes() as f64;
+                store_usage.push((*slot, store.append_vec_id(), alive_ratio, store.clone(), 0));
+            }
+        }
+        store_usage.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(cmp::Ordering::Equal));
+        // working backward on store_usage, get the all total bytes if the entries including it and after it are not shrunk
+        // the total bytes for all unshrinked stores
+        let mut all_total: u64 = 0;
+        for i in (0..store_usage.len()).rev() {
+            let usage = &mut store_usage[i];
+            usage.4 = usage.3.total_bytes() + all_total;
+            all_total = usage.4;
+        }
+        // now working from the beginning of store_usage which are most sparse and see when we can stop
+        // shrinking while still achieving the goals.
+        let mut shrink_slots: ShrinkCandidates = HashMap::new();
+        let mut shrunk_total: u64 = 0;
+        for i in 0..store_usage.len() {
+            let usage = &store_usage[i];
+            let store = &usage.3;
+            shrunk_total += self.page_align(store.alive_bytes() as u64);
+            let unshrunk_total = usage.4 - store.total_bytes(); // the unshrunk total after this
+            let total_bytes = shrunk_total + unshrunk_total;
+            shrink_slots.entry(usage.0).or_default().insert(store.append_vec_id(), store.clone());
+
+            if 100. * ((total_bytes as f64 - total_alive as f64) / total_bytes as f64) < accounts_extra_space {
+                // we have reached our goal, stop
+                break;
+            }
+        }
+
         let num_candidates = shrink_slots.len();
         for (slot, slot_shrink_candidates) in shrink_slots {
             let mut measure = Measure::start("shrink_candidate_slots-ms");
