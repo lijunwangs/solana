@@ -2236,12 +2236,14 @@ impl AccountsDb {
     pub fn shrink_candidate_slots(&self) -> usize {
         let shrink_slots = std::mem::take(&mut *self.shrink_candidate_slots.lock().unwrap());
         let accounts_extra_space: f64 = 5.;
-        let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> = Vec::with_capacity(shrink_slots.len());
+        let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> =
+            Vec::with_capacity(shrink_slots.len());
         let mut total_alive: u64 = 0;
         for (slot, slot_shrink_candidates) in &shrink_slots {
             for store in slot_shrink_candidates.values() {
                 total_alive += self.page_align(store.alive_bytes() as u64);
-                let alive_ratio = self.page_align(store.alive_bytes() as u64) as f64 / store.total_bytes() as f64;
+                let alive_ratio =
+                    self.page_align(store.alive_bytes() as u64) as f64 / store.total_bytes() as f64;
                 store_usage.push((*slot, store.append_vec_id(), alive_ratio, store.clone(), 0));
             }
         }
@@ -2264,9 +2266,14 @@ impl AccountsDb {
             shrunk_total += self.page_align(store.alive_bytes() as u64);
             let unshrunk_total = usage.4 - store.total_bytes(); // the unshrunk total after this
             let total_bytes = shrunk_total + unshrunk_total;
-            shrink_slots.entry(usage.0).or_default().insert(store.append_vec_id(), store.clone());
+            shrink_slots
+                .entry(usage.0)
+                .or_default()
+                .insert(store.append_vec_id(), store.clone());
 
-            if 100. * ((total_bytes as f64 - total_alive as f64) / total_bytes as f64) < accounts_extra_space {
+            if 100. * ((total_bytes as f64 - total_alive as f64) / total_bytes as f64)
+                < accounts_extra_space
+            {
                 // we have reached our goal, stop
                 break;
             }
