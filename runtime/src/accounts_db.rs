@@ -83,6 +83,9 @@ pub const DEFAULT_NUM_THREADS: u32 = 8;
 pub const DEFAULT_NUM_DIRS: u32 = 4;
 pub const SHRINK_RATIO: f64 = 0.80;
 
+// The default extra account space in percentage from the ideal target
+pub const DEFAULT_ACCOUNTS_EXTRA_SPACE: f64 = 0.;
+
 // A specially reserved storage id just for entries in the cache, so that
 // operations that take a storage entry can maintain a common interface
 // when interacting with cached accounts. This id is "virtual" in that it
@@ -2233,9 +2236,8 @@ impl AccountsDb {
         self.accounts_index.all_roots()
     }
 
-    pub fn shrink_candidate_slots(&self) -> usize {
+    pub fn shrink_candidate_slots(&self, accounts_extra_space: f64) -> usize {
         let shrink_slots = std::mem::take(&mut *self.shrink_candidate_slots.lock().unwrap());
-        let accounts_extra_space: f64 = 5.;
         let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> =
             Vec::with_capacity(shrink_slots.len());
         let mut total_alive: u64 = 0;

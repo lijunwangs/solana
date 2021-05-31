@@ -4951,8 +4951,8 @@ impl Bank {
         consumed_budget.saturating_sub(budget_recovery_delta)
     }
 
-    pub fn shrink_candidate_slots(&self) -> usize {
-        self.rc.accounts.accounts_db.shrink_candidate_slots()
+    pub fn shrink_candidate_slots(&self, accounts_extra_space: f64) -> usize {
+        self.rc.accounts.accounts_db.shrink_candidate_slots(accounts_extra_space)
     }
 
     pub fn secp256k1_program_enabled(&self) -> bool {
