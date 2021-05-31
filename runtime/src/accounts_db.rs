@@ -8569,7 +8569,7 @@ pub mod tests {
             let accounts = AccountsDb::new_single();
 
             for _ in 0..10 {
-                accounts.shrink_candidate_slots();
+                accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
             }
 
             accounts.shrink_all_slots(*startup);
@@ -8765,7 +8765,7 @@ pub mod tests {
 
         // Only, try to shrink stale slots, nothing happens because 90/100
         // is not small enough to do a shrink
-        accounts.shrink_candidate_slots();
+        accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
         assert_eq!(
             pubkey_count,
             accounts.all_account_count_in_append_vec(shrink_slot)
@@ -10101,7 +10101,7 @@ pub mod tests {
                 .or_default()
                 .insert(slot0_store.append_vec_id(), slot0_store);
         }
-        db.shrink_candidate_slots();
+        db.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
 
         // Make slot 0 dead by updating the remaining key
         db.store_cached(2, &[(&account_key2, &account1)]);
@@ -10429,7 +10429,7 @@ pub mod tests {
                         .entry(slot)
                         .or_default()
                         .insert(store_id, store.clone());
-                    db.shrink_candidate_slots();
+                    db.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
                 })
                 .unwrap()
         };

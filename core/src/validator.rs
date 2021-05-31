@@ -50,8 +50,8 @@ use solana_rpc::{
     rpc_subscriptions::RpcSubscriptions,
 };
 use solana_runtime::{
-    accounts_index::AccountSecondaryIndexes,
     accounts_db::DEFAULT_ACCOUNTS_EXTRA_SPACE,
+    accounts_index::AccountSecondaryIndexes,
     bank::Bank,
     bank_forks::{BankForks, SnapshotConfig},
     commitment::BlockCommitmentCache,
