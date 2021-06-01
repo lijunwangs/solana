@@ -2262,8 +2262,7 @@ impl AccountsDb {
         // shrinking while still achieving the goals.
         let mut shrink_slots: ShrinkCandidates = HashMap::new();
         let mut shrunk_total: u64 = 0;
-        for i in 0..store_usage.len() {
-            let usage = &store_usage[i];
+        for usage in &store_usage {
             let store = &usage.3;
             shrunk_total += self.page_align(store.alive_bytes() as u64);
             let unshrunk_total = usage.4 - store.total_bytes(); // the unshrunk total after this
