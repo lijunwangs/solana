@@ -84,7 +84,9 @@ pub const DEFAULT_NUM_DIRS: u32 = 4;
 pub const SHRINK_RATIO: f64 = 0.80;
 
 // The default extra account space in percentage from the ideal target
-pub const DEFAULT_ACCOUNTS_EXTRA_SPACE: f64 = 0.;
+pub const DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE: bool = false;
+
+pub const DEFAULT_ACCOUNTS_SHRINK_RATIO: f64 = 0.80;
 
 // A specially reserved storage id just for entries in the cache, so that
 // operations that take a storage entry can maintain a common interface
@@ -2236,49 +2238,54 @@ impl AccountsDb {
         self.accounts_index.all_roots()
     }
 
-    pub fn shrink_candidate_slots(&self, accounts_extra_space: f64) -> usize {
+    pub fn shrink_candidate_slots(&self, optimize_total_space: bool, shrink_ratio: f64) -> usize {
         let shrink_slots = std::mem::take(&mut *self.shrink_candidate_slots.lock().unwrap());
-        let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> =
-            Vec::with_capacity(shrink_slots.len());
-        let mut total_alive: u64 = 0;
-        for (slot, slot_shrink_candidates) in &shrink_slots {
-            for store in slot_shrink_candidates.values() {
-                total_alive += self.page_align(store.alive_bytes() as u64);
-                let alive_ratio =
-                    self.page_align(store.alive_bytes() as u64) as f64 / store.total_bytes() as f64;
-                store_usage.push((*slot, store.append_vec_id(), alive_ratio, store.clone(), 0));
-            }
-        }
-        store_usage.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(cmp::Ordering::Equal));
-        // working backward on store_usage, get the all total bytes if the entries including it and after it are not shrunk
-        // the total bytes for all unshrinked stores
-        let mut all_total: u64 = 0;
-        for i in (0..store_usage.len()).rev() {
-            let usage = &mut store_usage[i];
-            usage.4 = usage.3.total_bytes() + all_total;
-            all_total = usage.4;
-        }
-        // now working from the beginning of store_usage which are most sparse and see when we can stop
-        // shrinking while still achieving the goals.
-        let mut shrink_slots: ShrinkCandidates = HashMap::new();
-        let mut shrunk_total: u64 = 0;
-        for usage in &store_usage {
-            let store = &usage.3;
-            shrunk_total += self.page_align(store.alive_bytes() as u64);
-            let unshrunk_total = usage.4 - store.total_bytes(); // the unshrunk total after this
-            let total_bytes = shrunk_total + unshrunk_total;
-            shrink_slots
-                .entry(usage.0)
-                .or_default()
-                .insert(store.append_vec_id(), store.clone());
 
-            if 100. * ((total_bytes as f64 - total_alive as f64) / total_bytes as f64)
-                < accounts_extra_space
-            {
-                // we have reached our goal, stop
-                break;
+        let shrink_slots = if optimize_total_space {
+            let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> =
+                Vec::with_capacity(shrink_slots.len());
+            let mut total_alive: u64 = 0;
+            for (slot, slot_shrink_candidates) in &shrink_slots {
+                for store in slot_shrink_candidates.values() {
+                    total_alive += self.page_align(store.alive_bytes() as u64);
+                    let alive_ratio = self.page_align(store.alive_bytes() as u64) as f64
+                        / store.total_bytes() as f64;
+                    store_usage.push((*slot, store.append_vec_id(), alive_ratio, store.clone(), 0));
+                }
             }
+            store_usage.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(cmp::Ordering::Equal));
+            // working backward on store_usage, get the all total bytes if the entries including it and after it are not shrunk
+            // the total bytes for all unshrinked stores
+            let mut all_total: u64 = 0;
+            for i in (0..store_usage.len()).rev() {
+                let usage = &mut store_usage[i];
+                usage.4 = usage.3.total_bytes() + all_total;
+                all_total = usage.4;
+            }
+            // now working from the beginning of store_usage which are most sparse and see when we can stop
+            // shrinking while still achieving the goals.
+            let mut shrink_slots: ShrinkCandidates = HashMap::new();
+            let mut shrunk_total: u64 = 0;
+            for usage in &store_usage {
+                let store = &usage.3;
+                shrunk_total += self.page_align(store.alive_bytes() as u64);
+                let unshrunk_total = usage.4 - store.total_bytes(); // the unshrunk total after this
+                let total_bytes = shrunk_total + unshrunk_total;
+                shrink_slots
+                    .entry(usage.0)
+                    .or_default()
+                    .insert(store.append_vec_id(), store.clone());
+
+                if (total_alive as f64) / (total_bytes as f64) < shrink_ratio {
+                    // we have reached our goal, stop
+                    break;
+                }
+            }
+            shrink_slots
         }
+        else {
+            shrink_slots
+        };
 
         let num_candidates = shrink_slots.len();
         for (slot, slot_shrink_candidates) in shrink_slots {
@@ -8568,7 +8575,7 @@ pub mod tests {
             let accounts = AccountsDb::new_single();
 
             for _ in 0..10 {
-                accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
+                accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
             }
 
             accounts.shrink_all_slots(*startup);
@@ -8764,7 +8771,7 @@ pub mod tests {
 
         // Only, try to shrink stale slots, nothing happens because 90/100
         // is not small enough to do a shrink
-        accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
+        accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
         assert_eq!(
             pubkey_count,
             accounts.all_account_count_in_append_vec(shrink_slot)
@@ -10100,7 +10107,7 @@ pub mod tests {
                 .or_default()
                 .insert(slot0_store.append_vec_id(), slot0_store);
         }
-        db.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
+        db.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
 
         // Make slot 0 dead by updating the remaining key
         db.store_cached(2, &[(&account_key2, &account1)]);
@@ -10428,7 +10435,7 @@ pub mod tests {
                         .entry(slot)
                         .or_default()
                         .insert(store_id, store.clone());
-                    db.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE);
+                    db.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
                 })
                 .unwrap()
         };

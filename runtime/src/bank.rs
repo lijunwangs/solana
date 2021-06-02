@@ -4951,11 +4951,11 @@ impl Bank {
         consumed_budget.saturating_sub(budget_recovery_delta)
     }
 
-    pub fn shrink_candidate_slots(&self, accounts_extra_space: f64) -> usize {
+    pub fn shrink_candidate_slots(&self, optimize_total_space: bool, shrink_ratio: f64) -> usize {
         self.rc
             .accounts
             .accounts_db
-            .shrink_candidate_slots(accounts_extra_space)
+            .shrink_candidate_slots(optimize_total_space, shrink_ratio)
     }
 
     pub fn secp256k1_program_enabled(&self) -> bool {
@@ -5278,7 +5278,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         accounts_background_service::{AbsRequestHandler, SendDroppedBankCallback},
-        accounts_db::{DEFAULT_ACCOUNTS_EXTRA_SPACE, SHRINK_RATIO},
+        accounts_db::{DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO, SHRINK_RATIO},
         accounts_index::{AccountIndex, AccountMap, AccountSecondaryIndexes, ITER_BATCH_SIZE},
         ancestors::Ancestors,
         genesis_utils::{
@@ -10707,7 +10707,7 @@ pub(crate) mod tests {
         // shouldn't because none of its accounts are outdated by a later
         // root
         assert_eq!(
-            bank2.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE),
+            bank2.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO),
             2
         );
         let alive_counts: Vec<usize> = (0..3)
@@ -10722,7 +10722,7 @@ pub(crate) mod tests {
 
         // No more slots should be shrunk
         assert_eq!(
-            bank2.shrink_candidate_slots(DEFAULT_ACCOUNTS_EXTRA_SPACE),
+            bank2.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO),
             0
         );
         // alive_counts represents the count of alive accounts in the three slots 0,1,2

@@ -88,7 +88,8 @@ pub struct TvuConfig {
     pub rocksdb_compaction_interval: Option<u64>,
     pub rocksdb_max_compaction_jitter: Option<u64>,
     pub wait_for_vote_to_start_leader: bool,
-    pub accounts_extra_space: f64,
+    pub accounts_shrink_optimize_total_space: bool,
+    pub accounts_shrink_ratio: f64,
 }
 
 impl Tvu {
@@ -309,7 +310,8 @@ impl Tvu {
             tvu_config.accounts_db_caching_enabled,
             tvu_config.test_hash_calculation,
             tvu_config.use_index_hash_calculation,
-            tvu_config.accounts_extra_space,
+            tvu_config.accounts_shrink_optimize_total_space,
+            tvu_config.accounts_shrink_ratio,
         );
 
         Tvu {
