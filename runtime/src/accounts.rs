@@ -757,18 +757,12 @@ impl Accounts {
     /// Slow because lock is held for 1 operation instead of many.
     /// WARNING: This noncached version is only to be used for tests/benchmarking
     /// as bypassing the cache in general is not supported
-    pub fn store_slow_uncached(&self, slot: Slot, pubkey: &Pubkey, account: &AccountSharedData,
-        optimize_total_space: bool,
-        shrink_ratio: f64,
-    ) {
-        self.accounts_db.store_uncached(slot, &[(pubkey, account)], optimize_total_space, shrink_ratio);
+    pub fn store_slow_uncached(&self, slot: Slot, pubkey: &Pubkey, account: &AccountSharedData) {
+        self.accounts_db.store_uncached(slot, &[(pubkey, account)]);
     }
 
-    pub fn store_slow_cached(&self, slot: Slot, pubkey: &Pubkey, account: &AccountSharedData,
-        optimize_total_space: bool,
-        shrink_ratio: f64,
-    ) {
-        self.accounts_db.store_cached(slot, &[(pubkey, account)], optimize_total_space, shrink_ratio);
+    pub fn store_slow_cached(&self, slot: Slot, pubkey: &Pubkey, account: &AccountSharedData) {
+        self.accounts_db.store_cached(slot, &[(pubkey, account)]);
     }
 
     fn lock_account(
@@ -909,8 +903,6 @@ impl Accounts {
         last_blockhash_with_fee_calculator: &(Hash, FeeCalculator),
         fix_recent_blockhashes_sysvar_delay: bool,
         demote_sysvar_write_locks: bool,
-        optimize_total_space: bool,
-        shrink_ratio: f64,
     ) {
         let accounts_to_store = self.collect_accounts_to_store(
             txs,
@@ -920,20 +912,15 @@ impl Accounts {
             last_blockhash_with_fee_calculator,
             fix_recent_blockhashes_sysvar_delay,
             demote_sysvar_write_locks,
-
         );
-        self.accounts_db.store_cached(slot, &accounts_to_store, optimize_total_space,
-            shrink_ratio,);
+        self.accounts_db.store_cached(slot, &accounts_to_store);
     }
 
     /// Purge a slot if it is not a root
     /// Root slots cannot be purged
     /// `is_from_abs` is true if the caller is the AccountsBackgroundService
-    pub fn purge_slot(&self, slot: Slot, is_from_abs: bool,
-        optimize_total_space: bool,
-        shrink_ratio: f64,
-    ) {
-        self.accounts_db.purge_slot(slot, is_from_abs, optimize_total_space, shrink_ratio);
+    pub fn purge_slot(&self, slot: Slot, is_from_abs: bool) {
+        self.accounts_db.purge_slot(slot, is_from_abs);
     }
 
     /// Add a slot to root.  Root slots cannot be purged
@@ -1075,27 +1062,23 @@ pub fn create_test_accounts(
     pubkeys: &mut Vec<Pubkey>,
     num: usize,
     slot: Slot,
-    optimize_total_space: bool,
-    shrink_ratio: f64,
 ) {
     for t in 0..num {
         let pubkey = solana_sdk::pubkey::new_rand();
         let account =
             AccountSharedData::new((t + 1) as u64, 0, AccountSharedData::default().owner());
-        accounts.store_slow_uncached(slot, &pubkey, &account, optimize_total_space, shrink_ratio);
+        accounts.store_slow_uncached(slot, &pubkey, &account);
         pubkeys.push(pubkey);
     }
 }
 
 // Only used by bench, not safe to call otherwise accounts can conflict with the
 // accounts cache!
-pub fn update_accounts_bench(accounts: &Accounts, pubkeys: &[Pubkey], slot: u64, 
-    optimize_total_space: bool,
-    shrink_ratio: f64,) {
+pub fn update_accounts_bench(accounts: &Accounts, pubkeys: &[Pubkey], slot: u64) {
     for pubkey in pubkeys {
         let amount = thread_rng().gen_range(0, 10);
         let account = AccountSharedData::new(amount, 0, AccountSharedData::default().owner());
-        accounts.store_slow_uncached(slot, &pubkey, &account, optimize_total_space, shrink_ratio);
+        accounts.store_slow_uncached(slot, &pubkey, &account);
     }
 }
 

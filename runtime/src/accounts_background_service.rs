@@ -122,7 +122,7 @@ impl SnapshotRequestHandler {
                     // That's because `snapshot_root_bank.slot()` must be root at this point,
                     // and contains relevant updates because each bank has at least 1 account update due
                     // to sysvar maintenance. Otherwise, this would cause missing storages in the snapshot
-                    snapshot_root_bank.force_flush_accounts_cache(accounts_shrink_optimize_total_space, accounts_shrink_ratio);
+                    snapshot_root_bank.force_flush_accounts_cache();
                     // Ensure all roots <= `self.slot()` have been flushed.
                     // Note `max_flush_root` could be larger than self.slot() if there are
                     // `> MAX_CACHE_SLOT` cached and rooted slots which triggered earlier flushes.
@@ -273,14 +273,11 @@ impl AbsRequestHandler {
     }
 
     /// `is_from_abs` is true if the caller is the AccountsBackgroundService
-    pub fn handle_pruned_banks(&self, bank: &Bank, is_from_abs: bool,
-        optimize_total_space: bool,
-        shrink_ratio: f64,
-    ) -> usize {
+    pub fn handle_pruned_banks(&self, bank: &Bank, is_from_abs: bool) -> usize {
         let mut count = 0;
         for pruned_slot in self.pruned_banks_receiver.try_iter() {
             count += 1;
-            bank.rc.accounts.purge_slot(pruned_slot, is_from_abs, optimize_total_space, shrink_ratio);
+            bank.rc.accounts.purge_slot(pruned_slot, is_from_abs);
         }
 
         count
@@ -325,8 +322,6 @@ impl AccountsBackgroundService {
                     &request_handler,
                     &mut removed_slots_count,
                     &mut total_remove_slots_time,
-                    accounts_shrink_optimize_total_space,
-                    accounts_shrink_ratio,
                 );
 
                 Self::expire_old_recycle_stores(&bank, &mut last_expiration_check_time);
@@ -392,7 +387,7 @@ impl AccountsBackgroundService {
                             // cache up to bank.slot(), so should be safe as long
                             // as any later snapshots that are taken are of
                             // slots >= bank.slot()
-                            bank.force_flush_accounts_cache(accounts_shrink_optimize_total_space, accounts_shrink_ratio);
+                            bank.force_flush_accounts_cache();
                         }
                         bank.clean_accounts(true, false);
                         last_cleaned_block_height = bank.block_height();
@@ -413,11 +408,9 @@ impl AccountsBackgroundService {
         request_handler: &AbsRequestHandler,
         removed_slots_count: &mut usize,
         total_remove_slots_time: &mut u64,
-        optimize_total_space: bool,
-        shrink_ratio: f64,
     ) {
         let mut remove_slots_time = Measure::start("remove_slots_time");
-        *removed_slots_count += request_handler.handle_pruned_banks(&bank, true, optimize_total_space, shrink_ratio);
+        *removed_slots_count += request_handler.handle_pruned_banks(&bank, true);
         remove_slots_time.stop();
         *total_remove_slots_time += remove_slots_time.as_us();
 
