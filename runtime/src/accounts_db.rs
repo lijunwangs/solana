@@ -1359,6 +1359,8 @@ impl AccountsDb {
         &self,
         purges: Vec<Pubkey>,
         max_clean_root: Option<Slot>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> ReclaimResult {
         if purges.is_empty() {
             return ReclaimResult::default();
@@ -1398,6 +1400,8 @@ impl AccountsDb {
             Some(&self.clean_accounts_stats.purge_stats),
             Some(&mut reclaim_result),
             reset_accounts,
+            optimize_total_space,
+            shrink_ratio,
         );
         measure.stop();
         debug!("{} {}", clean_rooted, measure);
@@ -1630,7 +1634,10 @@ impl AccountsDb {
     // collection
     // Only remove those accounts where the entire rooted history of the account
     // can be purged because there are no live append vecs in the ancestors
-    pub fn clean_accounts(&self, max_clean_root: Option<Slot>, is_startup: bool) {
+    pub fn clean_accounts(&self, max_clean_root: Option<Slot>, is_startup: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         let max_clean_root = self.max_clean_root(max_clean_root);
 
         // hold a lock to prevent slot shrinking from running because it might modify some rooted
@@ -1725,7 +1732,7 @@ impl AccountsDb {
 
         let mut clean_old_rooted = Measure::start("clean_old_roots");
         let (purged_account_slots, removed_accounts) =
-            self.clean_accounts_older_than_root(purges_old_accounts, max_clean_root);
+            self.clean_accounts_older_than_root(purges_old_accounts, max_clean_root, optimize_total_space, shrink_ratio);
 
         if self.caching_enabled {
             self.do_reset_uncleaned_roots(max_clean_root);
@@ -1829,6 +1836,8 @@ impl AccountsDb {
             Some(&self.clean_accounts_stats.purge_stats),
             reclaim_result,
             reset_accounts,
+            optimize_total_space,
+            shrink_ratio,
         );
 
         reclaims_time.stop();
@@ -1897,6 +1906,8 @@ impl AccountsDb {
         purge_stats: Option<&PurgeStats>,
         reclaim_result: Option<&mut ReclaimResult>,
         reset_accounts: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) {
         if reclaims.is_empty() {
             return;
@@ -1912,6 +1923,8 @@ impl AccountsDb {
             expected_single_dead_slot,
             reclaimed_offsets,
             reset_accounts,
+            optimize_total_space,
+            shrink_ratio,
         );
         if purge_stats.is_none() {
             assert!(dead_slots.is_empty());
@@ -1964,7 +1977,10 @@ impl AccountsDb {
         );
     }
 
-    fn do_shrink_slot_stores<'a, I>(&'a self, slot: Slot, stores: I, is_startup: bool) -> usize
+    fn do_shrink_slot_stores<'a, I>(&'a self, slot: Slot, stores: I, is_startup: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> usize
     where
         I: Iterator<Item = &'a Arc<AccountStorageEntry>>,
     {
@@ -2108,6 +2124,8 @@ impl AccountsDb {
                 Some(&hashes),
                 Some(Box::new(move |_, _| shrunken_store.clone())),
                 Some(Box::new(write_versions.into_iter())),
+                optimize_total_space,
+                shrink_ratio,
             );
 
             // `store_accounts_frozen()` above may have purged accounts from some
@@ -2202,7 +2220,10 @@ impl AccountsDb {
 
     // Reads all accounts in given slot's AppendVecs and filter only to alive,
     // then create a minimum AppendVec filled with the alive.
-    fn shrink_slot_forced(&self, slot: Slot, is_startup: bool) -> usize {
+    fn shrink_slot_forced(&self, slot: Slot, is_startup: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> usize {
         debug!("shrink_slot_forced: slot: {}", slot);
 
         if let Some(stores_lock) = self.storage.get_slot_stores(slot) {
@@ -2223,7 +2244,7 @@ impl AccountsDb {
                 );
                 return 0;
             }
-            self.do_shrink_slot_stores(slot, stores.iter(), is_startup);
+            self.do_shrink_slot_stores(slot, stores.iter(), is_startup, optimize_total_space, shrink_ratio);
             alive_count
         } else {
             0
@@ -2290,28 +2311,31 @@ impl AccountsDb {
         let num_candidates = shrink_slots.len();
         for (slot, slot_shrink_candidates) in shrink_slots {
             let mut measure = Measure::start("shrink_candidate_slots-ms");
-            self.do_shrink_slot_stores(slot, slot_shrink_candidates.values(), false);
+            self.do_shrink_slot_stores(slot, slot_shrink_candidates.values(), false, optimize_total_space, shrink_ratio);
             measure.stop();
             inc_new_counter_info!("shrink_candidate_slots-ms", measure.as_ms() as usize);
         }
         num_candidates
     }
 
-    pub fn shrink_all_slots(&self, is_startup: bool) {
+    pub fn shrink_all_slots(&self, is_startup: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         if is_startup && self.caching_enabled {
             let slots = self.all_slots_in_storage();
             let chunk_size = std::cmp::max(slots.len() / 8, 1); // approximately 400k slots in a snapshot
             slots.par_chunks(chunk_size).for_each(|slots| {
                 for slot in slots {
-                    self.shrink_slot_forced(*slot, is_startup);
+                    self.shrink_slot_forced(*slot, is_startup, optimize_total_space, shrink_ratio);
                 }
             });
         } else {
             for slot in self.all_slots_in_storage() {
                 if self.caching_enabled {
-                    self.shrink_slot_forced(slot, false);
+                    self.shrink_slot_forced(slot, false, optimize_total_space, shrink_ratio);
                 } else {
-                    self.do_shrink_slot_forced_v1(slot);
+                    self.do_shrink_slot_forced_v1(slot, optimize_total_space, shrink_ratio);
                 }
             }
         }
@@ -3182,13 +3206,16 @@ impl AccountsDb {
     }
 
     /// `is_from_abs` is true if the caller is the AccountsBackgroundService
-    pub fn purge_slot(&self, slot: Slot, is_from_abs: bool) {
+    pub fn purge_slot(&self, slot: Slot, is_from_abs: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         if self.is_bank_drop_callback_enabled.load(Ordering::SeqCst) && !is_from_abs {
             panic!("bad drop callpath detected; Bank::drop() must run serially with other logic in ABS like clean_accounts()")
         }
         let mut slots = HashSet::new();
         slots.insert(slot);
-        self.purge_slots(&slots);
+        self.purge_slots(&slots, optimize_total_space, shrink_ratio);
     }
 
     fn recycle_slot_stores(
@@ -3225,6 +3252,8 @@ impl AccountsDb {
         &'a self,
         removed_slots: impl Iterator<Item = &'a Slot>,
         purge_stats: &PurgeStats,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) {
         let mut remove_cache_elapsed_across_slots = 0;
         let mut num_cached_slots_removed = 0;
@@ -3242,7 +3271,7 @@ impl AccountsDb {
                 remove_cache_elapsed.stop();
                 remove_cache_elapsed_across_slots += remove_cache_elapsed.as_us();
             } else {
-                self.purge_slot_storage(*remove_slot, purge_stats);
+                self.purge_slot_storage(*remove_slot, purge_stats, optimize_total_space, shrink_ratio);
             }
             // It should not be possible that a slot is neither in the cache or storage. Even in
             // a slot with all ticks, `Bank::new_from_parent()` immediately stores some sysvars
@@ -3366,7 +3395,10 @@ impl AccountsDb {
         }
     }
 
-    fn purge_slot_storage(&self, remove_slot: Slot, purge_stats: &PurgeStats) {
+    fn purge_slot_storage(&self, remove_slot: Slot, purge_stats: &PurgeStats,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         // Because AccountsBackgroundService synchronously flushes from the accounts cache
         // and handles all Bank::drop() (the cleanup function that leads to this
         // function call), then we don't need to worry above an overlapping cache flush
@@ -3417,6 +3449,8 @@ impl AccountsDb {
             Some(purge_stats),
             Some(&mut ReclaimResult::default()),
             false,
+            optimize_total_space,
+            shrink_ratio,
         );
         handle_reclaims_elapsed.stop();
         purge_stats
@@ -3428,7 +3462,10 @@ impl AccountsDb {
     }
 
     #[allow(clippy::needless_collect)]
-    fn purge_slots(&self, slots: &HashSet<Slot>) {
+    fn purge_slots(&self, slots: &HashSet<Slot>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         // `add_root()` should be called first
         let mut safety_checks_elapsed = Measure::start("safety_checks_elapsed");
         let non_roots: Vec<&Slot> = slots
@@ -3442,6 +3479,8 @@ impl AccountsDb {
         self.purge_slots_from_cache_and_store(
             non_roots.into_iter(),
             &self.external_purge_slots_stats,
+            optimize_total_space,
+            shrink_ratio,
         );
         self.external_purge_slots_stats
             .report("external_purge_slots_stats", Some(1000));
@@ -3451,7 +3490,10 @@ impl AccountsDb {
     // 1. Unsafe with scan because it can remove a slot in the middle
     // of a scan.
     // 2. Doesn't handle cache flushes that happen during the slot deletion (see comment below).
-    pub fn remove_unrooted_slot(&self, remove_slot: Slot) {
+    pub fn remove_unrooted_slot(&self, remove_slot: Slot,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         if self.accounts_index.is_root(remove_slot) {
             panic!("Trying to remove accounts for rooted slot {}", remove_slot);
         }
@@ -3469,6 +3511,8 @@ impl AccountsDb {
         self.purge_slots_from_cache_and_store(
             std::iter::once(&remove_slot),
             &remove_unrooted_purge_stats,
+            optimize_total_space,
+            shrink_ratio,
         );
         remove_unrooted_purge_stats.report("remove_unrooted_slots_purge_slots_stats", Some(0));
     }
@@ -3664,7 +3708,10 @@ impl AccountsDb {
     // 1) Any remaining roots if there are > MAX_CACHE_SLOTS remaining slots in the cache,
     // 2) It there are still > MAX_CACHE_SLOTS remaining slots in the cache, the excess
     // unrooted slots
-    pub fn flush_accounts_cache(&self, force_flush: bool, requested_flush_root: Option<Slot>) {
+    pub fn flush_accounts_cache(&self, force_flush: bool, requested_flush_root: Option<Slot>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         #[cfg(not(test))]
         assert!(requested_flush_root.is_some());
 
@@ -3685,6 +3732,8 @@ impl AccountsDb {
             .flush_rooted_accounts_cache(
                 requested_flush_root,
                 Some((&mut account_bytes_saved, &mut num_accounts_saved)),
+                optimize_total_space,
+                shrink_ratio,
             );
         flush_roots_elapsed.stop();
 
@@ -3700,7 +3749,7 @@ impl AccountsDb {
                 // Cannot do any cleaning on roots past `requested_flush_root` because future
                 // snapshots may need updates from those later slots, hence we pass `None`
                 // for `should_clean`.
-                self.flush_rooted_accounts_cache(None, None)
+                self.flush_rooted_accounts_cache(None, None, optimize_total_space, shrink_ratio)
             } else {
                 (0, 0)
             };
@@ -3713,7 +3762,7 @@ impl AccountsDb {
             .filter_map(|old_slot| {
                 // Don't flush slots that are known to be unrooted
                 if old_slot > max_flushed_root {
-                    Some(self.flush_slot_cache(old_slot, None::<&mut fn(&_, &_) -> bool>))
+                    Some(self.flush_slot_cache(old_slot, None::<&mut fn(&_, &_) -> bool>, optimize_total_space, shrink_ratio))
                 } else {
                     unflushable_unrooted_slot_count += 1;
                     None
@@ -3758,7 +3807,7 @@ impl AccountsDb {
             let rand_slot = frozen_slots.choose(&mut thread_rng());
             if let Some(rand_slot) = rand_slot {
                 let random_flush_stats =
-                    self.flush_slot_cache(*rand_slot, None::<&mut fn(&_, &_) -> bool>);
+                    self.flush_slot_cache(*rand_slot, None::<&mut fn(&_, &_) -> bool>, optimize_total_space, shrink_ratio);
                 info!(
                     "Flushed random slot: num_remaining: {} {:?}",
                     num_slots_remaining, random_flush_stats,
@@ -3771,6 +3820,8 @@ impl AccountsDb {
         &self,
         requested_flush_root: Option<Slot>,
         should_clean: Option<(&mut usize, &mut usize)>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> (usize, usize) {
         let max_clean_root = should_clean.as_ref().and_then(|_| {
             // If there is a long running scan going on, this could prevent any cleaning
@@ -3823,7 +3874,7 @@ impl AccountsDb {
                 should_flush_f.as_mut()
             };
 
-            if self.flush_slot_cache(root, should_flush_f).did_flush {
+            if self.flush_slot_cache(root, should_flush_f, optimize_total_space, shrink_ratio).did_flush {
                 num_roots_flushed += 1;
             }
 
@@ -3852,6 +3903,8 @@ impl AccountsDb {
         &self,
         slot: Slot,
         mut should_flush_f: Option<&mut impl FnMut(&Pubkey, &AccountSharedData) -> bool>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> FlushStats {
         let mut num_purged = 0;
         let mut total_size = 0;
@@ -3908,6 +3961,8 @@ impl AccountsDb {
                     Some(&hashes),
                     Some(Box::new(move |_, _| flushed_store.clone())),
                     None,
+                    optimize_total_space,
+                    shrink_ratio,
                 );
                 // If the above sizing function is correct, just one AppendVec is enough to hold
                 // all the data for the slot
@@ -4645,6 +4700,8 @@ impl AccountsDb {
         expected_slot: Option<Slot>,
         mut reclaimed_offsets: Option<&mut AppendVecOffsets>,
         reset_accounts: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> HashSet<Slot> {
         let mut dead_slots = HashSet::new();
         let mut new_shrink_candidates: ShrinkCandidates = HashMap::new();
@@ -4673,9 +4730,9 @@ impl AccountsDb {
                 if count == 0 {
                     dead_slots.insert(*slot);
                 } else if self.caching_enabled
-                    && (self.page_align(store.alive_bytes() as u64) as f64
+                    && (optimize_total_space || (self.page_align(store.alive_bytes() as u64) as f64
                         / store.total_bytes() as f64)
-                        < SHRINK_RATIO
+                        < shrink_ratio)
                 {
                     // Checking that this single storage entry is ready for shrinking,
                     // should be a sufficient indication that the slot is ready to be shrunk
@@ -4872,16 +4929,25 @@ impl AccountsDb {
         }
     }
 
-    pub fn store_cached(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)]) {
-        self.store(slot, accounts, self.caching_enabled);
+    pub fn store_cached(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)],
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
+        self.store(slot, accounts, self.caching_enabled, optimize_total_space, shrink_ratio);
     }
 
     /// Store the account update.
-    pub fn store_uncached(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)]) {
-        self.store(slot, accounts, false);
+    pub fn store_uncached(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)],
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
+        self.store(slot, accounts, false, optimize_total_space, shrink_ratio);
     }
 
-    fn store(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)], is_cached_store: bool) {
+    fn store(&self, slot: Slot, accounts: &[(&Pubkey, &AccountSharedData)], is_cached_store: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         // If all transactions in a batch are errored,
         // it's possible to get a store with no accounts.
         if accounts.is_empty() {
@@ -4907,7 +4973,7 @@ impl AccountsDb {
         slot_info.stats.merge(&stats);
 
         // we use default hashes for now since the same account may be stored to the cache multiple times
-        self.store_accounts_unfrozen(slot, accounts, None, is_cached_store);
+        self.store_accounts_unfrozen(slot, accounts, None, is_cached_store, optimize_total_space, shrink_ratio);
         self.report_store_timings();
     }
 
@@ -5038,6 +5104,8 @@ impl AccountsDb {
         accounts: &[(&Pubkey, &AccountSharedData)],
         hashes: Option<&[&Hash]>,
         is_cached_store: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) {
         // This path comes from a store to a non-frozen slot.
         // If a store is dead here, then a newer update for
@@ -5055,6 +5123,8 @@ impl AccountsDb {
             None::<Box<dyn Iterator<Item = u64>>>,
             is_cached_store,
             reset_accounts,
+            optimize_total_space,
+            shrink_ratio,
         );
     }
 
@@ -5065,6 +5135,8 @@ impl AccountsDb {
         hashes: Option<&[impl Borrow<Hash>]>,
         storage_finder: Option<StorageFinder<'a>>,
         write_version_producer: Option<Box<dyn Iterator<Item = StoredMetaWriteVersion>>>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> StoreAccountsTiming {
         // stores on a frozen slot should not reset
         // the append vec so that hashing could happen on the store
@@ -5079,6 +5151,8 @@ impl AccountsDb {
             write_version_producer,
             is_cached_store,
             reset_accounts,
+            optimize_total_space,
+            shrink_ratio,
         )
     }
 
@@ -5091,6 +5165,8 @@ impl AccountsDb {
         write_version_producer: Option<Box<dyn Iterator<Item = u64>>>,
         is_cached_store: bool,
         reset_accounts: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> StoreAccountsTiming {
         let storage_finder: StorageFinder<'a> = storage_finder
             .unwrap_or_else(|| Box::new(move |slot, size| self.find_storage_candidate(slot, size)));
@@ -5158,7 +5234,8 @@ impl AccountsDb {
         // equivalent to asserting there will be no dead slots, is safe.
         let no_purge_stats = None;
         let mut handle_reclaims_time = Measure::start("handle_reclaims");
-        self.handle_reclaims(&reclaims, Some(slot), no_purge_stats, None, reset_accounts);
+        self.handle_reclaims(&reclaims, Some(slot), no_purge_stats, None, reset_accounts,
+                             optimize_total_space, shrink_ratio);
         handle_reclaims_time.stop();
         self.stats
             .store_handle_reclaims
@@ -5478,7 +5555,10 @@ impl AccountsDb {
     //
     // Requires all stores in the slot to be re-written otherwise the accounts_index
     // store ref count could become incorrect.
-    fn do_shrink_slot_v1(&self, slot: Slot, forced: bool) -> usize {
+    fn do_shrink_slot_v1(&self, slot: Slot, forced: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> usize {
         trace!("shrink_stale_slot: slot: {}", slot);
 
         if let Some(stores_lock) = self.storage.get_slot_stores(slot) {
@@ -5516,7 +5596,7 @@ impl AccountsDb {
                 );
             }
 
-            self.do_shrink_slot_stores(slot, stores.iter(), false)
+            self.do_shrink_slot_stores(slot, stores.iter(), false, optimize_total_space, shrink_ratio)
         } else {
             0
         }
@@ -5536,21 +5616,30 @@ impl AccountsDb {
         self.do_reset_uncleaned_roots_v1(&mut self.shrink_candidate_slots_v1.lock().unwrap(), None);
     }
 
-    fn do_shrink_stale_slot_v1(&self, slot: Slot) -> usize {
-        self.do_shrink_slot_v1(slot, false)
+    fn do_shrink_stale_slot_v1(&self, slot: Slot,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> usize {
+        self.do_shrink_slot_v1(slot, false, optimize_total_space, shrink_ratio)
     }
-    fn do_shrink_slot_forced_v1(&self, slot: Slot) {
-        self.do_shrink_slot_v1(slot, true);
+    fn do_shrink_slot_forced_v1(&self, slot: Slot,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
+        self.do_shrink_slot_v1(slot, true, optimize_total_space, shrink_ratio);
     }
 
-    fn shrink_stale_slot_v1(&self, candidates: &mut MutexGuard<Vec<Slot>>) -> usize {
+    fn shrink_stale_slot_v1(&self, candidates: &mut MutexGuard<Vec<Slot>>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> usize {
         let mut shrunken_account_total = 0;
         let mut shrunk_slot_count = 0;
         let start = Instant::now();
         let num_roots = self.accounts_index.num_roots();
         loop {
             if let Some(slot) = self.do_next_shrink_slot_v1(candidates) {
-                shrunken_account_total += self.do_shrink_stale_slot_v1(slot);
+                shrunken_account_total += self.do_shrink_stale_slot_v1(slot, optimize_total_space, shrink_ratio);
             } else {
                 return 0;
             }
@@ -5593,7 +5682,10 @@ impl AccountsDb {
         self.do_next_shrink_slot_v1(&mut candidates)
     }
 
-    pub fn process_stale_slot_v1(&self) -> usize {
+    pub fn process_stale_slot_v1(&self,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> usize {
         let mut measure = Measure::start("stale_slot_shrink-ms");
         let candidates = self.shrink_candidate_slots_v1.try_lock();
         if candidates.is_err() {
@@ -5605,7 +5697,7 @@ impl AccountsDb {
         // with clean_accounts().
         let mut candidates = candidates.unwrap();
 
-        let count = self.shrink_stale_slot_v1(&mut candidates);
+        let count = self.shrink_stale_slot_v1(&mut candidates, optimize_total_space, shrink_ratio);
         measure.stop();
         inc_new_counter_info!("stale_slot_shrink-ms", measure.as_ms() as usize);
 

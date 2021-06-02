@@ -1051,6 +1051,8 @@ impl Bank {
         additional_builtins: Option<&Builtins>,
         account_indexes: AccountSecondaryIndexes,
         accounts_db_caching_enabled: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> Self {
         let mut bank = Self::default();
         bank.ancestors = Ancestors::from(vec![bank.slot()]);
@@ -1063,7 +1065,7 @@ impl Bank {
             account_indexes,
             accounts_db_caching_enabled,
         ));
-        bank.process_genesis_config(genesis_config);
+        bank.process_genesis_config(genesis_config, optimize_total_space, shrink_ratio);
         bank.finish_init(genesis_config, additional_builtins);
 
         // Freeze accounts after process_genesis_config creates the initial append vecs
@@ -1690,7 +1692,10 @@ impl Bank {
         self.epoch_schedule.get_slots_in_epoch(prev_epoch) as f64 / self.slots_per_year
     }
 
-    fn rewrite_stakes(&self) -> (usize, usize) {
+    fn rewrite_stakes(&self,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) -> (usize, usize) {
         let mut examined_count = 0;
         let mut rewritten_count = 0;
         self.cloned_stake_delegations()
@@ -1701,7 +1706,7 @@ impl Bank {
                     if let Ok(result) =
                         stake_state::rewrite_stakes(&mut stake_account, &self.rent_collector.rent)
                     {
-                        self.store_account(&stake_pubkey, &stake_account);
+                        self.store_account(&stake_pubkey, &stake_account, optimize_total_space, shrink_ratio);
                         let message = format!("rewrote stake: {}, {:?}", stake_pubkey, result);
                         info!("{}", message);
                         datapoint_info!("stake_info", ("info", message, String));
@@ -1768,6 +1773,8 @@ impl Bank {
         &mut self,
         prev_epoch: Epoch,
         reward_calc_tracer: &mut Option<impl FnMut(&RewardCalculationEvent)>,
+        optimize_total_space: bool,
+        shrink_ratio: f64,        
     ) {
         if prev_epoch == self.epoch() {
             return;
@@ -1796,6 +1803,8 @@ impl Bank {
             validator_rewards,
             reward_calc_tracer,
             self.stake_program_v2_enabled(),
+            optimize_total_space,
+            shrink_ratio,
         );
 
         if !self
@@ -1934,6 +1943,8 @@ impl Bank {
         rewards: u64,
         reward_calc_tracer: &mut Option<impl FnMut(&RewardCalculationEvent)>,
         fix_stake_deactivate: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,        
     ) -> f64 {
         let stake_history = self.stakes.read().unwrap().history().clone();
 
@@ -1988,7 +1999,7 @@ impl Bank {
                     fix_stake_deactivate,
                 );
                 if let Ok((stakers_reward, _voters_reward)) = redeemed {
-                    self.store_account(&stake_pubkey, &stake_account);
+                    self.store_account(&stake_pubkey, &stake_account, optimize_total_space, shrink_ratio);
                     vote_account_changed = true;
 
                     if stakers_reward > 0 {
@@ -2022,7 +2033,7 @@ impl Bank {
                         },
                     ));
                 }
-                self.store_account(&vote_pubkey, &vote_account);
+                self.store_account(&vote_pubkey, &vote_account, optimize_total_space, shrink_ratio);
             }
         }
         self.rewards.write().unwrap().append(&mut rewards);
@@ -2186,11 +2197,14 @@ impl Bank {
 
     // Should not be called outside of startup, will race with
     // concurrent cleaning logic in AccountsBackgroundService
-    pub fn exhaustively_free_unused_resource(&self) {
+    pub fn exhaustively_free_unused_resource(&self,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         let mut flush = Measure::start("flush");
         // Flush all the rooted accounts. Must be called after `squash()`,
         // so that AccountsDb knows what the roots are.
-        self.force_flush_accounts_cache();
+        self.force_flush_accounts_cache(optimize_total_space, shrink_ratio);
         flush.stop();
 
         let mut clean = Measure::start("clean");
@@ -2259,7 +2273,10 @@ impl Bank {
         self.parent_hash
     }
 
-    fn process_genesis_config(&mut self, genesis_config: &GenesisConfig) {
+    fn process_genesis_config(&mut self, genesis_config: &GenesisConfig,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         // Bootstrap validator collects fees until `new_from_parent` is called.
         self.fee_rate_governor = genesis_config.fee_rate_governor.clone();
         self.fee_calculator = self.fee_rate_governor.create_fee_calculator();
@@ -2268,7 +2285,7 @@ impl Bank {
             if self.get_account(&pubkey).is_some() {
                 panic!("{} repeated in genesis config", pubkey);
             }
-            self.store_account(pubkey, &AccountSharedData::from(account.clone()));
+            self.store_account(pubkey, &AccountSharedData::from(account.clone()), optimize_total_space, shrink_ratio);
             self.capitalization.fetch_add(account.lamports(), Relaxed);
         }
         // updating sysvars (the fees sysvar in this case) now depends on feature activations in
@@ -2279,7 +2296,7 @@ impl Bank {
             if self.get_account(&pubkey).is_some() {
                 panic!("{} repeated in genesis config", pubkey);
             }
-            self.store_account(pubkey, &AccountSharedData::from(account.clone()));
+            self.store_account(pubkey, &AccountSharedData::from(account.clone()), optimize_total_space, shrink_ratio);
         }
 
         // highest staked node is the first collector
@@ -2316,12 +2333,15 @@ impl Bank {
 
         // Add additional native programs specified in the genesis config
         for (name, program_id) in &genesis_config.native_instruction_processors {
-            self.add_native_program(name, program_id, false);
+            self.add_native_program(name, program_id, false, optimize_total_space, shrink_ratio);
         }
     }
 
     // NOTE: must hold idempotent for the same set of arguments
-    pub fn add_native_program(&self, name: &str, program_id: &Pubkey, must_replace: bool) {
+    pub fn add_native_program(&self, name: &str, program_id: &Pubkey, must_replace: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         let existing_genuine_program =
             if let Some(mut account) = self.get_account_with_fixed_root(&program_id) {
                 // it's very unlikely to be squatted at program_id as non-system account because of burden to
@@ -2338,7 +2358,7 @@ impl Bank {
                     // Resetting account balance to 0 is needed to really purge from AccountsDb and
                     // flush the Stakes cache
                     account.set_lamports(0);
-                    self.store_account(&program_id, &account);
+                    self.store_account(&program_id, &account, optimize_total_space, shrink_ratio);
                     None
                 }
             } else {
@@ -2649,8 +2669,11 @@ impl Bank {
         }
     }
 
-    pub fn remove_unrooted_slot(&self, slot: Slot) {
-        self.rc.accounts.accounts_db.remove_unrooted_slot(slot)
+    pub fn remove_unrooted_slot(&self, slot: Slot,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
+        self.rc.accounts.accounts_db.remove_unrooted_slot(slot, optimize_total_space, shrink_ratio)
     }
 
     pub fn set_shrink_paths(&self, paths: Vec<PathBuf>) {
@@ -3350,6 +3373,8 @@ impl Bank {
         tx_count: u64,
         signature_count: u64,
         timings: &mut ExecuteTimings,
+        optimize_total_space: bool,
+        shrink_ratio: f64,        
     ) -> TransactionResults {
         assert!(
             !self.freeze_started(),
@@ -3389,6 +3414,8 @@ impl Bank {
             &self.last_blockhash_with_fee_calculator(),
             self.fix_recent_blockhashes_sysvar_delay(),
             self.demote_sysvar_write_locks(),
+            optimize_total_space,
+            shrink_ratio,
         );
         let rent_debits = self.collect_rent(executed, loaded_accounts);
 
@@ -3439,7 +3466,10 @@ impl Bank {
     //
     // Ref: collect_fees
     #[allow(clippy::needless_collect)]
-    fn distribute_rent_to_validators<I>(&self, vote_accounts: I, rent_to_be_distributed: u64)
+    fn distribute_rent_to_validators<I>(&self, vote_accounts: I, rent_to_be_distributed: u64,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    )
     where
         I: IntoIterator<Item = (Pubkey, (u64, ArcVoteAccount))>,
     {
@@ -3527,7 +3557,7 @@ impl Bank {
                             rent_to_be_paid as usize
                         );
                     } else {
-                        self.store_account(&pubkey, &account);
+                        self.store_account(&pubkey, &account, optimize_total_space, shrink_ratio);
                         rewards.push((
                             pubkey,
                             RewardInfo {
@@ -3597,12 +3627,15 @@ impl Bank {
         rent_debits
     }
 
-    fn run_incinerator(&self) {
+    fn run_incinerator(&self,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         if let Some((account, _)) =
             self.get_account_modified_since_parent_with_fixed_root(&incinerator::id())
         {
             self.capitalization.fetch_sub(account.lamports(), Relaxed);
-            self.store_account(&incinerator::id(), &AccountSharedData::default());
+            self.store_account(&incinerator::id(), &AccountSharedData::default(), optimize_total_space, shrink_ratio);
         }
     }
 
@@ -4006,6 +4039,8 @@ impl Bank {
         enable_cpi_recording: bool,
         enable_log_recording: bool,
         timings: &mut ExecuteTimings,
+        optimize_total_space: bool,
+        shrink_ratio: f64,        
     ) -> (
         TransactionResults,
         TransactionBalancesSet,
@@ -4041,6 +4076,8 @@ impl Bank {
             tx_count,
             signature_count,
             timings,
+            optimize_total_space,
+            shrink_ratio,
         );
         let post_balances = if collect_balances {
             self.collect_balances(batch)
@@ -4123,11 +4160,14 @@ impl Bank {
         parents
     }
 
-    pub fn store_account(&self, pubkey: &Pubkey, account: &AccountSharedData) {
+    pub fn store_account(&self, pubkey: &Pubkey, account: &AccountSharedData,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         assert!(!self.freeze_started());
         self.rc
             .accounts
-            .store_slow_cached(self.slot(), pubkey, account);
+            .store_slow_cached(self.slot(), pubkey, account, optimize_total_space, shrink_ratio);
 
         if Stakes::is_stake(account) {
             self.stakes.write().unwrap().store(
@@ -4139,11 +4179,14 @@ impl Bank {
         }
     }
 
-    pub fn force_flush_accounts_cache(&self) {
+    pub fn force_flush_accounts_cache(&self,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
+    ) {
         self.rc
             .accounts
             .accounts_db
-            .flush_accounts_cache(true, Some(self.slot()))
+            .flush_accounts_cache(true, Some(self.slot(), optimize_total_space, shrink_ratio))
     }
 
     pub fn flush_accounts_cache_if_needed(&self) {
