@@ -38,7 +38,10 @@ use crate::{
         AccountAddressFilter, Accounts, TransactionAccountDeps, TransactionAccounts,
         TransactionLoadResult, TransactionLoaders,
     },
-    accounts_db::{ErrorCounters, SnapshotStorages},
+    accounts_db::{
+        ErrorCounters, SnapshotStorages, DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+        DEFAULT_ACCOUNTS_SHRINK_RATIO,
+    },
     accounts_index::{AccountSecondaryIndexes, IndexKey},
     ancestors::{Ancestors, AncestorsForSerialization},
     blockhash_queue::BlockhashQueue,
@@ -1008,6 +1011,8 @@ impl Bank {
             None,
             AccountSecondaryIndexes::default(),
             false,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         )
     }
 
@@ -1020,6 +1025,8 @@ impl Bank {
             None,
             AccountSecondaryIndexes::default(),
             false,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         );
 
         bank.ns_per_slot = std::u128::MAX;
@@ -1031,6 +1038,8 @@ impl Bank {
         genesis_config: &GenesisConfig,
         account_indexes: AccountSecondaryIndexes,
         accounts_db_caching_enabled: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> Self {
         Self::new_with_paths(
             &genesis_config,
@@ -1040,6 +1049,8 @@ impl Bank {
             None,
             account_indexes,
             accounts_db_caching_enabled,
+            optimize_total_space,
+            shrink_ratio,
         )
     }
 
@@ -1051,6 +1062,8 @@ impl Bank {
         additional_builtins: Option<&Builtins>,
         account_indexes: AccountSecondaryIndexes,
         accounts_db_caching_enabled: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> Self {
         let mut bank = Self::default();
         bank.ancestors = Ancestors::from(vec![bank.slot()]);
@@ -1062,6 +1075,8 @@ impl Bank {
             &genesis_config.cluster_type,
             account_indexes,
             accounts_db_caching_enabled,
+            optimize_total_space,
+            shrink_ratio,
         ));
         bank.process_genesis_config(genesis_config);
         bank.finish_init(genesis_config, additional_builtins);
@@ -5278,7 +5293,10 @@ pub(crate) mod tests {
     use super::*;
     use crate::{
         accounts_background_service::{AbsRequestHandler, SendDroppedBankCallback},
-        accounts_db::{DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO, SHRINK_RATIO},
+        accounts_db::{
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO,
+            SHRINK_RATIO,
+        },
         accounts_index::{AccountIndex, AccountMap, AccountSecondaryIndexes, ITER_BATCH_SIZE},
         ancestors::Ancestors,
         genesis_utils::{
@@ -9181,6 +9199,8 @@ pub(crate) mod tests {
             &genesis_config,
             account_indexes,
             false,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
 
         let address = Pubkey::new_unique();
@@ -10630,6 +10650,8 @@ pub(crate) mod tests {
             &genesis_config,
             AccountSecondaryIndexes::default(),
             false,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
         bank0.restore_old_behavior_for_fragile_tests();
         goto_end_of_slot(Arc::<Bank>::get_mut(&mut bank0).unwrap());
@@ -10663,6 +10685,8 @@ pub(crate) mod tests {
             &genesis_config,
             AccountSecondaryIndexes::default(),
             true,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
         bank0.restore_old_behavior_for_fragile_tests();
 
@@ -10707,7 +10731,10 @@ pub(crate) mod tests {
         // shouldn't because none of its accounts are outdated by a later
         // root
         assert_eq!(
-            bank2.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO),
+            bank2.shrink_candidate_slots(
+                DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+                DEFAULT_ACCOUNTS_SHRINK_RATIO
+            ),
             2
         );
         let alive_counts: Vec<usize> = (0..3)
@@ -10722,7 +10749,10 @@ pub(crate) mod tests {
 
         // No more slots should be shrunk
         assert_eq!(
-            bank2.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO),
+            bank2.shrink_candidate_slots(
+                DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+                DEFAULT_ACCOUNTS_SHRINK_RATIO
+            ),
             0
         );
         // alive_counts represents the count of alive accounts in the three slots 0,1,2
@@ -11888,6 +11918,8 @@ pub(crate) mod tests {
             &genesis_config,
             AccountSecondaryIndexes::default(),
             accounts_db_caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
         bank0.set_callback(drop_callback);
 

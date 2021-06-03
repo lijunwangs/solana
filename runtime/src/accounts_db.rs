@@ -837,6 +837,14 @@ pub struct AccountsDb {
     load_limit: AtomicU64,
 
     is_bank_drop_callback_enabled: AtomicBool,
+
+    /// when shrinking accounts, try to to optimize
+    /// on the overall usage from all accounts
+    optimize_total_space: bool,
+
+    /// The shrink ratio: live_bytes/total_bytes of an account
+    /// or of all accounts when using optimize_total_space
+    shrink_ratio: f64,
 }
 
 #[derive(Debug, Default)]
@@ -1268,6 +1276,8 @@ impl Default for AccountsDb {
             #[cfg(test)]
             load_limit: AtomicU64::default(),
             is_bank_drop_callback_enabled: AtomicBool::default(),
+            optimize_total_space: DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            shrink_ratio: DEFAULT_ACCOUNTS_SHRINK_RATIO,
         }
     }
 }
@@ -1279,6 +1289,8 @@ impl AccountsDb {
             cluster_type,
             AccountSecondaryIndexes::default(),
             false,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         )
     }
 
@@ -1287,6 +1299,8 @@ impl AccountsDb {
         cluster_type: &ClusterType,
         account_indexes: AccountSecondaryIndexes,
         caching_enabled: bool,
+        optimize_total_space: bool,
+        shrink_ratio: f64,
     ) -> Self {
         let mut new = if !paths.is_empty() {
             Self {
@@ -1295,6 +1309,8 @@ impl AccountsDb {
                 cluster_type: Some(*cluster_type),
                 account_indexes,
                 caching_enabled,
+                optimize_total_space,
+                shrink_ratio,
                 ..Self::default()
             }
         } else {
@@ -1307,6 +1323,8 @@ impl AccountsDb {
                 cluster_type: Some(*cluster_type),
                 account_indexes,
                 caching_enabled,
+                optimize_total_space,
+                shrink_ratio,
                 ..Self::default()
             }
         };
@@ -2282,8 +2300,7 @@ impl AccountsDb {
                 }
             }
             shrink_slots
-        }
-        else {
+        } else {
             shrink_slots
         };
 
@@ -6980,6 +6997,8 @@ pub mod tests {
             &ClusterType::Development,
             spl_token_mint_index_enabled(),
             false,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         );
         let pubkey1 = solana_sdk::pubkey::new_rand();
         let pubkey2 = solana_sdk::pubkey::new_rand();
@@ -8575,7 +8594,10 @@ pub mod tests {
             let accounts = AccountsDb::new_single();
 
             for _ in 0..10 {
-                accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
+                accounts.shrink_candidate_slots(
+                    DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+                    DEFAULT_ACCOUNTS_SHRINK_RATIO,
+                );
             }
 
             accounts.shrink_all_slots(*startup);
@@ -8771,7 +8793,10 @@ pub mod tests {
 
         // Only, try to shrink stale slots, nothing happens because 90/100
         // is not small enough to do a shrink
-        accounts.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
+        accounts.shrink_candidate_slots(
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
+        );
         assert_eq!(
             pubkey_count,
             accounts.all_account_count_in_append_vec(shrink_slot)
@@ -9283,6 +9308,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
 
         let account_key = Pubkey::new_unique();
@@ -9330,6 +9357,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
 
         let account_key = Pubkey::new_unique();
@@ -9378,6 +9407,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
 
         let zero_lamport_account_key = Pubkey::new_unique();
@@ -9509,6 +9540,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
         let account_key = Pubkey::new_unique();
         let account_key2 = Pubkey::new_unique();
@@ -9613,6 +9646,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         );
         let slot: Slot = 0;
         let num_keys = 10;
@@ -9667,6 +9702,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         ));
         let slots: Vec<_> = (0..num_slots as Slot).into_iter().collect();
         let stall_slot = num_slots as Slot;
@@ -10065,6 +10102,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         );
         let account_key1 = Pubkey::new_unique();
         let account_key2 = Pubkey::new_unique();
@@ -10107,7 +10146,10 @@ pub mod tests {
                 .or_default()
                 .insert(slot0_store.append_vec_id(), slot0_store);
         }
-        db.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
+        db.shrink_candidate_slots(
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
+        );
 
         // Make slot 0 dead by updating the remaining key
         db.store_cached(2, &[(&account_key2, &account1)]);
@@ -10327,6 +10369,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         );
         db.load_delay = RACY_SLEEP_MS;
         let db = Arc::new(db);
@@ -10398,6 +10442,8 @@ pub mod tests {
             &ClusterType::Development,
             AccountSecondaryIndexes::default(),
             caching_enabled,
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+            DEFAULT_ACCOUNTS_SHRINK_RATIO,
         );
         db.load_delay = RACY_SLEEP_MS;
         let db = Arc::new(db);
@@ -10435,7 +10481,10 @@ pub mod tests {
                         .entry(slot)
                         .or_default()
                         .insert(store_id, store.clone());
-                    db.shrink_candidate_slots(DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO);
+                    db.shrink_candidate_slots(
+                        DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE,
+                        DEFAULT_ACCOUNTS_SHRINK_RATIO,
+                    );
                 })
                 .unwrap()
         };
