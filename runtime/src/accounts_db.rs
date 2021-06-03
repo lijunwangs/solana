@@ -2260,6 +2260,8 @@ impl AccountsDb {
         let shrink_slots = std::mem::take(&mut *self.shrink_candidate_slots.lock().unwrap());
 
         let shrink_slots = if optimize_total_space {
+            let mut measure = Measure::start("select_top_sparse_storage_entries-ms");
+
             let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> =
                 Vec::with_capacity(shrink_slots.len());
             let mut total_alive: u64 = 0;
@@ -2299,11 +2301,13 @@ impl AccountsDb {
                     break;
                 }
             }
+            measure.stop();
             shrink_slots
         } else {
             shrink_slots
         };
 
+        let mut measure = Measure::start("shrink_all_candidate_slots-ms");
         let num_candidates = shrink_slots.len();
         for (slot, slot_shrink_candidates) in shrink_slots {
             let mut measure = Measure::start("shrink_candidate_slots-ms");
@@ -2311,6 +2315,7 @@ impl AccountsDb {
             measure.stop();
             inc_new_counter_info!("shrink_candidate_slots-ms", measure.as_ms() as usize);
         }
+        measure.stop();
         num_candidates
     }
 
