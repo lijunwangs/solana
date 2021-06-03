@@ -2302,12 +2302,13 @@ impl AccountsDb {
                 }
             }
             measure.stop();
+            inc_new_counter_info!("select_top_sparse_storage_entries-ms", measure.as_ms() as usize);
             shrink_slots
         } else {
             shrink_slots
         };
 
-        let mut measure = Measure::start("shrink_all_candidate_slots-ms");
+        let mut measure_shrink_all_candidates = Measure::start("shrink_all_candidate_slots-ms");
         let num_candidates = shrink_slots.len();
         for (slot, slot_shrink_candidates) in shrink_slots {
             let mut measure = Measure::start("shrink_candidate_slots-ms");
@@ -2315,7 +2316,8 @@ impl AccountsDb {
             measure.stop();
             inc_new_counter_info!("shrink_candidate_slots-ms", measure.as_ms() as usize);
         }
-        measure.stop();
+        measure_shrink_all_candidates.stop();
+        inc_new_counter_info!("shrink_all_candidate_slots-ms", measure_shrink_all_candidates.as_ms() as usize);
         num_candidates
     }
 
