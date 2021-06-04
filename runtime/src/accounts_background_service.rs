@@ -89,8 +89,6 @@ impl SnapshotRequestHandler {
         accounts_db_caching_enabled: bool,
         test_hash_calculation: bool,
         use_index_hash_calculation: bool,
-        accounts_shrink_optimize_total_space: bool,
-        accounts_shrink_ratio: f64,
     ) -> Option<u64> {
         self.snapshot_request_receiver
             .try_iter()
@@ -161,10 +159,7 @@ impl SnapshotRequestHandler {
 
                 if accounts_db_caching_enabled {
                     shrink_time = Measure::start("shrink_time");
-                    snapshot_root_bank.shrink_candidate_slots(
-                        accounts_shrink_optimize_total_space,
-                        accounts_shrink_ratio,
-                    );
+                    snapshot_root_bank.shrink_candidate_slots();
                     shrink_time.stop();
                 }
 
@@ -256,8 +251,6 @@ impl AbsRequestHandler {
         accounts_db_caching_enabled: bool,
         test_hash_calculation: bool,
         use_index_hash_calculation: bool,
-        accounts_shrink_optimize_total_space: bool,
-        accounts_shrink_ratio: f64,
     ) -> Option<u64> {
         self.snapshot_request_handler
             .as_ref()
@@ -266,8 +259,6 @@ impl AbsRequestHandler {
                     accounts_db_caching_enabled,
                     test_hash_calculation,
                     use_index_hash_calculation,
-                    accounts_shrink_optimize_total_space,
-                    accounts_shrink_ratio,
                 )
             })
     }
@@ -296,8 +287,6 @@ impl AccountsBackgroundService {
         accounts_db_caching_enabled: bool,
         test_hash_calculation: bool,
         use_index_hash_calculation: bool,
-        accounts_shrink_optimize_total_space: bool,
-        accounts_shrink_ratio: f64,
     ) -> Self {
         info!("AccountsBackgroundService active");
         let exit = exit.clone();
@@ -347,8 +336,6 @@ impl AccountsBackgroundService {
                     accounts_db_caching_enabled,
                     test_hash_calculation,
                     use_index_hash_calculation,
-                    accounts_shrink_optimize_total_space,
-                    accounts_shrink_ratio,
                 );
                 if accounts_db_caching_enabled {
                     // Note that the flush will do an internal clean of the
@@ -364,10 +351,7 @@ impl AccountsBackgroundService {
                     last_cleaned_block_height = snapshot_block_height;
                 } else {
                     if accounts_db_caching_enabled {
-                        bank.shrink_candidate_slots(
-                            accounts_shrink_optimize_total_space,
-                            accounts_shrink_ratio,
-                        );
+                        bank.shrink_candidate_slots();
                     } else {
                         // under sustained writes, shrink can lag behind so cap to
                         // SHRUNKEN_ACCOUNT_PER_INTERVAL (which is based on INTERVAL_MS,
