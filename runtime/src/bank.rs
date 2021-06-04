@@ -4967,10 +4967,7 @@ impl Bank {
     }
 
     pub fn shrink_candidate_slots(&self) -> usize {
-        self.rc
-            .accounts
-            .accounts_db
-            .shrink_candidate_slots()
+        self.rc.accounts.accounts_db.shrink_candidate_slots()
     }
 
     pub fn secp256k1_program_enabled(&self) -> bool {

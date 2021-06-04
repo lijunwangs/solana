@@ -1301,7 +1301,10 @@ impl AccountsDb {
         optimize_total_space: bool,
         shrink_ratio: f64,
     ) -> Self {
-        info!("Creating new accountdb: caching_enabled {:?}, optimize_total_space: {:?}", caching_enabled, optimize_total_space);
+        info!(
+            "Creating new accountdb: caching_enabled {:?}, optimize_total_space: {:?}",
+            caching_enabled, optimize_total_space
+        );
 
         if !optimize_total_space {
             panic!("Expecting the account db use optimize_total_space");
@@ -4712,32 +4715,20 @@ impl AccountsDb {
                 let count = store.remove_account(account_info.stored_size, reset_accounts);
                 if count == 0 {
                     dead_slots.insert(*slot);
-                } else {
-                    info!(
-                        "remove_dead_accounts: caching {:?}, ratio {:?}, optimize_total_space {:?}",
-                        self.caching_enabled,
-                        (self.page_align(store.alive_bytes() as u64) as f64
-                            / store.total_bytes() as f64),
-                        self.optimize_total_space
-                    );
-                    if !self.optimize_total_space {
-                        panic!("Expected self.optimize_total_space is set to true");
-                    }
-                    if self.caching_enabled
-                        && (self.optimize_total_space
-                            || (self.page_align(store.alive_bytes() as u64) as f64
-                                / store.total_bytes() as f64)
-                                < self.shrink_ratio)
-                    {
-                        // Checking that this single storage entry is ready for shrinking,
-                        // should be a sufficient indication that the slot is ready to be shrunk
-                        // because slots should only have one storage entry, namely the one that was
-                        // created by `flush_slot_cache()`.
-                        new_shrink_candidates
-                            .entry(*slot)
-                            .or_default()
-                            .insert(store.append_vec_id(), store);
-                    }
+                } else if self.caching_enabled
+                    && (self.optimize_total_space
+                        || (self.page_align(store.alive_bytes() as u64) as f64
+                            / store.total_bytes() as f64)
+                            < self.shrink_ratio)
+                {
+                    // Checking that this single storage entry is ready for shrinking,
+                    // should be a sufficient indication that the slot is ready to be shrunk
+                    // because slots should only have one storage entry, namely the one that was
+                    // created by `flush_slot_cache()`.
+                    new_shrink_candidates
+                        .entry(*slot)
+                        .or_default()
+                        .insert(store.append_vec_id(), store);
                 }
             }
         }
