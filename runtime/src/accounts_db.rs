@@ -81,7 +81,6 @@ const SCAN_SLOT_PAR_ITER_THRESHOLD: usize = 4000;
 pub const DEFAULT_FILE_SIZE: u64 = PAGE_SIZE * 1024;
 pub const DEFAULT_NUM_THREADS: u32 = 8;
 pub const DEFAULT_NUM_DIRS: u32 = 4;
-pub const SHRINK_RATIO: f64 = 0.80;
 
 // The default extra account space in percentage from the ideal target
 pub const DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE: bool = false;
@@ -4697,9 +4696,9 @@ impl AccountsDb {
                 if count == 0 {
                     dead_slots.insert(*slot);
                 } else if self.caching_enabled
-                    && (self.page_align(store.alive_bytes() as u64) as f64
+                    && ( self.optimize_total_space || (self.page_align(store.alive_bytes() as u64) as f64
                         / store.total_bytes() as f64)
-                        < SHRINK_RATIO
+                        < self.shrink_ratio)
                 {
                     // Checking that this single storage entry is ready for shrinking,
                     // should be a sufficient indication that the slot is ready to be shrunk
