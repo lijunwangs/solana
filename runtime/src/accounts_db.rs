@@ -1306,9 +1306,6 @@ impl AccountsDb {
             caching_enabled, optimize_total_space
         );
 
-        if !optimize_total_space {
-            panic!("Expecting the account db use optimize_total_space");
-        }
         let mut new = if !paths.is_empty() {
             Self {
                 paths,
