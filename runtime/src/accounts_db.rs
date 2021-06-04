@@ -1978,6 +1978,7 @@ impl AccountsDb {
             for slot in dead_slots {
                 list.remove(slot);
             }
+            info!("process_dead_slots, candidates: {:?}", list.len());
         }
 
         debug!(
@@ -2266,6 +2267,10 @@ impl AccountsDb {
     pub fn shrink_candidate_slots(&self) -> usize {
         let shrink_slots = std::mem::take(&mut *self.shrink_candidate_slots.lock().unwrap());
 
+        info!(
+            "shrink_candidate_slots candidates: {:?}",
+            shrink_slots.len()
+        );
         let shrink_slots = if self.optimize_total_space {
             let mut measure = Measure::start("select_top_sparse_storage_entries-ms");
 
@@ -4716,7 +4721,8 @@ impl AccountsDb {
                 if count == 0 {
                     dead_slots.insert(*slot);
                 } else if self.caching_enabled
-                    && (self.optimize_total_space
+                    && ((self.optimize_total_space
+                        && self.page_align(store.alive_bytes() as u64) < store.total_bytes())
                         || (self.page_align(store.alive_bytes() as u64) as f64
                             / store.total_bytes() as f64)
                             < self.shrink_ratio)
@@ -4725,6 +4731,7 @@ impl AccountsDb {
                     // should be a sufficient indication that the slot is ready to be shrunk
                     // because slots should only have one storage entry, namely the one that was
                     // created by `flush_slot_cache()`.
+                    // info!("Adding candidate slot {:?} store: {:?}", *slot, store.append_vec_id());
                     new_shrink_candidates
                         .entry(*slot)
                         .or_default()
@@ -4744,6 +4751,7 @@ impl AccountsDb {
                             .insert(store_id, store);
                     }
                 }
+                info!("candidates counts: {:?}", shrink_candidate_slots.len());
             }
         }
 
