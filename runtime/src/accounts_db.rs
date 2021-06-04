@@ -2264,7 +2264,9 @@ impl AccountsDb {
             let mut store_usage: Vec<(Slot, AppendVecId, f64, Arc<AccountStorageEntry>, u64)> =
                 Vec::with_capacity(shrink_slots.len());
             let mut total_alive: u64 = 0;
+            let mut candidates_count: usize = 0;
             for (slot, slot_shrink_candidates) in &shrink_slots {
+                candidates_count += slot_shrink_candidates.len();
                 for store in slot_shrink_candidates.values() {
                     total_alive += self.page_align(store.alive_bytes() as u64);
                     let alive_ratio = self.page_align(store.alive_bytes() as u64) as f64
@@ -2301,7 +2303,11 @@ impl AccountsDb {
                 }
             }
             measure.stop();
-            inc_new_counter_info!("select_top_sparse_storage_entries-ms", measure.as_ms() as usize);
+            inc_new_counter_info!(
+                "select_top_sparse_storage_entries-ms",
+                measure.as_ms() as usize
+            );
+            inc_new_counter_info!("select_top_sparse_storage_entries-seeds", candidates_count);
             shrink_slots
         } else {
             shrink_slots
@@ -2309,14 +2315,20 @@ impl AccountsDb {
 
         let mut measure_shrink_all_candidates = Measure::start("shrink_all_candidate_slots-ms");
         let num_candidates = shrink_slots.len();
+        let mut shrink_candidates_count: usize = 0;
         for (slot, slot_shrink_candidates) in shrink_slots {
+            shrink_candidates_count += slot_shrink_candidates.len();
             let mut measure = Measure::start("shrink_candidate_slots-ms");
             self.do_shrink_slot_stores(slot, slot_shrink_candidates.values(), false);
             measure.stop();
             inc_new_counter_info!("shrink_candidate_slots-ms", measure.as_ms() as usize);
         }
         measure_shrink_all_candidates.stop();
-        inc_new_counter_info!("shrink_all_candidate_slots-ms", measure_shrink_all_candidates.as_ms() as usize);
+        inc_new_counter_info!(
+            "shrink_all_candidate_slots-ms",
+            measure_shrink_all_candidates.as_ms() as usize
+        );
+        inc_new_counter_info!("shrink_all_candidate_slots-count", shrink_candidates_count);
         num_candidates
     }
 
@@ -4696,9 +4708,10 @@ impl AccountsDb {
                 if count == 0 {
                     dead_slots.insert(*slot);
                 } else if self.caching_enabled
-                    && ( self.optimize_total_space || (self.page_align(store.alive_bytes() as u64) as f64
-                        / store.total_bytes() as f64)
-                        < self.shrink_ratio)
+                    && (self.optimize_total_space
+                        || (self.page_align(store.alive_bytes() as u64) as f64
+                            / store.total_bytes() as f64)
+                            < self.shrink_ratio)
                 {
                     // Checking that this single storage entry is ready for shrinking,
                     // should be a sufficient indication that the slot is ready to be shrunk

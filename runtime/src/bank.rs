@@ -5294,7 +5294,7 @@ pub(crate) mod tests {
     use crate::{
         accounts_background_service::{AbsRequestHandler, SendDroppedBankCallback},
         accounts_db::{
-            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO
+            DEFAULT_ACCOUNTS_SHRINK_OPTIMIZE_TOTAL_SPACE, DEFAULT_ACCOUNTS_SHRINK_RATIO,
         },
         accounts_index::{AccountIndex, AccountMap, AccountSecondaryIndexes, ITER_BATCH_SIZE},
         ancestors::Ancestors,
@@ -10662,11 +10662,13 @@ pub(crate) mod tests {
             .accounts
             .scan_slot(0, |stored_account| Some(stored_account.stored_size()));
 
-        // Create an account such that it takes SHRINK_RATIO of the total account space for
+        // Create an account such that it takes DEFAULT_ACCOUNTS_SHRINK_RATIO of the total account space for
         // the slot, so when it gets pruned, the storage entry will become a shrink candidate.
         let bank0_total_size: usize = sizes.into_iter().sum();
         let pubkey0_size = (bank0_total_size as f64 / (1.0 - DEFAULT_ACCOUNTS_SHRINK_RATIO)).ceil();
-        assert!(pubkey0_size / (pubkey0_size + bank0_total_size as f64) > DEFAULT_ACCOUNTS_SHRINK_RATIO);
+        assert!(
+            pubkey0_size / (pubkey0_size + bank0_total_size as f64) > DEFAULT_ACCOUNTS_SHRINK_RATIO
+        );
         pubkey0_size as usize
     }
 
