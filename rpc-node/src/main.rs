@@ -158,16 +158,18 @@ pub fn main() {
         (snapshot_slot, snapshot_hash),
         false,
         snapshot_config.maximum_snapshots_to_retain,
+        &mut None,
     )
     .unwrap();
 
-    let (_highest_snapshot_hash, (snapshot_slot, snapshot_hash, archive_format)) =
-        snapshot_utils::get_highest_snapshot_archive_path(snapshot_output_dir.clone()).unwrap();
+    let archive_info =
+        snapshot_utils::get_highest_snapshot_archive_info(snapshot_output_dir.clone()).unwrap();
     let snapshot_slot_hash = (snapshot_slot, snapshot_hash);
-    let archive_filename = snapshot_utils::get_snapshot_archive_path(
+    let archive_filename = snapshot_utils::build_snapshot_archive_path(
         snapshot_output_dir,
-        &snapshot_slot_hash,
-        archive_format,
+        snapshot_slot,
+        &snapshot_hash,
+        archive_info.archive_format,
     );
 
     let process_options = blockstore_processor::ProcessOptions {
@@ -176,19 +178,22 @@ pub fn main() {
         ..blockstore_processor::ProcessOptions::default()
     };
 
-    let bank0 = snapshot_utils::bank_from_archive(
+    let (bank0, _) = snapshot_utils::bank_from_snapshot_archive(
         &account_paths,
         &[],
         &snapshot_config.snapshot_path,
         &archive_filename,
-        archive_format,
+        archive_info.archive_format,
         &genesis_config,
         process_options.debug_keys.clone(),
         None,
         process_options.account_indexes.clone(),
         process_options.accounts_db_caching_enabled,
+        process_options.limit_load_slot_count_from_snapshot,
+        process_options.shrink_ratio,
+        process_options.accounts_db_test_hash_calculation,
     )
-    .expect("Load from snapshot failed");
+    .unwrap();
 
     let bank0_slot = bank0.slot();
     let leader_schedule_cache = Arc::new(LeaderScheduleCache::new_from_bank(&bank0));
@@ -293,4 +298,133 @@ pub fn main() {
     exit.store(true, Ordering::Relaxed);
     json_rpc_service.map(|t| t.join().unwrap());
     pubsub_service.map(|t| t.join().unwrap());
+}
+
+pub fn main() {
+    let matches = App::new(crate_name!())
+        .about(crate_description!())
+        .version(solana_version::version!())
+        .setting(AppSettings::VersionlessSubcommands)
+        .setting(AppSettings::InferSubcommands)
+        .arg(
+            Arg::with_name(SKIP_SEED_PHRASE_VALIDATION_ARG.name)
+                .long(SKIP_SEED_PHRASE_VALIDATION_ARG.long)
+                .help(SKIP_SEED_PHRASE_VALIDATION_ARG.help),
+        )
+        .arg(
+            Arg::with_name("ledger_path")
+                .short("l")
+                .long("ledger")
+                .value_name("DIR")
+                .takes_value(true)
+                .required(true)
+                .default_value("ledger")
+                .help("Use DIR as ledger location"),
+        )
+        .arg(
+            Arg::with_name("target_validator")
+                .long("target-validator")
+                .value_name("IP:PORT")
+                .takes_value(true)
+                .required(true)
+                .help("RPC to download from"),
+        )
+        .arg(
+            Arg::with_name("snapshot_hash")
+                .long("snapshot-hash")
+                .value_name("HASH")
+                .takes_value(true)
+                .required(true)
+                .help("Snapshot hash to download"),
+        )
+        .arg(
+            Arg::with_name("account_paths")
+                .long("accounts")
+                .value_name("PATHS")
+                .takes_value(true)
+                .multiple(true)
+                .help("Comma separated persistent accounts location"),
+        )
+        .get_matches();
+
+    let snapshot_hash = value_t!(matches, "snapshot_hash", Hash).unwrap();
+    let snapshot_slot = value_t!(matches, "snapshot_slot", u64).unwrap();
+    let ledger_path = PathBuf::from(matches.value_of("ledger_path").unwrap());
+    let snapshot_output_dir = if matches.is_present("snapshots") {
+        PathBuf::from(matches.value_of("snapshots").unwrap())
+    } else {
+        ledger_path.clone()
+    };
+    let snapshot_path = snapshot_output_dir.join("snapshot");
+
+    let account_paths: Vec<PathBuf> =
+        if let Ok(account_paths) = values_t!(matches, "account_paths", String) {
+            account_paths
+                .join(",")
+                .split(',')
+                .map(PathBuf::from)
+                .collect()
+        } else {
+            vec![ledger_path.join("accounts")]
+        };
+
+    let rpc_source_addr = solana_net_utils::parse_host_port(
+        matches.value_of("rpc_source").unwrap(),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to parse entrypoint address: {}", e);
+        exit(1);
+    });
+
+    let rpc_addr = solana_net_utils::parse_host_port(matches.value_of("rpc_port").unwrap())
+        .unwrap_or_else(|e| {
+            eprintln!("failed to parse entrypoint address: {}", e);
+            exit(1);
+        });
+
+    let rpc_pubsub_addr = solana_net_utils::parse_host_port(
+        matches.value_of("rpc_pubsub").unwrap(),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to parse entrypoint address: {}", e);
+        exit(1);
+    });
+
+    let config = RpcNodeConfig {
+        rpc_source_addr,
+        rpc_addr,
+        rpc_pubsub_addr,
+        ledger_path,
+        snapshot_output_dir,
+        snapshot_path,
+        account_paths,
+        snapshot_slot,
+        snapshot_hash,
+    };
+    run_rpc_node(config);
+}
+
+#[cfg(test)]
+pub mod test {
+    #[test]
+    fn test_rpc_node() {
+        solana_logger::setup();
+        const NUM_NODES: usize = 1;
+        let cluster = LocalCluster::new(&mut ClusterConfig {
+            node_stakes: vec![999_990; NUM_NODES],
+            cluster_lamports: 200_000_000,
+            validator_configs: make_identical_validator_configs(
+                &ValidatorConfig::default(),
+                NUM_NODES,
+            ),
+            native_instruction_processors,
+            ..ClusterConfig::default()
+        });
+
+        let config = RpcNodeConfig {
+            rpc_addr: "127.0.0.1:8001".parse().unwrap(),
+        };
+
+        run_rpc_node(config);
+    }
 }
