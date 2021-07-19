@@ -5494,6 +5494,8 @@ dependencies = [
  "jsonrpc-ipc-server 17.1.0",
  "jsonrpc-server-utils 17.1.0",
  "log 0.4.14",
+ "prost",
+ "prost-types",
  "rand 0.7.3",
  "serde",
  "serial_test 0.5.1",
@@ -5518,6 +5520,8 @@ dependencies = [
  "solana-vote-program",
  "tempdir",
  "tempfile",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]
