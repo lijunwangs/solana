@@ -1,0 +1,26 @@
+
+// version of prorocol buffer used
+syntax = "proto3";
+
+package accountsdb_repl;
+
+message UpdatedSlotsRequest {
+    uint64 last_replicated_slot = 1;
+}
+
+message UpdatedSlotsResponse {
+    repeated uint64 updated_slots = 1;
+}
+
+message SlotAccountsRequest {
+    uint64 slot = 1;
+}
+
+message SlotAccountsResponse {
+    repeated uint64 updated_slots = 1;
+}
+
+service AccountsDbRepl {
+    rpc get_updated_slots(stream UpdatedSlotsRequest) returns (stream UpdatedSlotsResponse);
+    rpc get_slot_slots(stream SlotAccountsRequest) returns (stream SlotAccountsResponse);
+}
