@@ -21,6 +21,6 @@ message SlotAccountsResponse {
 }
 
 service AccountsDbRepl {
-    rpc get_updated_slots(stream UpdatedSlotsRequest) returns (stream UpdatedSlotsResponse);
-    rpc get_slot_slots(stream SlotAccountsRequest) returns (stream SlotAccountsResponse);
+    rpc get_updated_slots(UpdatedSlotsRequest) returns (UpdatedSlotsResponse);
+    rpc get_slot_slots(SlotAccountsRequest) returns (stream SlotAccountsResponse);
 }
