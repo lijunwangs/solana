@@ -5,7 +5,7 @@ tonic::include_proto!("accountsdb_repl");
 use solana_sdk::clock::Slot;
 use std::net::SocketAddr;
 
-pub struct ReplicaRpcClient {
+pub struct ReplicaUpdatedSlotsRequestor {
     client: accounts_db_repl_client::AccountsDbReplClient<tonic::transport::Channel>,
 }
 
@@ -20,7 +20,7 @@ impl From<tonic::transport::Error> for ReplicaRpcError {
         ReplicaRpcError::ConnectionError(err.to_string())
     }
 }
-impl ReplicaRpcClient {
+impl ReplicaUpdatedSlotsRequestor {
     pub async fn connect(rpc_peer: &SocketAddr) -> Result<Self, ReplicaRpcError> {
         let url = format!("http://{}", rpc_peer);
         let endpoint = match Endpoint::from_shared(url.to_string()) {
@@ -30,7 +30,7 @@ impl ReplicaRpcClient {
             }
         };
         let client = accounts_db_repl_client::AccountsDbReplClient::connect(endpoint).await?;
-        Ok(ReplicaRpcClient { client })
+        Ok(ReplicaUpdatedSlotsRequestor { client })
     }
 
     pub async fn get_updated_slots(
