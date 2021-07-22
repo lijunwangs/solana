@@ -5528,9 +5528,10 @@ dependencies = [
 name = "solana-rpc"
 version = "1.8.0"
 dependencies = [
- "base64 0.12.3",
  "bincode",
- "bs58 0.4.0",
+ "chrono",
+ "clap 2.33.3",
+ "console 0.11.3",
  "crossbeam-channel",
  "itertools 0.10.1",
  "jsonrpc-core 18.0.0",
@@ -5541,23 +5542,22 @@ dependencies = [
  "jsonrpc-ws-server",
  "libc",
  "log 0.4.14",
- "regex",
+ "prost",
+ "prost-types",
+ "rand 0.7.3",
  "serde",
- "serde_derive",
- "serde_json",
- "serial_test 0.4.0",
- "solana-account-decoder",
+ "solana-clap-utils",
+ "solana-cli-config",
  "solana-client",
- "solana-entry",
- "solana-faucet",
+ "solana-core",
+ "solana-genesis-utils",
  "solana-gossip",
  "solana-ledger",
+ "solana-local-cluster",
  "solana-logger 1.8.0",
- "solana-measure",
  "solana-metrics",
  "solana-net-utils",
- "solana-perf",
- "solana-poh",
+ "solana-rpc",
  "solana-runtime",
  "solana-sdk",
  "solana-stake-program",
@@ -5573,7 +5573,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-rpc-repl-lib"
+name = "solana-replica-node"
 version = "1.8.0"
 dependencies = [
  "bincode",
@@ -5595,6 +5595,7 @@ dependencies = [
  "solana-cli-config",
  "solana-client",
  "solana-core",
+ "solana-download-utils",
  "solana-genesis-utils",
  "solana-gossip",
  "solana-ledger",
@@ -5602,6 +5603,7 @@ dependencies = [
  "solana-logger 1.8.0",
  "solana-metrics",
  "solana-net-utils",
+ "solana-replica-lib",
  "solana-rpc",
  "solana-runtime",
  "solana-sdk",
