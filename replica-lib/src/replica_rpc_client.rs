@@ -37,7 +37,7 @@ impl ReplicaRpcClient {
         &mut self,
         last_slot: Slot,
     ) -> Result<Vec<Slot>, ReplicaRpcError> {
-        let request = UpdatedSlotsRequest {
+        let request = ReplicaUpdatedSlotsRequest {
             last_replicated_slot: last_slot,
         };
         let response = self.client.get_updated_slots(Request::new(request)).await;
