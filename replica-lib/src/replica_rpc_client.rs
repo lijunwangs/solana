@@ -1,4 +1,4 @@
-use tonic::{self, Request, transport::Endpoint};
+use tonic::{self, transport::Endpoint, Request};
 
 tonic::include_proto!("accountsdb_repl");
 
