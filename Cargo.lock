@@ -5506,6 +5506,7 @@ dependencies = [
 name = "solana-replica-node"
 version = "1.8.0"
 dependencies = [
+ "assert_matches",
  "bincode",
  "chrono",
  "clap 2.33.3",
@@ -5521,6 +5522,7 @@ dependencies = [
  "prost-types",
  "rand 0.7.3",
  "serde",
+ "serial_test 0.5.1",
  "solana-clap-utils",
  "solana-cli-config",
  "solana-client",
@@ -5539,7 +5541,9 @@ dependencies = [
  "solana-sdk",
  "solana-validator",
  "solana-version",
+ "solana-vote-program",
  "tempdir",
+ "tempfile",
  "tonic",
  "tonic-build",
 ]
