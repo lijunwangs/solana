@@ -112,7 +112,7 @@ impl OptimisticallyConfirmedBankTracker {
         subscriptions: &Arc<RpcSubscriptions>,
         pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
     ) {
-        debug!("received bank notification: {:?}", notification);
+        info!("received bank notification: {:?}", notification);
         match notification {
             BankNotification::OptimisticallyConfirmed(slot) => {
                 if let Some(bank) = bank_forks
@@ -125,6 +125,7 @@ impl OptimisticallyConfirmedBankTracker {
                         optimistically_confirmed_bank.write().unwrap();
                     if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
                         w_optimistically_confirmed_bank.bank = bank.clone();
+                        info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
                         subscriptions.notify_gossip_subscribers(slot);
                     }
                     drop(w_optimistically_confirmed_bank);
@@ -163,6 +164,7 @@ impl OptimisticallyConfirmedBankTracker {
                         optimistically_confirmed_bank.write().unwrap();
                     if frozen_slot > w_optimistically_confirmed_bank.bank.slot() {
                         w_optimistically_confirmed_bank.bank = bank;
+                        info!("notify_gossip_subscribers in ocbt 2 of frozen_slot: {:?}", frozen_slot);
                         subscriptions.notify_gossip_subscribers(frozen_slot);
                     }
                     drop(w_optimistically_confirmed_bank);

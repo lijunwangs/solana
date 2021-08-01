@@ -228,7 +228,7 @@ impl SendTransactionService {
                 inc_new_counter_info!("send_transaction_service-nonced", 1);
             }
             if root_bank.has_signature(signature) {
-                info!("Transaction is rooted: {}", signature);
+                info!("Transaction is rooted: {} at slot: {:?}", signature, root_bank.slot());
                 result.rooted += 1;
                 inc_new_counter_info!("send_transaction_service-rooted", 1);
                 return false;

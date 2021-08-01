@@ -204,7 +204,7 @@ impl BlockCommitmentCache {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, Debug)]
 pub struct CommitmentSlots {
     /// The slot of the bank from which all other slots were calculated.
     pub slot: Slot,

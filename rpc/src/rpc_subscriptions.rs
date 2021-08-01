@@ -328,14 +328,16 @@ fn filter_program_results(
     config: Option<ProgramConfig>,
     bank: Arc<Bank>,
 ) -> (Box<dyn Iterator<Item = RpcKeyedAccount>>, Slot) {
+
+    info!("filter_program_results for notification: accounts: {:?} program_id: {:?} slot: {:?}", accounts, program_id, last_notified_slot);
     let config = config.unwrap_or_default();
     let encoding = config.encoding.unwrap_or(UiAccountEncoding::Binary);
     let filters = config.filters;
     let accounts_is_empty = accounts.is_empty();
     let keyed_accounts = accounts.into_iter().filter(move |(_, account)| {
         filters.iter().all(|filter_type| match filter_type {
-            RpcFilterType::DataSize(size) => account.data().len() as u64 == *size,
-            RpcFilterType::Memcmp(compare) => compare.bytes_match(account.data()),
+            RpcFilterType::DataSize(size) => { info!("filter_program_results account is : {:?} filter: size {:?} {:?}", &account, account.data().len(), size);  account.data().len() as u64 == *size},
+            RpcFilterType::Memcmp(compare) => { info!("filter_program_results account is : {:?} filter data match {:?}", &account, compare.bytes_match(account.data())); compare.bytes_match(account.data())},
         })
     });
     let accounts: Box<dyn Iterator<Item = RpcKeyedAccount>> = if program_id == &spl_token_id_v2_0()
@@ -345,12 +347,15 @@ fn filter_program_results(
         Box::new(get_parsed_token_accounts(bank, keyed_accounts))
     } else {
         Box::new(
-            keyed_accounts.map(move |(pubkey, account)| RpcKeyedAccount {
+            keyed_accounts.map(move |(pubkey, account)| {
+                info!("filter_program_results filtered account: pubkey {:?}, account {:?}", &pubkey, &account);
+		RpcKeyedAccount {
                 pubkey: pubkey.to_string(),
                 account: UiAccount::encode(&pubkey, &account, encoding, None, None),
-            }),
+            }}),
         )
     };
+
     (accounts, last_notified_slot)
 }
 
@@ -1145,6 +1150,7 @@ impl RpcSubscriptions {
         subscriptions: &Subscriptions,
         bank_forks: &Arc<RwLock<BankForks>>,
     ) {
+        info!("process_gossip_notification at slot: {:?}", slot);
         let commitment_slots = CommitmentSlots {
             highest_confirmed_slot: slot,
             ..CommitmentSlots::default()

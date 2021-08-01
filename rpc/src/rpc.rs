@@ -3257,7 +3257,7 @@ pub mod rpc_full {
             data: String,
             config: Option<RpcSendTransactionConfig>,
         ) -> Result<String> {
-            debug!("send_transaction rpc request received");
+            info!("send_transaction rpc request received");
             let config = config.unwrap_or_default();
             let encoding = config.encoding.unwrap_or(UiTransactionEncoding::Base58);
             let (wire_transaction, transaction) = deserialize_transaction(data, encoding)?;

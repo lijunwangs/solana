@@ -554,6 +554,7 @@ impl Accounts {
         slot: Slot,
         program_id: Option<&Pubkey>,
     ) -> Vec<(Pubkey, AccountSharedData)> {
+        info!("load_by_program_slot: slot: {:?}, program_id: {:?}", slot, program_id);
         self.scan_slot(slot, |stored_account| {
             let hit = match program_id {
                 None => true,
