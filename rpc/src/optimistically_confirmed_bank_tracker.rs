@@ -124,14 +124,30 @@ impl OptimisticallyConfirmedBankTracker {
                     let mut w_optimistically_confirmed_bank =
                         optimistically_confirmed_bank.write().unwrap();
                     info!("process_notification ocb, slot: {:?}, confirmed: {:?}", bank.slot(), w_optimistically_confirmed_bank.bank.slot());
-                    if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
-                        w_optimistically_confirmed_bank.bank = bank.clone();
-                    }
-                    info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
-                    subscriptions.notify_gossip_subscribers(slot);
+                    //if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
+                    //    w_optimistically_confirmed_bank.bank = bank.clone();
+                    //}
+                    //info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
+                    //subscriptions.notify_gossip_subscribers(slot);
                     //} else {
                     //    info!("notify_gossip_subscribers not called as it is not > then last confirmed: {:?}", slot);
                     //}
+                    let last_notified_slot = w_optimistically_confirmed_bank.bank.slot();
+                    if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
+                        w_optimistically_confirmed_bank.bank = bank.clone();
+                        subscriptions.notify_gossip_subscribers(slot);
+                        info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
+                        for parent in bank.parents().iter() {
+                            if parent.slot() > last_notified_slot {
+                                info!("notify_gossip_subscribers notify the parent not notifed before: {:?}", parent.slot());
+                                if parent.is_frozen() {                                    
+                                    subscriptions.notify_gossip_subscribers(parent.slot());
+                                } else {
+                                    pending_optimistically_confirmed_banks.insert(parent.slot());
+                                }
+                            }
+                        }
+                    }
                     drop(w_optimistically_confirmed_bank);
                 } else if slot > bank_forks.read().unwrap().root_bank().slot() {
                     pending_optimistically_confirmed_banks.insert(slot);
