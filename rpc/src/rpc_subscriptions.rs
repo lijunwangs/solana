@@ -215,7 +215,7 @@ where
     K: Eq + Hash + Clone + Copy,
     S: Clone + Serialize,
     B: Fn(&Bank, &K) -> X,
-    F: Fn(X, &K, Slot, Option<T>, Arc<Bank>) -> (Box<dyn Iterator<Item = S>>, Slot),
+    F: Fn(X, &K, Slot, Option<T>, Arc<Bank>, &CommitmentSlots) -> (Box<dyn Iterator<Item = S>>, Slot),
     X: Clone + Default,
     T: Clone,
 {
@@ -248,6 +248,7 @@ where
                     *w_last_notified_slot,
                     config.as_ref().cloned(),
                     bank,
+                    commitment_slots,
                 );
                 for result in filter_results {
                     notifier.notify(
@@ -283,6 +284,7 @@ fn filter_account_result(
     last_notified_slot: Slot,
     encoding: Option<UiAccountEncoding>,
     bank: Arc<Bank>,
+    _commitment_slots: &CommitmentSlots,
 ) -> (Box<dyn Iterator<Item = UiAccount>>, Slot) {
     // If the account is not found, `last_modified_slot` will default to zero and
     // we will notify clients that the account no longer exists if we haven't already
@@ -312,6 +314,7 @@ fn filter_signature_result(
     last_notified_slot: Slot,
     _config: Option<bool>,
     _bank: Arc<Bank>,
+    _commitment_slots: &CommitmentSlots,
 ) -> (Box<dyn Iterator<Item = RpcSignatureResult>>, Slot) {
     (
         Box::new(result.into_iter().map(|result| {
@@ -327,6 +330,7 @@ fn filter_program_results(
     last_notified_slot: Slot,
     config: Option<ProgramConfig>,
     bank: Arc<Bank>,
+    commitment_slots: &CommitmentSlots,
 ) -> (Box<dyn Iterator<Item = RpcKeyedAccount>>, Slot) {
 
     info!("filter_program_results for notification: accounts: {:?} program_id: {:?} slot: {:?}", accounts, program_id, last_notified_slot);
@@ -334,10 +338,11 @@ fn filter_program_results(
     let encoding = config.encoding.unwrap_or(UiAccountEncoding::Binary);
     let filters = config.filters;
     let accounts_is_empty = accounts.is_empty();
+    let slot = commitment_slots.clone();
     let keyed_accounts = accounts.into_iter().filter(move |(_, account)| {
         filters.iter().all(|filter_type| match filter_type {
-            RpcFilterType::DataSize(size) => { info!("filter_program_results account is : {:?} filter: size {:?} {:?}", &account, account.data().len(), size);  account.data().len() as u64 == *size},
-            RpcFilterType::Memcmp(compare) => { info!("filter_program_results account is : {:?} filter data match {:?}", &account, compare.bytes_match(account.data())); compare.bytes_match(account.data())},
+            RpcFilterType::DataSize(size) => { info!("filter_program_results slot: {:?}, account is : {:?} filter: size {:?} {:?}", slot, &account, account.data().len(), size);  account.data().len() as u64 == *size},
+            RpcFilterType::Memcmp(compare) => { info!("filter_program_results slot: {:?} account is : {:?} filter data match {:?}", slot, &account, compare.bytes_match(account.data())); compare.bytes_match(account.data())},
         })
     });
     let accounts: Box<dyn Iterator<Item = RpcKeyedAccount>> = if program_id == &spl_token_id_v2_0()
@@ -348,7 +353,7 @@ fn filter_program_results(
     } else {
         Box::new(
             keyed_accounts.map(move |(pubkey, account)| {
-                info!("filter_program_results filtered account: pubkey {:?}, account {:?}", &pubkey, &account);
+                info!("filter_program_results slot: {:?} filtered account: pubkey {:?}, account {:?}", slot, &pubkey, &account);
 		RpcKeyedAccount {
                 pubkey: pubkey.to_string(),
                 account: UiAccount::encode(&pubkey, &account, encoding, None, None),
@@ -365,6 +370,7 @@ fn filter_logs_results(
     last_notified_slot: Slot,
     _config: Option<()>,
     _bank: Arc<Bank>,
+    _commitment_slots: &CommitmentSlots,
 ) -> (Box<dyn Iterator<Item = RpcLogsResponse>>, Slot) {
     match logs {
         None => (Box::new(iter::empty()), last_notified_slot),

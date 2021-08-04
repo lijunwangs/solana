@@ -123,15 +123,21 @@ impl OptimisticallyConfirmedBankTracker {
                 {
                     let mut w_optimistically_confirmed_bank =
                         optimistically_confirmed_bank.write().unwrap();
+                    info!("process_notification ocb, slot: {:?}, confirmed: {:?}", bank.slot(), w_optimistically_confirmed_bank.bank.slot());
                     if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
                         w_optimistically_confirmed_bank.bank = bank.clone();
-                        info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
-                        subscriptions.notify_gossip_subscribers(slot);
                     }
+                    info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
+                    subscriptions.notify_gossip_subscribers(slot);
+                    //} else {
+                    //    info!("notify_gossip_subscribers not called as it is not > then last confirmed: {:?}", slot);
+                    //}
                     drop(w_optimistically_confirmed_bank);
                 } else if slot > bank_forks.read().unwrap().root_bank().slot() {
                     pending_optimistically_confirmed_banks.insert(slot);
+                    info!("Adding to to pending_optimistically_confirmed_banks : {:?}", slot);
                 } else {
+                    info!("The bank seems to be already dropped?: {:?}", slot);
                     inc_new_counter_info!("dropped-already-rooted-optimistic-bank-notification", 1);
                 }
 

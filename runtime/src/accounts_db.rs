@@ -4327,6 +4327,7 @@ impl AccountsDb {
                     pubkey: **pubkey,
                     data_len,
                 };
+                info!("store_accounts_to account to store, slot: {:?}, account: {:?}", slot, &pubkey);
                 (meta, account)
             })
             .collect();
