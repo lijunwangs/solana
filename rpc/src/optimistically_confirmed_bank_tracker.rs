@@ -66,6 +66,7 @@ impl OptimisticallyConfirmedBankTracker {
     ) -> Self {
         let exit_ = exit.clone();
         let mut pending_optimistically_confirmed_banks = HashSet::new();
+        let mut last_notified_slot: Slot = 0;
         let thread_hdl = Builder::new()
             .name("solana-optimistic-bank-tracker".to_string())
             .spawn(move || loop {
@@ -79,6 +80,7 @@ impl OptimisticallyConfirmedBankTracker {
                     &optimistically_confirmed_bank,
                     &subscriptions,
                     &mut pending_optimistically_confirmed_banks,
+                    &mut last_notified_slot,
                 ) {
                     break;
                 }
@@ -93,6 +95,7 @@ impl OptimisticallyConfirmedBankTracker {
         optimistically_confirmed_bank: &Arc<RwLock<OptimisticallyConfirmedBank>>,
         subscriptions: &Arc<RpcSubscriptions>,
         mut pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
+        mut last_notified_slot: &mut Slot,
     ) -> Result<(), RecvTimeoutError> {
         let notification = receiver.recv_timeout(Duration::from_secs(1))?;
         Self::process_notification(
@@ -101,59 +104,75 @@ impl OptimisticallyConfirmedBankTracker {
             optimistically_confirmed_bank,
             subscriptions,
             &mut pending_optimistically_confirmed_banks,
+            &mut last_notified_slot,
         );
         Ok(())
     }
 
-    pub fn process_notification(
+    fn notify_or_defer(
+        subscriptions: &Arc<RpcSubscriptions>,
+        bank_forks: &Arc<RwLock<BankForks>>,
+        bank: &Arc<Bank>,
+        last_notified_slot: Slot,
+        pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
+    ) {
+        if bank.slot() > last_notified_slot {
+            if bank.is_frozen() {
+                info!("notify_or_defer notifying {:?}", bank.slot());
+                subscriptions.notify_gossip_subscribers(bank.slot());
+            } else if bank.slot() > bank_forks.read().unwrap().root_bank().slot() {
+                pending_optimistically_confirmed_banks.insert(bank.slot());
+                info!("notify_or_defer defer notifying {:?}", bank.slot());
+            }
+        }
+    }
+
+    fn process_notification(
         notification: BankNotification,
         bank_forks: &Arc<RwLock<BankForks>>,
         optimistically_confirmed_bank: &Arc<RwLock<OptimisticallyConfirmedBank>>,
         subscriptions: &Arc<RpcSubscriptions>,
-        pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
+        mut pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
+        last_notified_slot: &mut Slot,
     ) {
-        info!("received bank notification: {:?}", notification);
+        debug!("received bank notification: {:?}", notification);
         match notification {
             BankNotification::OptimisticallyConfirmed(slot) => {
-                if let Some(bank) = bank_forks
-                    .read()
-                    .unwrap()
-                    .get(slot)
-                    .filter(|b| b.is_frozen())
-                {
+                if let Some(bank) = bank_forks.read().unwrap().get(slot) {
                     let mut w_optimistically_confirmed_bank =
                         optimistically_confirmed_bank.write().unwrap();
-                    info!("process_notification ocb, slot: {:?}, confirmed: {:?}", bank.slot(), w_optimistically_confirmed_bank.bank.slot());
-                    //if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
-                    //    w_optimistically_confirmed_bank.bank = bank.clone();
-                    //}
-                    //info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
-                    //subscriptions.notify_gossip_subscribers(slot);
-                    //} else {
-                    //    info!("notify_gossip_subscribers not called as it is not > then last confirmed: {:?}", slot);
-                    //}
-                    let last_notified_slot = w_optimistically_confirmed_bank.bank.slot();
-                    if bank.slot() > w_optimistically_confirmed_bank.bank.slot() {
+
+                    if bank.slot() > w_optimistically_confirmed_bank.bank.slot() && bank.is_frozen()
+                    {
                         w_optimistically_confirmed_bank.bank = bank.clone();
-                        subscriptions.notify_gossip_subscribers(slot);
-                        info!("notify_gossip_subscribers in ocbt 1 of confirmed_slot: {:?}", slot);
-                        for parent in bank.parents().iter() {
-                            if parent.slot() > last_notified_slot {
-                                info!("notify_gossip_subscribers notify the parent not notifed before: {:?}", parent.slot());
-                                if parent.is_frozen() {                                    
-                                    subscriptions.notify_gossip_subscribers(parent.slot());
-                                } else {
-                                    pending_optimistically_confirmed_banks.insert(parent.slot());
-                                }
-                            }
-                        }
                     }
+
+                    if slot > *last_notified_slot {
+                        Self::notify_or_defer(
+                            subscriptions,
+                            bank_forks,
+                            bank,
+                            *last_notified_slot,
+                            &mut pending_optimistically_confirmed_banks,
+                        );
+
+                        for parent in bank.parents().iter() {
+                            info!("notify_gossip_subscribers notify the parent not notifed before: {:?}", parent.slot());
+                            Self::notify_or_defer(
+                                subscriptions,
+                                bank_forks,
+                                parent,
+                                *last_notified_slot,
+                                &mut pending_optimistically_confirmed_banks,
+                            );
+                        }
+                        *last_notified_slot = slot;
+                    }
+
                     drop(w_optimistically_confirmed_bank);
                 } else if slot > bank_forks.read().unwrap().root_bank().slot() {
                     pending_optimistically_confirmed_banks.insert(slot);
-                    info!("Adding to to pending_optimistically_confirmed_banks : {:?}", slot);
                 } else {
-                    info!("The bank seems to be already dropped?: {:?}", slot);
                     inc_new_counter_info!("dropped-already-rooted-optimistic-bank-notification", 1);
                 }
 
@@ -186,9 +205,12 @@ impl OptimisticallyConfirmedBankTracker {
                         optimistically_confirmed_bank.write().unwrap();
                     if frozen_slot > w_optimistically_confirmed_bank.bank.slot() {
                         w_optimistically_confirmed_bank.bank = bank;
-                        info!("notify_gossip_subscribers in ocbt 2 of frozen_slot: {:?}", frozen_slot);
-                        subscriptions.notify_gossip_subscribers(frozen_slot);
                     }
+                    info!(
+                        "notify_or_defer sending deferred notification {:?}",
+                        frozen_slot
+                    );
+                    subscriptions.notify_gossip_subscribers(frozen_slot);
                     drop(w_optimistically_confirmed_bank);
                 }
             }
@@ -350,3 +372,4 @@ mod tests {
         assert!(!pending_optimistically_confirmed_banks.contains(&6));
     }
 }
+
