@@ -4,23 +4,23 @@ syntax = "proto3";
 
 package accountsdb_repl;
 
-message UpdatedSlotsRequest {
+message ReplicaUpdatedSlotsRequest {
     uint64 last_replicated_slot = 1;
 }
 
-message UpdatedSlotsResponse {
+message ReplicaUpdatedSlotsResponse {
     repeated uint64 updated_slots = 1;
 }
 
-message SlotAccountsRequest {
+message ReplicaAccountsRequest {
     uint64 slot = 1;
 }
 
-message SlotAccountsResponse {
+message ReplicaAccountsResponse {
     repeated uint64 updated_slots = 1;
 }
 
 service AccountsDbRepl {
-    rpc get_updated_slots(UpdatedSlotsRequest) returns (UpdatedSlotsResponse);
-    rpc get_slot_accounts(SlotAccountsRequest) returns (SlotAccountsResponse);
+    rpc get_updated_slots(ReplicaUpdatedSlotsRequest) returns (ReplicaUpdatedSlotsResponse);
+    rpc get_slot_accounts(ReplicaAccountsRequest) returns (ReplicaAccountsResponse);
 }
