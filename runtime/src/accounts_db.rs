@@ -2200,7 +2200,6 @@ impl AccountsDb {
         let mut dead_storages = vec![];
         let mut find_alive_elapsed = 0;
         let mut create_and_insert_store_elapsed = 0;
-        let mut write_storage_elapsed = 0;
         let mut store_accounts_timing = StoreAccountsTiming::default();
         if aligned_total > 0 {
             let mut start = Measure::start("find_alive_elapsed");
@@ -2254,24 +2253,24 @@ impl AccountsDb {
             // this slot to be read to `self.shrink_candidate_slots`, so delete
             // those here
             self.shrink_candidate_slots.lock().unwrap().remove(&slot);
-
-            // Purge old, overwritten storage entries
-            let mut start = Measure::start("write_storage_elapsed");
-            if let Some(slot_stores) = self.storage.get_slot_stores(slot) {
-                slot_stores.write().unwrap().retain(|_key, store| {
-                    if store.count() == 0 {
-                        self.dirty_stores
-                            .insert((slot, store.append_vec_id()), store.clone());
-                        dead_storages.push(store.clone());
-                        false
-                    } else {
-                        true
-                    }
-                });
-            }
-            start.stop();
-            write_storage_elapsed = start.as_us();
         }
+        // Purge old, overwritten storage entries
+        let mut start = Measure::start("write_storage_elapsed");
+        if let Some(slot_stores) = self.storage.get_slot_stores(slot) {
+            slot_stores.write().unwrap().retain(|_key, store| {
+                if store.count() == 0 {
+                    self.dirty_stores
+                        .insert((slot, store.append_vec_id()), store.clone());
+                    dead_storages.push(store.clone());
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        start.stop();
+        let write_storage_elapsed = start.as_us();
+
         rewrite_elapsed.stop();
 
         let mut recycle_stores_write_elapsed = Measure::start("recycle_stores_write_time");
