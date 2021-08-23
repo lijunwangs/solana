@@ -5393,6 +5393,7 @@ impl AccountsDb {
                     // should be a sufficient indication that the slot is ready to be shrunk
                     // because slots should only have one storage entry, namely the one that was
                     // created by `flush_slot_cache()`.
+                    info!("Add new shrink candidate: {:?} {:?}", slot, store.append_vec_id());
                     {
                         new_shrink_candidates
                             .entry(*slot)
@@ -5411,7 +5412,7 @@ impl AccountsDb {
                         // count could be == 0 if multiple accounts are removed
                         // at once
                         if store.count() != 0 {
-                            debug!(
+                            info!(
                                 "adding: {} {} to shrink candidates: count: {}/{} bytes: {}/{}",
                                 store_id,
                                 slot,
