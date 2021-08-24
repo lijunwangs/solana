@@ -5369,9 +5369,7 @@ impl AccountsDb {
                     self.dirty_stores
                         .insert((*slot, store.append_vec_id()), store.clone());
                     dead_slots.insert(*slot);
-                } else if self.caching_enabled
-                    && self.is_candidate_for_shrink(&store)
-                {
+                } else if self.caching_enabled && self.is_candidate_for_shrink(&store) {
                     // Checking that this single storage entry is ready for shrinking,
                     // should be a sufficient indication that the slot is ready to be shrunk
                     // because slots should only have one storage entry, namely the one that was
