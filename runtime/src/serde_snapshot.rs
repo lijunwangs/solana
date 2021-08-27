@@ -46,7 +46,7 @@ use {
 use solana_frozen_abi::abi_example::IgnoreAsHelper;
 
 mod common;
-mod future;
+pub mod future;
 mod tests;
 mod utils;
 

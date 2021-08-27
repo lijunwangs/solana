@@ -704,7 +704,7 @@ pub(crate) struct BankFieldsToDeserialize {
 // So, sync fields with BankFieldsToDeserialize!
 // all members are made public to keep Bank private and to make versioned serializer workable on this
 #[derive(Debug)]
-pub(crate) struct BankFieldsToSerialize<'a> {
+pub struct BankFieldsToSerialize<'a> {
     pub(crate) blockhash_queue: &'a RwLock<BlockhashQueue>,
     pub(crate) ancestors: &'a AncestorsForSerialization,
     pub(crate) hash: Hash,
@@ -1516,7 +1516,7 @@ impl Bank {
     }
 
     /// Return subset of bank fields representing serializable state
-    pub(crate) fn get_fields_to_serialize<'a>(
+    pub fn get_fields_to_serialize<'a>(
         &'a self,
         ancestors: &'a HashMap<Slot, usize>,
     ) -> BankFieldsToSerialize<'a> {
