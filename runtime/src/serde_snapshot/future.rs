@@ -122,7 +122,7 @@ impl From<DeserializableVersionedBank> for BankFieldsToDeserialize {
 // Serializable version of Bank, not Deserializable to avoid cloning by using refs.
 // Sync fields with DeserializableVersionedBank!
 #[derive(Serialize)]
-pub(crate) struct SerializableVersionedBank<'a> {
+pub struct SerializableVersionedBank<'a> {
     pub(crate) blockhash_queue: &'a RwLock<BlockhashQueue>,
     pub(crate) ancestors: &'a AncestorsForSerialization,
     pub(crate) hash: Hash,

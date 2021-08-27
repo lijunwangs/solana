@@ -42,7 +42,16 @@ message ReplicaBankInfo {
     bytes bank_data = 1;
 }
 
+message ReplicaBankInfoRequest {
+    uint64 slot = 1;
+}
+
+message ReplicaBankInfoResponse {
+    ReplicaBankInfo bank_info = 1;
+}
+
 service AccountsDbRepl {
     rpc get_confirmed_slots(ReplicaSlotConfirmationRequest) returns (ReplicaSlotConfirmationResponse);
     rpc get_slot_accounts(ReplicaAccountsRequest) returns (ReplicaAccountsResponse);
+    rpc get_bank_info(ReplicaBankInfoRequest) returns (ReplicaBankInfoResponse);
 }

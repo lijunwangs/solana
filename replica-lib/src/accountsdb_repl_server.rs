@@ -29,6 +29,12 @@ pub trait ReplicaAccountsServer {
         &self,
         request: &ReplicaAccountsRequest,
     ) -> Result<ReplicaAccountsResponse, tonic::Status>;
+
+    fn get_bank_info(
+        &self,
+        request: &ReplicaBankInfoRequest,
+    ) -> Result<ReplicaBankInfoResponse, tonic::Status>;
+
     fn join(&mut self) -> thread::Result<()>;
 }
 
@@ -56,6 +62,15 @@ impl accounts_db_repl_server::AccountsDbRepl for AccountsDbReplServer {
     ) -> Result<tonic::Response<ReplicaAccountsResponse>, tonic::Status> {
         let server = self.accounts_server.read().unwrap();
         let result = server.get_slot_accounts(&request.into_inner());
+        result.map(tonic::Response::new)
+    }
+
+    async fn get_bank_info(
+        &self,
+        request: tonic::Request<ReplicaBankInfoRequest>,
+    ) -> Result<tonic::Response<ReplicaBankInfoResponse>, tonic::Status> {
+        let server = self.accounts_server.read().unwrap();
+        let result = server.get_bank_info(&request.into_inner());
         result.map(tonic::Response::new)
     }
 }

@@ -1,14 +1,17 @@
 use {
     crate::accountsdb_repl_server::{
         self, ReplicaAccountData, ReplicaAccountInfo, ReplicaAccountMeta, ReplicaAccountsServer,
+        ReplicaBankInfo, ReplicaBankInfoRequest, ReplicaBankInfoResponse,
     },
+    bincode,
     solana_runtime::{
         accounts_cache::CachedAccount, accounts_db::LoadedAccount, append_vec::StoredAccountMeta,
-        bank_forks::BankForks,
+        bank_forks::BankForks, serde_snapshot::future::SerializableVersionedBank,
     },
     solana_sdk::account::Account,
     std::{
         cmp::Eq,
+        collections::HashMap,
         sync::{Arc, RwLock},
         thread,
     },
@@ -79,6 +82,25 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
                 });
 
                 Ok(accountsdb_repl_server::ReplicaAccountsResponse { accounts })
+            }
+        }
+    }
+
+    fn get_bank_info(
+        &self,
+        request: &ReplicaBankInfoRequest,
+    ) -> Result<ReplicaBankInfoResponse, tonic::Status> {
+        let slot = request.slot;
+        match self.bank_forks.read().unwrap().get(slot) {
+            None => Err(tonic::Status::not_found("The slot is not found")),
+            Some(bank) => {
+                let ancestors = HashMap::default();
+                let bank_fields = bank.get_fields_to_serialize(&ancestors);
+                let serializable_bank = SerializableVersionedBank::from(bank_fields);
+                let bank_info = Some(ReplicaBankInfo {
+                    bank_data: bincode::serialize(&serializable_bank).unwrap(),
+                });
+                Ok(accountsdb_repl_server::ReplicaBankInfoResponse { bank_info })
             }
         }
     }
