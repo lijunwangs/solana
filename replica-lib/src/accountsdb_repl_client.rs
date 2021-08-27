@@ -18,6 +18,7 @@ pub enum ReplicaRpcError {
     ConnectionError(String),
     GetSlotsError(String),
     GetAccountsError(String),
+    GetBankInfoError(String),
 }
 
 impl From<tonic::transport::Error> for ReplicaRpcError {
@@ -70,6 +71,16 @@ impl AccountsDbReplClient {
             Err(status) => Err(ReplicaRpcError::GetAccountsError(status.to_string())),
         }
     }
+
+    pub async fn get_bank_info(&mut self, slot: Slot) -> Result<ReplicaBankInfo, ReplicaRpcError> {
+        let request = ReplicaBankInfoRequest { slot };
+        let response = self.client.get_bank_info(Request::new(request)).await;
+
+        match response {
+            Ok(response) => Ok(response.into_inner().bank_info.unwrap()),
+            Err(status) => Err(ReplicaRpcError::GetBankInfoError(status.to_string())),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -115,5 +126,10 @@ impl AccountsDbReplClientService {
     ) -> Result<Vec<ReplicaAccountInfo>, ReplicaRpcError> {
         self.runtime
             .block_on(self.accountsdb_repl_client.get_slot_accounts(slot))
+    }
+
+    pub fn get_bank_info(&mut self, slot: Slot) -> Result<ReplicaBankInfo, ReplicaRpcError> {
+        self.runtime
+            .block_on(self.accountsdb_repl_client.get_bank_info(slot))
     }
 }
