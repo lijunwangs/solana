@@ -295,6 +295,10 @@ fn test_replica_bootstrap() {
         account_indexes: AccountSecondaryIndexes::default(),
         accounts_db_caching_enabled: false,
         replica_exit: Arc::new(RwLock::new(Exit::default())),
+        genesis_config: None,
+        accounts_db_test_hash_calculation: false,
+        accounts_db_use_index_hash_calculation: false,
+        abs_request_sender: None,
     };
     let _replica_node = ReplicaNode::new(config);
 }
