@@ -450,12 +450,12 @@ pub struct BankRc {
     pub accounts: Arc<Accounts>,
 
     /// Previous checkpoint of this bank
-    pub(crate) parent: RwLock<Option<Arc<Bank>>>,
+    pub parent: RwLock<Option<Arc<Bank>>>,
 
     /// Current slot
-    pub(crate) slot: Slot,
+    pub slot: Slot,
 
-    pub(crate) bank_id_generator: Arc<AtomicU64>,
+    pub bank_id_generator: Arc<AtomicU64>,
 }
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
@@ -712,7 +712,7 @@ impl NonceRollbackInfo for NonceRollbackFull {
 // Sync fields with BankFieldsToSerialize! This is paired with it.
 // All members are made public to remain Bank's members private and to make versioned deserializer workable on this
 #[derive(Clone, Debug, Default)]
-pub(crate) struct BankFieldsToDeserialize {
+pub struct BankFieldsToDeserialize {
     pub(crate) blockhash_queue: BlockhashQueue,
     pub(crate) ancestors: AncestorsForSerialization,
     pub(crate) hash: Hash,
@@ -1453,7 +1453,7 @@ impl Bank {
 
     /// Create a bank from explicit arguments and deserialized fields from snapshot
     #[allow(clippy::float_cmp)]
-    pub(crate) fn new_from_fields(
+    pub fn new_from_fields(
         bank_rc: BankRc,
         genesis_config: &GenesisConfig,
         fields: BankFieldsToDeserialize,
