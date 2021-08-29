@@ -83,7 +83,7 @@ pub struct ReplicaNode {
     snapshot_packager_service: Option<SnapshotPackagerService>,
     accounts_hash_verifier: Option<AccountsHashVerifier>,
     accounts_background_service: Option<AccountsBackgroundService>,
-    exit: Arc<AtomicBool>,
+    replica_exit: Arc<RwLock<Exit>>,
 }
 
 // Struct maintaining information about banks
@@ -291,6 +291,14 @@ impl ReplicaNode {
         };
 
         let exit = Arc::new(AtomicBool::new(false));
+        {
+            let exit = exit.clone();
+            replica_config
+                .replica_exit
+                .write()
+                .unwrap()
+                .register_exit(Box::new(move || exit.store(true, Ordering::Relaxed)));
+        }
 
         let bank_info =
             initialize_from_snapshot(&replica_config, &snapshot_config, &genesis_config);
@@ -391,6 +399,7 @@ impl ReplicaNode {
         replica_config.genesis_config = Some(genesis_config);
         replica_config.snapshot_config = Some(snapshot_config);
 
+        let replica_exit = replica_config.replica_exit.clone();
         let replica_config = Arc::new(replica_config);
 
         let accountsdb_repl_service = Some(
@@ -416,12 +425,12 @@ impl ReplicaNode {
             snapshot_packager_service,
             accounts_hash_verifier: Some(accounts_hash_verifier),
             accounts_background_service: Some(accounts_background_service),
-            exit,
+            replica_exit,
         }
     }
 
     pub fn exit(&mut self) {
-        self.exit.store(true, Ordering::Relaxed);
+        self.replica_exit.write().unwrap().exit();
     }
 
     pub fn close(mut self) {
