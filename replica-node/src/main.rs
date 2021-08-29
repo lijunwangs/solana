@@ -402,6 +402,7 @@ pub fn main() {
         account_indexes: AccountSecondaryIndexes::default(),
         accounts_db_caching_enabled: false,
         replica_exit: Arc::new(RwLock::new(Exit::default())),
+        genesis_config: None,
     };
 
     let replica = ReplicaNode::new(config);
