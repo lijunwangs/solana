@@ -11,7 +11,11 @@ use {
         bank::{Bank, BankFieldsToDeserialize, BankRc},
         serde_snapshot::future::DeserializableVersionedBank,
     },
-    solana_sdk::{clock::Slot, pubkey::Pubkey},
+    solana_sdk::{
+        account::{Account, AccountSharedData},
+        clock::Slot,
+        pubkey::Pubkey,
+    },
     std::{
         sync::{Arc, RwLock},
         thread::{self, sleep, Builder, JoinHandle},
@@ -46,11 +50,15 @@ impl AccountsDbReplServiceImpl {
         }
     }
 
-    fn replicate_accounts_for_slot(&mut self, slot: Slot) -> Result<(), ReplicaRpcError> {
+    fn replicate_accounts_for_slot(
+        &mut self,
+        bank: &Bank,
+        slot: Slot,
+    ) -> Result<(), ReplicaRpcError> {
         match self.accountsdb_repl_client.get_slot_accounts(slot) {
             Err(err) => {
                 error!(
-                    "Ran into error getting accounts for slot {:?}, error: {:?}",
+                    "Ran into an error getting accounts for slot {:?}, error: {:?}",
                     slot, err
                 );
                 Err(err)
@@ -61,6 +69,21 @@ impl AccountsDbReplServiceImpl {
                         "Received account: {:?}",
                         Pubkey::new(&account.account_meta.as_ref().unwrap().pubkey)
                     );
+
+                    let meta_data = &account.account_meta.as_ref().unwrap();
+                    let account = Account {
+                        lamports: meta_data.lamports,
+                        owner: Pubkey::new(&meta_data.owner),
+                        executable: meta_data.executable,
+                        rent_epoch: meta_data.rent_epoch,
+                        data: account.data.as_ref().unwrap().data.clone(),
+                    };
+                    let account_data = AccountSharedData::from(account);
+                    let pubkey = Pubkey::new(&meta_data.pubkey);
+                    bank.rc
+                        .accounts
+                        .accounts_db
+                        .store_cached(slot, &[(&pubkey, &account_data)]);
                 }
                 Ok(())
             }
@@ -71,7 +94,7 @@ impl AccountsDbReplServiceImpl {
         match self.accountsdb_repl_client.get_bank_info(slot) {
             Err(err) => {
                 error!(
-                    "Ran into error getting bank for slot {:?}, error: {:?}",
+                    "Ran into an error getting bank for slot {:?}, error: {:?}",
                     slot, err
                 );
                 Err(err)
@@ -116,15 +139,16 @@ impl AccountsDbReplServiceImpl {
                     info!("Received updated slots: {:?}", slots);
                     if !slots.is_empty() {
                         for slot in slots.iter() {
-                            if self.replicate_bank(*slot).is_err() {
+                            let bank = self.replicate_bank(*slot);
+                            if bank.is_err() {
                                 error!(
                                     "Ran into problem replicating bank for slot {:}. Quit.",
                                     slot
                                 );
                                 break;
                             }
-
-                            if self.replicate_accounts_for_slot(*slot).is_err() {
+                            let bank = bank.unwrap();
+                            if self.replicate_accounts_for_slot(&bank, *slot).is_err() {
                                 error!(
                                     "Ran into problem replicating accounts for slot {:}. Quit.",
                                     slot
