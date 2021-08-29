@@ -5354,7 +5354,7 @@ dependencies = [
  "solana-rpc",
  "solana-runtime",
  "solana-sdk",
- "tokio",
+ "tokio 1.11.0",
  "tonic",
  "tonic-build",
 ]

@@ -187,6 +187,18 @@ pub fn main() {
                 .help("Allow contacting private ip addresses")
                 .hidden(true),
         )
+        .arg(
+            Arg::with_name("accounts_db_test_hash_calculation")
+                .long("accounts-db-test-hash-calculation")
+                .help("Enables testing of hash calculation using stores in \
+                      AccountsHashVerifier. This has a computational cost."),
+        )
+        .arg(
+            Arg::with_name("accounts_db_index_hashing")
+                .long("accounts-db-index-hashing")
+                .help("Enables the use of the index in hash calculation in \
+                       AccountsHashVerifier/Accounts Background Service."),
+        )
         .get_matches();
 
     let bind_address = solana_net_utils::parse_host(matches.value_of("bind_address").unwrap())
@@ -403,6 +415,9 @@ pub fn main() {
         accounts_db_caching_enabled: false,
         replica_exit: Arc::new(RwLock::new(Exit::default())),
         genesis_config: None,
+        accounts_db_test_hash_calculation: matches.is_present("accounts_db_test_hash_calculation"),
+        accounts_db_use_index_hash_calculation: matches.is_present("accounts_db_index_hashing"),
+        abs_request_sender: None,
     };
 
     let replica = ReplicaNode::new(config);
