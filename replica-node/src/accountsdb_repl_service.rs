@@ -129,6 +129,18 @@ impl AccountsDbReplServiceImpl {
         }
     }
 
+    fn replicate_slot(&mut self, slot: Slot) -> Result<(), ReplicaRpcError> {
+        let bank = self.replicate_bank(slot)?;
+        self.replicate_accounts_for_slot(&bank, slot)?;
+        bank.freeze();
+        self.bank_info.bank_forks.write().unwrap().set_root(
+            slot,
+            self.replica_config.abs_request_sender.as_ref().unwrap(),
+            Some(slot),
+        );
+        Ok(())
+    }
+
     pub fn run_service(&mut self) {
         loop {
             match self
@@ -139,28 +151,24 @@ impl AccountsDbReplServiceImpl {
                     info!("Received updated slots: {:?}", slots);
                     if !slots.is_empty() {
                         for slot in slots.iter() {
-                            let bank = self.replicate_bank(*slot);
-                            if bank.is_err() {
-                                error!(
-                                    "Ran into problem replicating bank for slot {:}. Quit.",
-                                    slot
-                                );
-                                break;
-                            }
-                            let bank = bank.unwrap();
-                            if self.replicate_accounts_for_slot(&bank, *slot).is_err() {
-                                error!(
-                                    "Ran into problem replicating accounts for slot {:}. Quit.",
-                                    slot
-                                );
-                                break;
+                            match self.replicate_slot(*slot) {
+                                Err(err) => {
+                                    error!(
+                                        "Ran into an error while replicaing slot {:?}, error: {:?}",
+                                        slot, err
+                                    );
+                                    break;
+                                }
+                                Ok(_) => {
+                                    trace!("Successfully replicated slot {:?}", slot);
+                                }
                             }
                         }
                         self.last_replicated_slot = slots[slots.len() - 1];
                     }
                 }
                 Err(err) => {
-                    error!("Ran into error getting updated slots: {:?}", err);
+                    error!("Ran into an error getting updated slots: {:?}", err);
                 }
             }
             sleep(Duration::from_millis(200));
