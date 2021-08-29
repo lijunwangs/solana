@@ -59,6 +59,7 @@ pub struct ReplicaNodeConfig {
     pub accounts_db_caching_enabled: bool,
     pub replica_exit: Arc<RwLock<Exit>>,
     pub socket_addr_space: SocketAddrSpace,
+    pub genesis_config: Option<GenesisConfig>,
 }
 
 pub struct ReplicaNode {
@@ -69,8 +70,8 @@ pub struct ReplicaNode {
 }
 
 // Struct maintaining information about banks
-struct ReplicaBankInfo {
-    bank_forks: Arc<RwLock<BankForks>>,
+pub struct ReplicaNodeBankInfo {
+    pub bank_forks: Arc<RwLock<BankForks>>,
     optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
     leader_schedule_cache: Arc<LeaderScheduleCache>,
     block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
@@ -78,12 +79,12 @@ struct ReplicaBankInfo {
 
 // Initialize the replica by downloading snapshot from the peer, initialize
 // the BankForks, OptimisticallyConfirmedBank, LeaderScheduleCache and
-// BlockCommitmentCache and return the info wrapped as ReplicaBankInfo.
+// BlockCommitmentCache and return the info wrapped as ReplicaNodeBankInfo.
 fn initialize_from_snapshot(
     replica_config: &ReplicaNodeConfig,
     snapshot_config: &SnapshotConfig,
     genesis_config: &GenesisConfig,
-) -> ReplicaBankInfo {
+) -> ReplicaNodeBankInfo {
     info!(
         "Downloading snapshot from the peer into {:?}",
         replica_config.snapshot_archives_dir
@@ -149,7 +150,7 @@ fn initialize_from_snapshot(
     block_commitment_cache.initialize_slots(bank0_slot);
     let block_commitment_cache = Arc::new(RwLock::new(block_commitment_cache));
 
-    ReplicaBankInfo {
+    ReplicaNodeBankInfo {
         bank_forks,
         optimistically_confirmed_bank,
         leader_schedule_cache,
@@ -161,14 +162,14 @@ fn start_client_rpc_services(
     replica_config: &ReplicaNodeConfig,
     genesis_config: &GenesisConfig,
     cluster_info: Arc<ClusterInfo>,
-    bank_info: &ReplicaBankInfo,
+    bank_info: &ReplicaNodeBankInfo,
     socket_addr_space: &SocketAddrSpace,
 ) -> (
     Option<JsonRpcService>,
     Option<PubSubService>,
     Option<OptimisticallyConfirmedBankTracker>,
 ) {
-    let ReplicaBankInfo {
+    let ReplicaNodeBankInfo {
         bank_forks,
         optimistically_confirmed_bank,
         leader_schedule_cache,
@@ -250,7 +251,7 @@ fn start_client_rpc_services(
 }
 
 impl ReplicaNode {
-    pub fn new(replica_config: ReplicaNodeConfig) -> Self {
+    pub fn new(mut replica_config: ReplicaNodeConfig) -> Self {
         let genesis_config = download_then_check_genesis_hash(
             &replica_config.rpc_peer_addr,
             &replica_config.ledger_path,
@@ -296,9 +297,20 @@ impl ReplicaNode {
             "Starting AccountsDbReplService from slot {:?}",
             last_replicated_slot
         );
+
+        replica_config.genesis_config = Some(genesis_config);
+        replica_config.snapshot_config = Some(snapshot_config);
+
+        let replica_config = Arc::new(replica_config);
+
         let accountsdb_repl_service = Some(
-            AccountsDbReplService::new(last_replicated_slot, accountsdb_repl_client_config)
-                .expect("Failed to start AccountsDb replication service"),
+            AccountsDbReplService::new(
+                last_replicated_slot,
+                accountsdb_repl_client_config,
+                replica_config,
+                bank_info,
+            )
+            .expect("Failed to start AccountsDb replication service"),
         );
 
         info!(

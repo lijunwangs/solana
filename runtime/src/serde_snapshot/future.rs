@@ -45,7 +45,7 @@ use std::sync::RwLock;
 // because it's handled by SerializableVersionedBank.
 // So, sync fields with it!
 #[derive(Clone, Deserialize)]
-pub(crate) struct DeserializableVersionedBank {
+pub struct DeserializableVersionedBank {
     pub(crate) blockhash_queue: BlockhashQueue,
     pub(crate) ancestors: AncestorsForSerialization,
     pub(crate) hash: Hash,
