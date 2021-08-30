@@ -6,6 +6,7 @@ use {
     solana_replica_lib::accountsdb_repl_client::{
         AccountsDbReplClientService, AccountsDbReplClientServiceConfig, ReplicaRpcError,
     },
+    solana_rpc::optimistically_confirmed_bank_tracker::BankNotification,
     solana_runtime::{
         accounts::Accounts,
         bank::{Bank, BankFieldsToDeserialize, BankRc},
@@ -138,6 +139,12 @@ impl AccountsDbReplServiceImpl {
             self.replica_config.abs_request_sender.as_ref().unwrap(),
             Some(slot),
         );
+
+        self.bank_info
+            .bank_notification_sender
+            .send(BankNotification::OptimisticallyConfirmed(slot))
+            .unwrap_or_else(|err| warn!("bank_notification_sender failed: {:?}", err));
+
         Ok(())
     }
 

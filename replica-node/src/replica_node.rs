@@ -17,7 +17,8 @@ use {
     solana_rpc::{
         max_slots::MaxSlots,
         optimistically_confirmed_bank_tracker::{
-            OptimisticallyConfirmedBank, OptimisticallyConfirmedBankTracker,
+            BankNotificationReceiver, BankNotificationSender, OptimisticallyConfirmedBank,
+            OptimisticallyConfirmedBankTracker,
         },
         rpc::JsonRpcConfig,
         rpc_pubsub_service::{PubSubConfig, PubSubService},
@@ -88,9 +89,10 @@ pub struct ReplicaNode {
 // Struct maintaining information about banks
 pub struct ReplicaNodeBankInfo {
     pub bank_forks: Arc<RwLock<BankForks>>,
-    optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
-    leader_schedule_cache: Arc<LeaderScheduleCache>,
-    block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
+    pub optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+    pub leader_schedule_cache: Arc<LeaderScheduleCache>,
+    pub block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
+    pub bank_notification_sender: BankNotificationSender,
 }
 
 // Initialize the replica by downloading snapshot from the peer, initialize
@@ -100,6 +102,7 @@ fn initialize_from_snapshot(
     replica_config: &ReplicaNodeConfig,
     snapshot_config: &SnapshotConfig,
     genesis_config: &GenesisConfig,
+    bank_notification_sender: BankNotificationSender,
 ) -> ReplicaNodeBankInfo {
     info!(
         "Downloading snapshot from the peer into {:?}",
@@ -171,6 +174,7 @@ fn initialize_from_snapshot(
         optimistically_confirmed_bank,
         leader_schedule_cache,
         block_commitment_cache,
+        bank_notification_sender,
     }
 }
 
@@ -180,6 +184,7 @@ fn start_client_rpc_services(
     cluster_info: Arc<ClusterInfo>,
     bank_info: &ReplicaNodeBankInfo,
     socket_addr_space: &SocketAddrSpace,
+    bank_notification_receiver: BankNotificationReceiver,
     exit: Arc<AtomicBool>,
 ) -> (
     Option<JsonRpcService>,
@@ -191,6 +196,7 @@ fn start_client_rpc_services(
         optimistically_confirmed_bank,
         leader_schedule_cache,
         block_commitment_cache,
+        bank_notification_sender: _bank_notification_sender,
     } = bank_info;
     let blockstore = Arc::new(
         Blockstore::open_with_access_type(
@@ -226,7 +232,6 @@ fn start_client_rpc_services(
         ));
     }
 
-    let (_bank_notification_sender, bank_notification_receiver) = unbounded();
     (
         Some(JsonRpcService::new(
             replica_config.rpc_addr,
@@ -300,8 +305,14 @@ impl ReplicaNode {
                 .register_exit(Box::new(move || exit.store(true, Ordering::Relaxed)));
         }
 
-        let bank_info =
-            initialize_from_snapshot(&replica_config, &snapshot_config, &genesis_config);
+        let (bank_notification_sender, bank_notification_receiver) = unbounded();
+
+        let bank_info = initialize_from_snapshot(
+            &replica_config,
+            &snapshot_config,
+            &genesis_config,
+            bank_notification_sender,
+        );
 
         let (json_rpc_service, pubsub_service, optimistically_confirmed_bank_tracker) =
             start_client_rpc_services(
@@ -310,6 +321,7 @@ impl ReplicaNode {
                 replica_config.cluster_info.clone(),
                 &bank_info,
                 &replica_config.socket_addr_space,
+                bank_notification_receiver,
                 exit.clone(),
             );
 
