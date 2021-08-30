@@ -125,6 +125,8 @@ impl AccountsDbReplServiceImpl {
                     None,
                     false,
                 );
+
+                bank.set_drop_callback_via_parent(&parent);
                 Ok(bank)
             }
         }
@@ -133,6 +135,7 @@ impl AccountsDbReplServiceImpl {
     fn replicate_slot(&mut self, slot: Slot) -> Result<(), ReplicaRpcError> {
         let bank = self.replicate_bank(slot)?;
         self.replicate_accounts_for_slot(&bank, slot)?;
+
         bank.freeze();
 
         let mut bank_forks = self.bank_info.bank_forks.write().unwrap();
