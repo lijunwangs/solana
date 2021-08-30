@@ -1378,6 +1378,18 @@ impl Bank {
         *self.drop_callback.write().unwrap() = OptionalDropCallback(callback);
     }
 
+    pub fn set_drop_callback_via_parent(&self, parent: &Arc<Bank>) {
+        let drop_callback = parent
+            .drop_callback
+            .read()
+            .unwrap()
+            .0
+            .as_ref()
+            .map(|drop_callback| drop_callback.clone_box());
+
+        self.set_callback(drop_callback);
+    }
+
     /// Like `new_from_parent` but additionally:
     /// * Doesn't assume that the parent is anywhere near `slot`, parent could be millions of slots
     /// in the past
