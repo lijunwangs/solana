@@ -134,11 +134,15 @@ impl AccountsDbReplServiceImpl {
         let bank = self.replicate_bank(slot)?;
         self.replicate_accounts_for_slot(&bank, slot)?;
         bank.freeze();
-        self.bank_info.bank_forks.write().unwrap().set_root(
+
+        let mut bank_forks = self.bank_info.bank_forks.write().unwrap();
+        bank_forks.insert(bank);
+        bank_forks.set_root(
             slot,
             self.replica_config.abs_request_sender.as_ref().unwrap(),
             Some(slot),
         );
+        drop(bank_forks);
 
         self.bank_info
             .bank_notification_sender
