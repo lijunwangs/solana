@@ -51,6 +51,30 @@ impl AccountsDbReplServiceImpl {
         }
     }
 
+    fn persist_accounts(bank: &Bank, accounts: &[ReplicaAccountInfo]) {
+        for account in accounts.iter() {
+            debug!(
+                "Received account: {:?}",
+                Pubkey::new(&account.account_meta.as_ref().unwrap().pubkey)
+            );
+
+            let meta_data = &account.account_meta.as_ref().unwrap();
+            let account = Account {
+                lamports: meta_data.lamports,
+                owner: Pubkey::new(&meta_data.owner),
+                executable: meta_data.executable,
+                rent_epoch: meta_data.rent_epoch,
+                data: account.data.as_ref().unwrap().data.clone(),
+            };
+            let account_data = AccountSharedData::from(account);
+            let pubkey = Pubkey::new(&meta_data.pubkey);
+            bank.rc
+                .accounts
+                .accounts_db
+                .store_cached(slot, &[(&pubkey, &account_data)]);
+        }
+    }
+
     fn replicate_accounts_for_slot(
         &mut self,
         bank: &Bank,
@@ -65,30 +89,40 @@ impl AccountsDbReplServiceImpl {
                 Err(err)
             }
             Ok(accounts) => {
-                for account in accounts.iter() {
-                    debug!(
-                        "Received account: {:?}",
-                        Pubkey::new(&account.account_meta.as_ref().unwrap().pubkey)
-                    );
-
-                    let meta_data = &account.account_meta.as_ref().unwrap();
-                    let account = Account {
-                        lamports: meta_data.lamports,
-                        owner: Pubkey::new(&meta_data.owner),
-                        executable: meta_data.executable,
-                        rent_epoch: meta_data.rent_epoch,
-                        data: account.data.as_ref().unwrap().data.clone(),
-                    };
-                    let account_data = AccountSharedData::from(account);
-                    let pubkey = Pubkey::new(&meta_data.pubkey);
-                    bank.rc
-                        .accounts
-                        .accounts_db
-                        .store_cached(slot, &[(&pubkey, &account_data)]);
-                }
+                Self::persist_accounts(bank, &accounts);
                 Ok(())
             }
         }
+    }
+
+    fn create_bank(&self, bank_info: &ReplicaBankInfo) -> Bank {
+        let deserializable_bank: DeserializableVersionedBank =
+        bincode::deserialize(&bank_info.bank_data).unwrap();
+        let bank_fields = BankFieldsToDeserialize::from(deserializable_bank);
+        let parent = self.bank_info.bank_forks.read().unwrap().root_bank();
+
+        let bank_rc = BankRc {
+            accounts: Arc::new(Accounts::new_from_parent(
+                &parent.rc.accounts,
+                slot,
+                parent.slot(),
+            )),
+            parent: RwLock::new(Some(parent.clone())),
+            slot,
+            bank_id_generator: parent.rc.bank_id_generator.clone(),
+        };
+
+        let bank = Bank::new_from_fields(
+            bank_rc,
+            self.replica_config.genesis_config.as_ref().unwrap(),
+            bank_fields,
+            None,
+            None,
+            false,
+        );
+
+        bank.set_drop_callback_via_parent(&parent);
+        bank
     }
 
     fn replicate_bank(&mut self, slot: Slot) -> Result<Bank, ReplicaRpcError> {
@@ -101,33 +135,7 @@ impl AccountsDbReplServiceImpl {
                 Err(err)
             }
             Ok(bank_info) => {
-                let deserializable_bank: DeserializableVersionedBank =
-                    bincode::deserialize(&bank_info.bank_data).unwrap();
-                let bank_fields = BankFieldsToDeserialize::from(deserializable_bank);
-                let parent = self.bank_info.bank_forks.read().unwrap().root_bank();
-
-                let bank_rc = BankRc {
-                    accounts: Arc::new(Accounts::new_from_parent(
-                        &parent.rc.accounts,
-                        slot,
-                        parent.slot(),
-                    )),
-                    parent: RwLock::new(Some(parent.clone())),
-                    slot,
-                    bank_id_generator: parent.rc.bank_id_generator.clone(),
-                };
-
-                let bank = Bank::new_from_fields(
-                    bank_rc,
-                    self.replica_config.genesis_config.as_ref().unwrap(),
-                    bank_fields,
-                    None,
-                    None,
-                    false,
-                );
-
-                bank.set_drop_callback_via_parent(&parent);
-                Ok(bank)
+                Ok(self.create_bank(bank_info))
             }
         }
     }
@@ -156,6 +164,16 @@ impl AccountsDbReplServiceImpl {
     }
 
     pub fn run_service(&mut self) {
+
+        match self.accountsdb_repl_client.get_diff_between_slot(self.last_replicated_slot, None) {
+            Ok((latest_slot, accounts)) => {
+                self.last_replicated_slot = latest_slot;
+            }
+            Err(err) => {
+                error!("Ran into an error getting updated slots: {:?} from base_slot: {:?}", err, self.last_replicated_slot);
+            }
+        }
+
         loop {
             match self
                 .accountsdb_repl_client
