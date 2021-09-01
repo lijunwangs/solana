@@ -18,12 +18,16 @@ impl AccountsDbReplServerFactory {
         confirmed_bank_receiver: Receiver<Slot>,
         bank_forks: Arc<RwLock<BankForks>>,
     ) -> AccountsDbReplService {
+        let confirmed_slots_server = Arc::new(RwLock::new(ReplicaSlotConfirmationServerImpl::new(
+            confirmed_bank_receiver,
+        )));
         AccountsDbReplService::new(
             config,
-            Arc::new(RwLock::new(ReplicaSlotConfirmationServerImpl::new(
-                confirmed_bank_receiver,
+            confirmed_slots_server.clone(),
+            Arc::new(RwLock::new(ReplicaAccountsServerImpl::new(
+                confirmed_slots_server,
+                bank_forks,
             ))),
-            Arc::new(RwLock::new(ReplicaAccountsServerImpl::new(bank_forks))),
         )
     }
 }
