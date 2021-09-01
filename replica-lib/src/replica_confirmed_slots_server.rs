@@ -118,4 +118,9 @@ impl ReplicaSlotConfirmationServerImpl {
             })
             .unwrap()
     }
+
+    pub fn get_latest_confirmed_slot(&self) -> Option<Slot> {
+        let slot_set = self.eligible_slot_set.slot_set.read().unwrap();
+        slot_set.back().map(|slot| slot.0)
+    }
 }

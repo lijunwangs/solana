@@ -22,6 +22,7 @@ message ReplicaAccountMeta {
     bytes owner = 3;
     bool executable = 4;
     uint64 rent_epoch = 5;
+    uint64 slot = 6;
 }
 
 message ReplicaAccountData {
@@ -50,8 +51,23 @@ message ReplicaBankInfoResponse {
     ReplicaBankInfo bank_info = 1;
 }
 
+// message to get the incremental difference between
+// the base slot where we download the snapshot from
+// and the optional latest slot.
+message ReplicaDiffBetweenSlotsRequest {
+    uint64 base_slot = 1;
+    uint64 latest_slot = 2;
+}
+
+message ReplicaDiffBetweenSlotsResponse {
+    uint64 latest_slot = 1;
+    ReplicaBankInfo bank_info = 2;
+    repeated ReplicaAccountInfo accounts = 3;
+}
+
 service AccountsDbRepl {
     rpc get_confirmed_slots(ReplicaSlotConfirmationRequest) returns (ReplicaSlotConfirmationResponse);
     rpc get_slot_accounts(ReplicaAccountsRequest) returns (ReplicaAccountsResponse);
     rpc get_bank_info(ReplicaBankInfoRequest) returns (ReplicaBankInfoResponse);
+    rpc get_diff_between_slots(ReplicaDiffBetweenSlotsRequest) returns (ReplicaDiffBetweenSlotsResponse);
 }
