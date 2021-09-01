@@ -40,7 +40,8 @@ message ReplicaAccountsResponse {
 }
 
 message ReplicaBankInfo {
-    bytes bank_data = 1;
+    uint64 slot = 1;
+    bytes bank_data = 2;
 }
 
 message ReplicaBankInfoRequest {

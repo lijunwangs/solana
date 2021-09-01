@@ -33,8 +33,7 @@ use {
         bank_forks::BankForks,
         commitment::BlockCommitmentCache,
         hardened_unpack::MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
-
-        snapshot_config::{LastFullSnapshotSlot, SnapshotConfig},
+        snapshot_config::SnapshotConfig,
         snapshot_package::PendingSnapshotPackage,
         snapshot_utils::{self, ArchiveFormat},
     },
@@ -396,6 +395,7 @@ impl ReplicaNode {
             replica_config.accounts_db_caching_enabled,
             replica_config.accounts_db_test_hash_calculation,
             replica_config.accounts_db_use_index_hash_calculation,
+            None,
         );
 
         let accountsdb_repl_client_config = AccountsDbReplClientServiceConfig {

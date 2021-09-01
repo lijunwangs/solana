@@ -182,6 +182,7 @@ impl ReplicaAccountsServerImpl {
         let bank_fields = bank.get_fields_to_serialize(&ancestors);
         let serializable_bank = SerializableVersionedBank::from(bank_fields);
         let bank_info = Some(ReplicaBankInfo {
+            slot: bank.slot(),
             bank_data: bincode::serialize(&serializable_bank).unwrap(),
         });
         bank_info

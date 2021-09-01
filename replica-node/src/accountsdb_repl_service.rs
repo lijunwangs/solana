@@ -4,7 +4,8 @@ use {
     bincode,
     log::*,
     solana_replica_lib::accountsdb_repl_client::{
-        AccountsDbReplClientService, AccountsDbReplClientServiceConfig, ReplicaRpcError,
+        AccountsDbReplClientService, AccountsDbReplClientServiceConfig, ReplicaAccountInfo,
+        ReplicaBankInfo, ReplicaRpcError,
     },
     solana_rpc::optimistically_confirmed_bank_tracker::BankNotification,
     solana_runtime::{
@@ -71,7 +72,7 @@ impl AccountsDbReplServiceImpl {
             bank.rc
                 .accounts
                 .accounts_db
-                .store_cached(slot, &[(&pubkey, &account_data)]);
+                .store_cached(meta_data.slot, &[(&pubkey, &account_data)]);
         }
     }
 
@@ -97,18 +98,18 @@ impl AccountsDbReplServiceImpl {
 
     fn create_bank(&self, bank_info: &ReplicaBankInfo) -> Bank {
         let deserializable_bank: DeserializableVersionedBank =
-        bincode::deserialize(&bank_info.bank_data).unwrap();
+            bincode::deserialize(&bank_info.bank_data).unwrap();
         let bank_fields = BankFieldsToDeserialize::from(deserializable_bank);
         let parent = self.bank_info.bank_forks.read().unwrap().root_bank();
 
         let bank_rc = BankRc {
             accounts: Arc::new(Accounts::new_from_parent(
                 &parent.rc.accounts,
-                slot,
+                bank_info.slot,
                 parent.slot(),
             )),
             parent: RwLock::new(Some(parent.clone())),
-            slot,
+            slot: bank_info.slot,
             bank_id_generator: parent.rc.bank_id_generator.clone(),
         };
 
@@ -134,9 +135,7 @@ impl AccountsDbReplServiceImpl {
                 );
                 Err(err)
             }
-            Ok(bank_info) => {
-                Ok(self.create_bank(bank_info))
-            }
+            Ok(bank_info) => Ok(self.create_bank(&bank_info)),
         }
     }
 
@@ -164,13 +163,20 @@ impl AccountsDbReplServiceImpl {
     }
 
     pub fn run_service(&mut self) {
-
-        match self.accountsdb_repl_client.get_diff_between_slot(self.last_replicated_slot, None) {
-            Ok((latest_slot, accounts)) => {
+        match self
+            .accountsdb_repl_client
+            .get_diff_between_slot(self.last_replicated_slot, None)
+        {
+            Ok((latest_slot, bank_info, accounts)) => {
+                let bank = self.create_bank(&bank_info);
+                Self::persist_accounts(&bank, &accounts);
                 self.last_replicated_slot = latest_slot;
             }
             Err(err) => {
-                error!("Ran into an error getting updated slots: {:?} from base_slot: {:?}", err, self.last_replicated_slot);
+                error!(
+                    "Ran into an error getting updated slots: {:?} from base_slot: {:?}",
+                    err, self.last_replicated_slot
+                );
             }
         }
 
