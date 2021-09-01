@@ -86,22 +86,28 @@ impl AccountsDbReplClient {
         &mut self,
         base_slot: Slot,
         latest_slot: Option<Slot>,
-    ) -> Result<(Slot, Vec<ReplicaAccountInfo>), ReplicaRpcError> {
+    ) -> Result<(Slot, ReplicaBankInfo, Vec<ReplicaAccountInfo>), ReplicaRpcError> {
         let request = ReplicaDiffBetweenSlotsRequest {
             base_slot,
             latest_slot: latest_slot.map_or(0, |latest_slot| latest_slot),
-         };
-        let response = self.client.get_diff_between_slots(Request::new(request)).await;
+        };
+        let response = self
+            .client
+            .get_diff_between_slots(Request::new(request))
+            .await;
 
         match response {
             Ok(response) => {
                 let response = response.into_inner();
-                Ok((response.latest_slot, response.accounts))
-            },
+                Ok((
+                    response.latest_slot,
+                    response.bank_info.unwrap(),
+                    response.accounts,
+                ))
+            }
             Err(status) => Err(ReplicaRpcError::GetAccountsError(status.to_string())),
         }
     }
-
 }
 
 #[derive(Clone)]
@@ -158,9 +164,10 @@ impl AccountsDbReplClientService {
         &mut self,
         base_slot: Slot,
         latest_slot: Option<Slot>,
-    ) -> Result<Vec<ReplicaAccountInfo>, ReplicaRpcError> {
-        self.runtime
-            .block_on(self.accountsdb_repl_client.get_diff_between_slots(base_slot, latest_slot))
+    ) -> Result<(Slot, ReplicaBankInfo, Vec<ReplicaAccountInfo>), ReplicaRpcError> {
+        self.runtime.block_on(
+            self.accountsdb_repl_client
+                .get_diff_between_slots(base_slot, latest_slot),
+        )
     }
-
 }
