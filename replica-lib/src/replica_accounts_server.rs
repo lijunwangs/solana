@@ -133,6 +133,7 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
             }
             Some(bank) => {
                 let bank_info = Self::get_replica_bank_info(bank);
+                bank.squash();
                 bank.force_flush_accounts_cache();
                 bank.clean_accounts(true, false, Some(request.base_slot));
                 bank.update_accounts_hash();
