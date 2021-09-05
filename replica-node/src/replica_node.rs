@@ -335,7 +335,7 @@ impl ReplicaNode {
                 Some(replica_config.snapshot_info),
                 &exit,
                 &replica_config.cluster_info,
-                snapshot_config.maximum_snapshots_to_retain,
+                snapshot_config.clone(),
             );
             (
                 Some(snapshot_packager_service),
