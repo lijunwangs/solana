@@ -590,6 +590,41 @@ impl Accounts {
         }
     }
 
+    // Scan the accounts difference between two rooted slots -- all accounts updated
+    // between (base_slot, slot] are scanned and returned
+    pub fn scan_account_storage_between_rooted_slots<F, B>(
+        &self,
+        base_slot: Slot,
+        latest_slot: Slot,
+        filter_func: F,
+        mut process_result_func: impl FnMut(&[B]) -> bool + Sync,
+    ) where
+        F: Fn(Slot, LoadedAccount) -> Option<B> + Send + Sync,
+        B: Sync + Send + Default + std::cmp::Eq,
+    {
+        // get all root slots between base_slot and slot -- they can be either in cache or in storage
+        let mut slots = self
+            .accounts_db
+            .get_slots_in_storage_between_two(base_slot, latest_slot);
+
+        let slots_in_cache = self
+            .accounts_db
+            .accounts_cache
+            .get_slots_between_two(base_slot, latest_slot);
+
+        slots.extend(slots_in_cache);
+        slots.retain(|slot| self.accounts_db.accounts_index.is_root(*slot));
+
+        slots.sort();
+
+        for slot in slots.iter().rev() {
+            let filter = |loaded_account: LoadedAccount| filter_func(*slot, loaded_account);
+            let result = self.scan_slot(*slot, filter);
+
+            process_result_func(&result);
+        }
+    }
+
     pub fn load_by_program_slot(
         &self,
         slot: Slot,

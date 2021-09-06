@@ -268,6 +268,20 @@ impl AccountsCache {
         self.cache.len()
     }
 
+    pub fn get_slots_between_two(&self, base_slot: Slot, latest_slot: Slot) -> Vec<Slot> {
+        self.cache
+            .iter()
+            .filter_map(|k| {
+                let slot = *k.key() as Slot;
+                if slot > base_slot && slot <= latest_slot {
+                    Some(slot)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
     pub fn fetch_max_flush_root(&self) -> Slot {
         self.max_flushed_root.load(Ordering::Relaxed)
     }

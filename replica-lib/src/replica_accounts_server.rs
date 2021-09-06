@@ -13,10 +13,10 @@ use {
         accounts_cache::CachedAccount, accounts_db::LoadedAccount, append_vec::StoredAccountMeta,
         bank_forks::BankForks, serde_snapshot::future::SerializableVersionedBank,
     },
-    solana_sdk::{account::Account, clock::Slot},
+    solana_sdk::{account::Account, clock::Slot, pubkey::Pubkey},
     std::{
         cmp::Eq,
-        collections::HashMap,
+        collections::{HashMap, HashSet},
         sync::{Arc, RwLock},
         thread,
     },
@@ -133,29 +133,41 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
             }
             Some(bank) => {
                 let bank_info = Self::get_replica_bank_info(bank);
-                bank.squash();
-                bank.force_flush_accounts_cache();
-                bank.clean_accounts(true, false, Some(request.base_slot));
-                bank.update_accounts_hash();
-                bank.rehash();
-                let storages = bank.get_snapshot_storages(Some(request.base_slot));
 
-                let mut accounts = Vec::new();
-                for storage in storages {
-                    for store in storage {
-                        for account in store.all_accounts() {
-                            accounts.push(ReplicaAccountInfo::from_stored_account_meta(
-                                store.slot(),
-                                &account,
-                            ));
+                let mut result_accounts = Vec::new();
+                let mut processed_accounts: HashSet<Pubkey> = HashSet::new();
+                let process_account_result = |accounts: &[ReplicaAccountInfo]| {
+                    for account in accounts {
+                        let key = Pubkey::new(&account.account_meta.as_ref().unwrap().pubkey);
+                        if !processed_accounts.contains(&key) {
+                            processed_accounts.insert(key);
+                            result_accounts.push(account.clone());
                         }
                     }
-                }
+                    true
+                };
+
+                bank.rc.accounts.scan_account_storage_between_rooted_slots(
+                    request.base_slot,
+                    bank.slot(),
+                    |slot, account| match account {
+                        LoadedAccount::Stored(stored_account_meta) => {
+                            Some(ReplicaAccountInfo::from_stored_account_meta(
+                                slot,
+                                &stored_account_meta,
+                            ))
+                        }
+                        LoadedAccount::Cached((_pubkey, cached_account)) => Some(
+                            ReplicaAccountInfo::from_cached_account(slot, &cached_account),
+                        ),
+                    },
+                    process_account_result,
+                );
 
                 let response = accountsdb_repl_server::ReplicaDiffBetweenSlotsResponse {
                     latest_slot,
                     bank_info,
-                    accounts,
+                    accounts: result_accounts,
                 };
                 return Ok(response);
             }

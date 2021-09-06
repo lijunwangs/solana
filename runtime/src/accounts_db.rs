@@ -2903,6 +2903,25 @@ impl AccountsDb {
         }
     }
 
+    pub fn get_slots_in_storage_between_two(
+        &self,
+        base_slot: Slot,
+        latest_slot: Slot,
+    ) -> Vec<Slot> {
+        self.storage
+            .0
+            .iter()
+            .filter_map(|k| {
+                let slot = *k.key() as Slot;
+                if slot > base_slot && slot <= latest_slot {
+                    Some(slot)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
     pub fn set_hash(&self, slot: Slot, parent_slot: Slot) {
         let mut bank_hashes = self.bank_hashes.write().unwrap();
         if bank_hashes.get(&slot).is_some() {
