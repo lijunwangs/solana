@@ -9,6 +9,7 @@ use {
         replica_confirmed_slots_server::ReplicaSlotConfirmationServerImpl,
     },
     bincode,
+    log::*,
     solana_runtime::{
         accounts_cache::CachedAccount, accounts_db::LoadedAccount, append_vec::StoredAccountMeta,
         bank_forks::BankForks, serde_snapshot::future::SerializableVersionedBank,
@@ -132,15 +133,17 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
                 )));
             }
             Some(bank) => {
+                info!("zzzzz is frozen: {:?} for slot {:?}", bank.is_frozen(), bank.slot());
                 let bank_info = Self::get_replica_bank_info(bank);
-                bank.squash();
-                bank.force_flush_accounts_cache();
-                bank.clean_accounts(true, false, Some(request.base_slot));
-                bank.update_accounts_hash();
-                bank.rehash();
+                //bank.squash();
+                //bank.force_flush_accounts_cache();
+                //bank.clean_accounts(true, false, Some(request.base_slot));
+                //bank.update_accounts_hash();
+                //bank.rehash();
                 let storages = bank.get_snapshot_storages(Some(request.base_slot));
 
                 let mut accounts = Vec::new();
+                info!("zzzzz storages between {:?} {:?} {:?}", bank.slot(), request.base_slot, storages.len());
                 for storage in storages {
                     for store in storage {
                         for account in store.all_accounts() {

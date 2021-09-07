@@ -163,6 +163,7 @@ impl AccountsDbReplServiceImpl {
     }
 
     pub fn run_service(&mut self) {
+
         match self
             .accountsdb_repl_client
             .get_diff_between_slot(self.last_replicated_slot, None)

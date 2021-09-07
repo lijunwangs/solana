@@ -1,6 +1,7 @@
 use {
     crate::accountsdb_repl_server::{self, ReplicaSlotConfirmationServer},
     crossbeam_channel::Receiver,
+    log::*,
     solana_sdk::{clock::Slot, commitment_config::CommitmentLevel},
     std::{
         collections::VecDeque,
@@ -89,6 +90,7 @@ impl ReplicaSlotConfirmationServerImpl {
                 while !exit.load(Ordering::Relaxed) {
                     if let Ok(slot) = confirmed_bank_receiver.recv() {
                         let mut slot_set = eligible_slot_set.slot_set.write().unwrap();
+                        info!("zzzzzz received confirmed slot: {:?}", slot);
                         slot_set.push_back((slot, CommitmentLevel::Confirmed));
                     }
                 }

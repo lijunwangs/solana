@@ -86,6 +86,7 @@ impl OptimisticallyConfirmedBankTracker {
                     &mut highest_confirmed_slot,
                     &confirmed_bank_subscribers,
                 ) {
+                    info!("zzzzz error receiving notifications! disconnected");
                     break;
                 }
             })
@@ -125,6 +126,7 @@ impl OptimisticallyConfirmedBankTracker {
         pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
         confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
     ) {
+        info!("zzzzzz notify_or_defer slot: {:?}, frozen {:?} last_notified: {:?}", bank.slot(), bank.is_frozen(), *last_notified_confirmed_slot);
         if bank.is_frozen() {
             if bank.slot() > *last_notified_confirmed_slot {
                 debug!(
@@ -135,6 +137,7 @@ impl OptimisticallyConfirmedBankTracker {
                 *last_notified_confirmed_slot = bank.slot();
                 if let Some(confirmed_bank_subscribers) = confirmed_bank_subscribers {
                     for sender in confirmed_bank_subscribers.read().unwrap().iter() {
+                        info!("zzzzzz send notification: {:?}", bank.slot());
                         match sender.send(bank.slot()) {
                             Ok(_) => {}
                             Err(err) => {
@@ -191,7 +194,7 @@ impl OptimisticallyConfirmedBankTracker {
         highest_confirmed_slot: &mut Slot,
         confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
     ) {
-        debug!("received bank notification: {:?}", notification);
+        info!("zzzzzz received bank notification: {:?} highest confrimed: {:?}", notification, highest_confirmed_slot);
         match notification {
             BankNotification::OptimisticallyConfirmed(slot) => {
                 if let Some(bank) = bank_forks.read().unwrap().get(slot) {
@@ -203,6 +206,7 @@ impl OptimisticallyConfirmedBankTracker {
                         w_optimistically_confirmed_bank.bank = bank.clone();
                     }
 
+                    info!("zzzzzz bank found : {:?}", bank.slot());
                     if slot > *highest_confirmed_slot {
                         Self::notify_or_defer_confirmed_banks(
                             subscriptions,
@@ -218,8 +222,10 @@ impl OptimisticallyConfirmedBankTracker {
                     }
                     drop(w_optimistically_confirmed_bank);
                 } else if slot > bank_forks.read().unwrap().root_bank().slot() {
+                    info!("zzzzz Bank not found, and the slot is > the root bank in the bank_forks: {:?}", slot);
                     pending_optimistically_confirmed_banks.insert(slot);
                 } else {
+                    info!("zzzzz Bank already dropped when getting the notification: {:?}", slot);
                     inc_new_counter_info!("dropped-already-rooted-optimistic-bank-notification", 1);
                 }
 
@@ -248,8 +254,8 @@ impl OptimisticallyConfirmedBankTracker {
                 }
 
                 if pending_optimistically_confirmed_banks.remove(&bank.slot()) {
-                    debug!(
-                        "Calling notify_gossip_subscribers to send deferred notification {:?}",
+                    info!(
+                        "zzzzz Calling notify_gossip_subscribers to send deferred notification {:?}",
                         frozen_slot
                     );
 

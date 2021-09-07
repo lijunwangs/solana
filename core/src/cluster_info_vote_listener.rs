@@ -636,6 +636,7 @@ impl ClusterInfoVoteListener {
                     new_optimistic_confirmed_slots.push((last_vote_slot, last_vote_hash));
                     // Notify subscribers about new optimistic confirmation
                     if let Some(sender) = bank_notification_sender {
+                        info!("zzzzz sending OptimisticallyConfirmed: {:?}", last_vote_slot);
                         sender
                             .send(BankNotification::OptimisticallyConfirmed(last_vote_slot))
                             .unwrap_or_else(|err| {
