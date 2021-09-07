@@ -105,12 +105,13 @@ fn initialize_from_snapshot(
     snapshot_config: &SnapshotConfig,
     genesis_config: &GenesisConfig,
     bank_notification_sender: BankNotificationSender,
-) -> (ReplicaNodeBankInfo, BankFromArchiveTimings) {
+) -> (ReplicaNodeBankInfo, Measure, BankFromArchiveTimings) {
     info!(
         "Downloading snapshot from the peer into {:?}",
         replica_config.snapshot_archives_dir
     );
 
+    let mut measure_download_snapshot = Measure::start("download_snapshot");
     download_snapshot(
         &replica_config.rpc_peer_addr,
         &replica_config.snapshot_archives_dir,
@@ -120,6 +121,8 @@ fn initialize_from_snapshot(
         &mut None,
     )
     .unwrap();
+
+    measure_download_snapshot.stop();
 
     fs::create_dir_all(&snapshot_config.bank_snapshots_dir)
         .expect("Couldn't create bank snapshot directory");
@@ -179,6 +182,7 @@ fn initialize_from_snapshot(
             block_commitment_cache,
             bank_notification_sender,
         },
+        measure_download_snapshot,
         timings,
     )
 }
@@ -279,7 +283,7 @@ fn start_client_rpc_services(
 impl ReplicaNode {
     pub fn new(mut replica_config: ReplicaNodeConfig) -> Self {
         let mut measure_total = Measure::start("measure_total");
-        let mut measure_download_snapshot = Measure::start("download_snapshot");
+        let mut measure_download_genesis = Measure::start("download_genesis");
         let genesis_config = download_then_check_genesis_hash(
             &replica_config.rpc_peer_addr,
             &replica_config.ledger_path,
@@ -290,7 +294,7 @@ impl ReplicaNode {
         )
         .unwrap();
 
-        measure_download_snapshot.stop();
+        measure_download_genesis.stop();
         let snapshot_config = SnapshotConfig {
             full_snapshot_archive_interval_slots: std::u64::MAX,
             incremental_snapshot_archive_interval_slots: std::u64::MAX,
@@ -318,7 +322,7 @@ impl ReplicaNode {
 
         let mut measure_initialize_from_snapshot = Measure::start("initialize_from_snapshot");
 
-        let (bank_info, timings) = initialize_from_snapshot(
+        let (bank_info, measure_download_snapshot, timings) = initialize_from_snapshot(
             &replica_config,
             &snapshot_config,
             &genesis_config,
@@ -446,15 +450,16 @@ impl ReplicaNode {
         measure_total.stop();
         datapoint_info!(
             "replica_bootstrap",
-            ("total_ms", measure_total.as_ms(), i64),
+            ("total_us", measure_total.as_us(), i64),
             (
-                "initialize_from_snapshot_ms",
+                "initialize_from_snapshot_us",
                 measure_initialize_from_snapshot.as_ms(),
                 i64
             ),
+            ("download_genesis_us", measure_download_genesis.as_us(), i64),
             (
-                "download_snapshot_ms",
-                measure_download_snapshot.as_ms(),
+                "download_snapshot_us",
+                measure_download_snapshot.as_us(),
                 i64
             ),
             (
