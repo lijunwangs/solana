@@ -13,6 +13,8 @@ use {
         blockstore::Blockstore, blockstore_db::AccessType, blockstore_processor,
         leader_schedule_cache::LeaderScheduleCache,
     },
+    solana_measure::measure::Measure,
+    solana_metrics::datapoint_info,
     solana_replica_lib::accountsdb_repl_client::AccountsDbReplClientServiceConfig,
     solana_rpc::{
         max_slots::MaxSlots,
@@ -137,7 +139,7 @@ fn initialize_from_snapshot(
         "Build bank from snapshot archive: {:?}",
         &snapshot_config.bank_snapshots_dir
     );
-    let (bank0, _) = snapshot_utils::bank_from_snapshot_archives(
+    let (bank0, timings) = snapshot_utils::bank_from_snapshot_archives(
         &replica_config.account_paths,
         &[],
         &snapshot_config.bank_snapshots_dir,
@@ -156,6 +158,30 @@ fn initialize_from_snapshot(
         process_options.accounts_index_config,
     )
     .unwrap();
+
+    datapoint_info!(
+        "bank_from_snapshot_archives",
+        (
+            "full_snapshot_untar_us",
+            timings.full_snapshot_untar_us,
+            i64
+        ),
+        (
+            "incremental_snapshot_untar_us",
+            timings.incremental_snapshot_untar_us,
+            i64
+        ),
+        (
+            "rebuild_bank_from_snapshots_us",
+            timings.rebuild_bank_from_snapshots_us,
+            i64
+        ),
+        (
+            "verify_snapshot_bank_us",
+            timings.verify_snapshot_bank_us,
+            i64
+        ),
+    );
 
     let bank0_slot = bank0.slot();
     let leader_schedule_cache = Arc::new(LeaderScheduleCache::new_from_bank(&bank0));
@@ -273,6 +299,7 @@ fn start_client_rpc_services(
 
 impl ReplicaNode {
     pub fn new(mut replica_config: ReplicaNodeConfig) -> Self {
+        let mut download_snap_measure = Measure::start("download_snapshot");
         let genesis_config = download_then_check_genesis_hash(
             &replica_config.rpc_peer_addr,
             &replica_config.ledger_path,
@@ -283,6 +310,7 @@ impl ReplicaNode {
         )
         .unwrap();
 
+        download_snap_measure.stop();
         let snapshot_config = SnapshotConfig {
             full_snapshot_archive_interval_slots: std::u64::MAX,
             incremental_snapshot_archive_interval_slots: std::u64::MAX,
@@ -308,12 +336,16 @@ impl ReplicaNode {
 
         let (bank_notification_sender, bank_notification_receiver) = unbounded();
 
+        let mut initialize_from_snapshot_measure = Measure::start("initialize_from_snapshot");
+
         let bank_info = initialize_from_snapshot(
             &replica_config,
             &snapshot_config,
             &genesis_config,
             bank_notification_sender,
         );
+
+        initialize_from_snapshot_measure.stop();
 
         let (json_rpc_service, pubsub_service, optimistically_confirmed_bank_tracker) =
             start_client_rpc_services(

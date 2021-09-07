@@ -5391,6 +5391,7 @@ dependencies = [
  "solana-ledger",
  "solana-local-cluster",
  "solana-logger 1.8.0",
+ "solana-measure",
  "solana-metrics",
  "solana-net-utils",
  "solana-replica-lib",

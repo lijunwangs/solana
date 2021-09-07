@@ -34,6 +34,7 @@ solana-genesis-utils = { path = "../genesis-utils", version = "=1.8.0" }
 solana-gossip = { path = "../gossip", version = "=1.8.0" }
 solana-ledger = { path = "../ledger", version = "=1.8.0" }
 solana-logger = { path = "../logger", version = "=1.8.0" }
+solana-measure = { path = "../measure", version = "=1.8.0" }
 solana-metrics = { path = "../metrics", version = "=1.8.0" }
 solana-net-utils = { path = "../net-utils", version = "=1.8.0" }
 solana-rpc = { path = "../rpc", version = "=1.8.0" }
