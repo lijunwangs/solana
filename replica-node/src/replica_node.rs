@@ -157,6 +157,7 @@ fn initialize_from_snapshot(
         process_options.shrink_ratio,
         process_options.accounts_db_test_hash_calculation,
         true,
+        true,
         process_options.verify_index,
         process_options.accounts_index_config,
     )

@@ -729,6 +729,7 @@ pub fn bank_from_snapshot_archives(
     limit_load_slot_count_from_snapshot: Option<usize>,
     shrink_ratio: AccountShrinkThreshold,
     test_hash_calculation: bool,
+    skip_verify_snapshot_bank: bool,
     accounts_db_skip_shrink: bool,
     verify_index: bool,
     accounts_index_config: Option<AccountsIndexConfig>,
@@ -801,7 +802,7 @@ pub fn bank_from_snapshot_archives(
     info!("{}", measure_rebuild);
 
     let mut measure_verify = Measure::start("verify");
-    if !bank.verify_snapshot_bank(
+    if !skip_verify_snapshot_bank && !bank.verify_snapshot_bank(
         test_hash_calculation,
         accounts_db_skip_shrink,
         Some(full_snapshot_archive_info.slot()),
@@ -877,6 +878,7 @@ pub fn bank_from_latest_snapshot_archives(
         limit_load_slot_count_from_snapshot,
         shrink_ratio,
         test_hash_calculation,
+        false,
         accounts_db_skip_shrink,
         verify_index,
         accounts_index_config,
@@ -2564,6 +2566,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             Some(crate::accounts_index::ACCOUNTS_INDEX_CONFIG_FOR_TESTING),
         )
         .unwrap();
@@ -2651,6 +2654,7 @@ mod tests {
             false,
             None,
             AccountShrinkThreshold::default(),
+            false,
             false,
             false,
             false,
@@ -2759,6 +2763,7 @@ mod tests {
             false,
             None,
             AccountShrinkThreshold::default(),
+            false,
             false,
             false,
             false,
@@ -2998,6 +3003,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             Some(crate::accounts_index::ACCOUNTS_INDEX_CONFIG_FOR_TESTING),
         )
         .unwrap();
@@ -3056,6 +3062,7 @@ mod tests {
             false,
             None,
             AccountShrinkThreshold::default(),
+            false,
             false,
             false,
             false,
