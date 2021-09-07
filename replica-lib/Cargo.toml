@@ -20,6 +20,7 @@ prost = "0.8.0"
 prost-types = "0.8.0"
 serde = "1.0.112"
 solana-logger = { path = "../logger", version = "=1.8.0" }
+solana-measure = { path = "../measure", version = "=1.8.0" }
 solana-metrics = { path = "../metrics", version = "=1.8.0" }
 solana-rpc = { path = "../rpc", version = "=1.8.0" }
 solana-runtime = { path = "../runtime", version = "=1.8.0" }

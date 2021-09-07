@@ -5350,6 +5350,7 @@ dependencies = [
  "prost-types",
  "serde",
  "solana-logger 1.8.0",
+ "solana-measure",
  "solana-metrics",
  "solana-rpc",
  "solana-runtime",

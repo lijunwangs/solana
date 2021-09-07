@@ -9,6 +9,8 @@ use {
         replica_confirmed_slots_server::ReplicaSlotConfirmationServerImpl,
     },
     bincode,
+    solana_measure::measure::Measure,
+    solana_metrics::datapoint_info,
     solana_runtime::{
         accounts_cache::CachedAccount, accounts_db::LoadedAccount, append_vec::StoredAccountMeta,
         bank_forks::BankForks, serde_snapshot::future::SerializableVersionedBank,
@@ -112,6 +114,8 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
         &self,
         request: &ReplicaDiffBetweenSlotsRequest,
     ) -> Result<ReplicaDiffBetweenSlotsResponse, tonic::Status> {
+        let mut measure = Measure::start("get_diff_between_slots-ms");
+
         let mut latest_slot = request.latest_slot;
         if latest_slot == 0 {
             let confirmed_slots_server = self.confirmed_slots_server.read().unwrap();
@@ -164,6 +168,12 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
                     process_account_result,
                 );
 
+                measure.stop();
+                datapoint_info!(
+                    "get_diff_between_slots",
+                    ("accounts_count", result_accounts.len(), i64),
+                    ("accounts_elapse", measure.as_ms() as i64, i64),
+                );
                 let response = accountsdb_repl_server::ReplicaDiffBetweenSlotsResponse {
                     latest_slot,
                     bank_info,
