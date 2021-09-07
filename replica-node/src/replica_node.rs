@@ -37,7 +37,7 @@ use {
         hardened_unpack::MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         snapshot_config::SnapshotConfig,
         snapshot_package::PendingSnapshotPackage,
-        snapshot_utils::{self, ArchiveFormat},
+        snapshot_utils::{self, ArchiveFormat, BankFromArchiveTimings},
     },
     solana_sdk::{clock::Slot, exit::Exit, genesis_config::GenesisConfig, hash::Hash},
     solana_streamer::socket::SocketAddrSpace,
@@ -105,7 +105,7 @@ fn initialize_from_snapshot(
     snapshot_config: &SnapshotConfig,
     genesis_config: &GenesisConfig,
     bank_notification_sender: BankNotificationSender,
-) -> ReplicaNodeBankInfo {
+) -> (ReplicaNodeBankInfo, BankFromArchiveTimings) {
     info!(
         "Downloading snapshot from the peer into {:?}",
         replica_config.snapshot_archives_dir
@@ -159,30 +159,6 @@ fn initialize_from_snapshot(
     )
     .unwrap();
 
-    datapoint_info!(
-        "bank_from_snapshot_archives",
-        (
-            "full_snapshot_untar_us",
-            timings.full_snapshot_untar_us,
-            i64
-        ),
-        (
-            "incremental_snapshot_untar_us",
-            timings.incremental_snapshot_untar_us,
-            i64
-        ),
-        (
-            "rebuild_bank_from_snapshots_us",
-            timings.rebuild_bank_from_snapshots_us,
-            i64
-        ),
-        (
-            "verify_snapshot_bank_us",
-            timings.verify_snapshot_bank_us,
-            i64
-        ),
-    );
-
     let bank0_slot = bank0.slot();
     let leader_schedule_cache = Arc::new(LeaderScheduleCache::new_from_bank(&bank0));
 
@@ -195,13 +171,16 @@ fn initialize_from_snapshot(
     block_commitment_cache.initialize_slots(bank0_slot);
     let block_commitment_cache = Arc::new(RwLock::new(block_commitment_cache));
 
-    ReplicaNodeBankInfo {
-        bank_forks,
-        optimistically_confirmed_bank,
-        leader_schedule_cache,
-        block_commitment_cache,
-        bank_notification_sender,
-    }
+    (
+        ReplicaNodeBankInfo {
+            bank_forks,
+            optimistically_confirmed_bank,
+            leader_schedule_cache,
+            block_commitment_cache,
+            bank_notification_sender,
+        },
+        timings,
+    )
 }
 
 fn start_client_rpc_services(
@@ -299,7 +278,8 @@ fn start_client_rpc_services(
 
 impl ReplicaNode {
     pub fn new(mut replica_config: ReplicaNodeConfig) -> Self {
-        let mut download_snap_measure = Measure::start("download_snapshot");
+        let mut measure_total = Measure::start("measure_total");
+        let mut measure_download_snapshot = Measure::start("download_snapshot");
         let genesis_config = download_then_check_genesis_hash(
             &replica_config.rpc_peer_addr,
             &replica_config.ledger_path,
@@ -310,7 +290,7 @@ impl ReplicaNode {
         )
         .unwrap();
 
-        download_snap_measure.stop();
+        measure_download_snapshot.stop();
         let snapshot_config = SnapshotConfig {
             full_snapshot_archive_interval_slots: std::u64::MAX,
             incremental_snapshot_archive_interval_slots: std::u64::MAX,
@@ -336,16 +316,16 @@ impl ReplicaNode {
 
         let (bank_notification_sender, bank_notification_receiver) = unbounded();
 
-        let mut initialize_from_snapshot_measure = Measure::start("initialize_from_snapshot");
+        let mut measure_initialize_from_snapshot = Measure::start("initialize_from_snapshot");
 
-        let bank_info = initialize_from_snapshot(
+        let (bank_info, timings) = initialize_from_snapshot(
             &replica_config,
             &snapshot_config,
             &genesis_config,
             bank_notification_sender,
         );
 
-        initialize_from_snapshot_measure.stop();
+        measure_initialize_from_snapshot.stop();
 
         let (json_rpc_service, pubsub_service, optimistically_confirmed_bank_tracker) =
             start_client_rpc_services(
@@ -461,6 +441,42 @@ impl ReplicaNode {
         info!(
             "Started AccountsDbReplService from slot {:?}",
             last_replicated_slot
+        );
+
+        measure_total.stop();
+        datapoint_info!(
+            "replica_bootstrap",
+            ("total_ms", measure_total.as_ms(), i64),
+            (
+                "initialize_from_snapshot_ms",
+                measure_initialize_from_snapshot.as_ms(),
+                i64
+            ),
+            (
+                "download_snapshot_ms",
+                measure_download_snapshot.as_ms(),
+                i64
+            ),
+            (
+                "full_snapshot_untar_us",
+                timings.full_snapshot_untar_us,
+                i64
+            ),
+            (
+                "incremental_snapshot_untar_us",
+                timings.incremental_snapshot_untar_us,
+                i64
+            ),
+            (
+                "rebuild_bank_from_snapshots_us",
+                timings.rebuild_bank_from_snapshots_us,
+                i64
+            ),
+            (
+                "verify_snapshot_bank_us",
+                timings.verify_snapshot_bank_us,
+                i64
+            ),
         );
 
         ReplicaNode {

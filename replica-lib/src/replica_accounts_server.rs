@@ -172,7 +172,7 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
                 datapoint_info!(
                     "get_diff_between_slots",
                     ("accounts_count", result_accounts.len(), i64),
-                    ("accounts_elapse", measure.as_ms() as i64, i64),
+                    ("elapse_ms", measure.as_ms() as i64, i64),
                 );
                 let response = accountsdb_repl_server::ReplicaDiffBetweenSlotsResponse {
                     latest_slot,
