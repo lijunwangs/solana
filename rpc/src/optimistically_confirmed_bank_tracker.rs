@@ -63,7 +63,7 @@ impl OptimisticallyConfirmedBankTracker {
         bank_forks: Arc<RwLock<BankForks>>,
         optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
         subscriptions: Arc<RpcSubscriptions>,
-        confirmed_bank_subscribers: Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
+        confirmed_bank_subscribers: Option<Arc<RwLock<Vec<Sender<Arc<Bank>>>>>>,
     ) -> Self {
         let exit_ = exit.clone();
         let mut pending_optimistically_confirmed_banks = HashSet::new();
@@ -101,7 +101,7 @@ impl OptimisticallyConfirmedBankTracker {
         mut pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
         mut last_notified_confirmed_slot: &mut Slot,
         mut highest_confirmed_slot: &mut Slot,
-        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
+        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Arc<Bank>>>>>>,
     ) -> Result<(), RecvTimeoutError> {
         let notification = receiver.recv_timeout(Duration::from_secs(1))?;
         Self::process_notification(
@@ -123,7 +123,7 @@ impl OptimisticallyConfirmedBankTracker {
         bank: &Arc<Bank>,
         last_notified_confirmed_slot: &mut Slot,
         pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
-        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
+        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Arc<Bank>>>>>>,
     ) {
         if bank.is_frozen() {
             if bank.slot() > *last_notified_confirmed_slot {
@@ -135,7 +135,7 @@ impl OptimisticallyConfirmedBankTracker {
                 *last_notified_confirmed_slot = bank.slot();
                 if let Some(confirmed_bank_subscribers) = confirmed_bank_subscribers {
                     for sender in confirmed_bank_subscribers.read().unwrap().iter() {
-                        match sender.send(bank.slot()) {
+                        match sender.send(bank.clone()) {
                             Ok(_) => {}
                             Err(err) => {
                                 info!(
@@ -161,7 +161,7 @@ impl OptimisticallyConfirmedBankTracker {
         slot_threshold: Slot,
         mut last_notified_confirmed_slot: &mut Slot,
         mut pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
-        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
+        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Arc<Bank>>>>>>,
     ) {
         for confirmed_bank in bank.clone().parents_inclusive().iter().rev() {
             if confirmed_bank.slot() > slot_threshold {
@@ -189,7 +189,7 @@ impl OptimisticallyConfirmedBankTracker {
         mut pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
         mut last_notified_confirmed_slot: &mut Slot,
         highest_confirmed_slot: &mut Slot,
-        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Slot>>>>>,
+        confirmed_bank_subscribers: &Option<Arc<RwLock<Vec<Sender<Arc<Bank>>>>>>,
     ) {
         debug!("received bank notification: {:?}", notification);
         match notification {

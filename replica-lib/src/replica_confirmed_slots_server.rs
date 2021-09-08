@@ -1,6 +1,7 @@
 use {
     crate::accountsdb_repl_server::{self, ReplicaSlotConfirmationServer},
     crossbeam_channel::Receiver,
+    solana_runtime::bank::Bank,
     solana_sdk::{clock::Slot, commitment_config::CommitmentLevel},
     std::{
         collections::VecDeque,
@@ -18,7 +19,7 @@ use {
 /// their states.
 #[derive(Default, Clone)]
 struct ReplicaEligibleSlotSet {
-    slot_set: Arc<RwLock<VecDeque<(Slot, CommitmentLevel)>>>,
+    slot_set: Arc<RwLock<VecDeque<(Arc<Bank>, CommitmentLevel)>>>,
 }
 
 pub(crate) struct ReplicaSlotConfirmationServerImpl {
@@ -36,8 +37,8 @@ impl ReplicaSlotConfirmationServer for ReplicaSlotConfirmationServerImpl {
         let slot_set = self.eligible_slot_set.slot_set.read().unwrap();
         let updated_slots: Vec<u64> = slot_set
             .iter()
-            .filter(|(slot, _)| *slot > request.last_replicated_slot)
-            .map(|(slot, _)| *slot)
+            .filter(|(bank, _)| bank.slot() > request.last_replicated_slot)
+            .map(|(bank, _)| bank.slot())
             .collect();
 
         Ok(accountsdb_repl_server::ReplicaSlotConfirmationResponse { updated_slots })
@@ -58,7 +59,7 @@ impl ReplicaSlotConfirmationServer for ReplicaSlotConfirmationServerImpl {
 const MAX_ELIGIBLE_SLOT_SET_SIZE: usize = 262144;
 
 impl ReplicaSlotConfirmationServerImpl {
-    pub fn new(confirmed_bank_receiver: Receiver<Slot>) -> Self {
+    pub fn new(confirmed_bank_receiver: Receiver<Arc<Bank>>) -> Self {
         let eligible_slot_set = ReplicaEligibleSlotSet::default();
         let exit_updated_slot_server = Arc::new(AtomicBool::new(false));
 
@@ -79,7 +80,7 @@ impl ReplicaSlotConfirmationServerImpl {
     }
 
     fn run_confirmed_bank_receiver(
-        confirmed_bank_receiver: Receiver<Slot>,
+        confirmed_bank_receiver: Receiver<Arc<Bank>>,
         eligible_slot_set: ReplicaEligibleSlotSet,
         exit: Arc<AtomicBool>,
     ) -> JoinHandle<()> {
@@ -119,6 +120,6 @@ impl ReplicaSlotConfirmationServerImpl {
 
     pub fn get_latest_confirmed_slot(&self) -> Option<Slot> {
         let slot_set = self.eligible_slot_set.slot_set.read().unwrap();
-        slot_set.back().map(|slot| slot.0)
+        slot_set.back().map(|bank| bank.0.slot())
     }
 }
