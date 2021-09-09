@@ -9,6 +9,7 @@ use {
         replica_confirmed_slots_server::ReplicaSlotConfirmationServerImpl,
     },
     bincode,
+    log::*,
     solana_measure::measure::Measure,
     solana_metrics::datapoint_info,
     solana_runtime::{
@@ -79,7 +80,9 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
     ) -> Result<accountsdb_repl_server::ReplicaAccountsResponse, tonic::Status> {
         let slot = request.slot;
 
-        match self.bank_forks.read().unwrap().get(slot) {
+        let confirmed_slots_server = self.confirmed_slots_server.read().unwrap();
+
+        match confirmed_slots_server.get_bank_for_slot(slot) {
             None => Err(tonic::Status::not_found("The slot is not found")),
             Some(bank) => {
                 let accounts = bank.rc.accounts.scan_slot(slot, |account| match account {
@@ -101,10 +104,12 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
         request: &ReplicaBankInfoRequest,
     ) -> Result<ReplicaBankInfoResponse, tonic::Status> {
         let slot = request.slot;
-        match self.bank_forks.read().unwrap().get(slot) {
+        let confirmed_slots_server = self.confirmed_slots_server.read().unwrap();
+        
+        match confirmed_slots_server.get_bank_for_slot(slot) {
             None => Err(tonic::Status::not_found("The slot is not found")),
             Some(bank) => {
-                let bank_info = Self::get_replica_bank_info(bank);
+                let bank_info = Self::get_replica_bank_info(&bank);
                 Ok(accountsdb_repl_server::ReplicaBankInfoResponse { bank_info })
             }
         }
@@ -114,73 +119,60 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
         &self,
         request: &ReplicaDiffBetweenSlotsRequest,
     ) -> Result<ReplicaDiffBetweenSlotsResponse, tonic::Status> {
+        info!("zzzz serving get_diff_between_slots");
         let mut measure = Measure::start("get_diff_between_slots-ms");
 
         let mut latest_slot = request.latest_slot;
-        if latest_slot == 0 {
-            let confirmed_slots_server = self.confirmed_slots_server.read().unwrap();
-            if let Some(slot) = confirmed_slots_server.get_latest_confirmed_slot() {
-                latest_slot = slot;
-            } else {
-                return Err(tonic::Status::not_found(
-                    "Could not determine the latest slot",
-                ));
-            }
-        }
+        let confirmed_slots_server = self.confirmed_slots_server.read().unwrap();
+        if let Some(bank) = confirmed_slots_server.get_latest_confirmed_bank() {
+            latest_slot = bank.slot();
+            let bank_info = Self::get_replica_bank_info(&bank);
 
-        match self.bank_forks.read().unwrap().get(latest_slot) {
-            None => {
-                return Err(tonic::Status::not_found(format!(
-                    "The slot {:?} is not found",
-                    latest_slot
-                )));
-            }
-            Some(bank) => {
-                let bank_info = Self::get_replica_bank_info(bank);
-
-                let mut result_accounts = Vec::new();
-                let mut processed_accounts: HashSet<Pubkey> = HashSet::new();
-                let process_account_result = |accounts: &[ReplicaAccountInfo]| {
-                    for account in accounts {
-                        let key = Pubkey::new(&account.account_meta.as_ref().unwrap().pubkey);
-                        if !processed_accounts.contains(&key) {
-                            processed_accounts.insert(key);
-                            result_accounts.push(account.clone());
-                        }
+            let mut result_accounts = Vec::new();
+            let mut processed_accounts: HashSet<Pubkey> = HashSet::new();
+            let process_account_result = |accounts: &[ReplicaAccountInfo]| {
+                for account in accounts {
+                    let key = Pubkey::new(&account.account_meta.as_ref().unwrap().pubkey);
+                    if !processed_accounts.contains(&key) {
+                        processed_accounts.insert(key);
+                        result_accounts.push(account.clone());
                     }
-                    true
-                };
+                }
+                true
+            };
 
-                bank.rc.accounts.scan_account_storage_between_rooted_slots(
-                    request.base_slot,
-                    bank.slot(),
-                    |slot, account| match account {
-                        LoadedAccount::Stored(stored_account_meta) => {
-                            Some(ReplicaAccountInfo::from_stored_account_meta(
-                                slot,
-                                &stored_account_meta,
-                            ))
-                        }
-                        LoadedAccount::Cached((_pubkey, cached_account)) => Some(
-                            ReplicaAccountInfo::from_cached_account(slot, &cached_account),
-                        ),
-                    },
-                    process_account_result,
-                );
+            info!("zzzz bank.rc.accounts.scan_account_storage_between_rooted_slots...");
+            bank.rc.accounts.scan_account_storage_between_rooted_slots(
+                request.base_slot,
+                bank.slot(),
+                |slot, account| match account {
+                    LoadedAccount::Stored(stored_account_meta) => Some(
+                        ReplicaAccountInfo::from_stored_account_meta(slot, &stored_account_meta),
+                    ),
+                    LoadedAccount::Cached((_pubkey, cached_account)) => Some(
+                        ReplicaAccountInfo::from_cached_account(slot, &cached_account),
+                    ),
+                },
+                process_account_result,
+            );
 
-                measure.stop();
-                datapoint_info!(
-                    "get_diff_between_slots",
-                    ("accounts_count", result_accounts.len(), i64),
-                    ("elapse_ms", measure.as_ms() as i64, i64),
-                );
-                let response = accountsdb_repl_server::ReplicaDiffBetweenSlotsResponse {
-                    latest_slot,
-                    bank_info,
-                    accounts: result_accounts,
-                };
-                return Ok(response);
-            }
+            measure.stop();
+            datapoint_info!(
+                "get_diff_between_slots",
+                ("accounts_count", result_accounts.len(), i64),
+                ("elapse_ms", measure.as_ms() as i64, i64),
+            );
+            let response = accountsdb_repl_server::ReplicaDiffBetweenSlotsResponse {
+                latest_slot,
+                bank_info,
+                accounts: result_accounts,
+            };
+            info!("zzzz done with ReplicaDiffBetweenSlotsResponse");
+            return Ok(response);
+        } else {
+            return Err(tonic::Status::not_found(
+                "Could not determine the latest slot",
+            ));
         }
     }
 

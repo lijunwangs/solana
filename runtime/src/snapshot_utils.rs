@@ -802,11 +802,13 @@ pub fn bank_from_snapshot_archives(
     info!("{}", measure_rebuild);
 
     let mut measure_verify = Measure::start("verify");
-    if !skip_verify_snapshot_bank && !bank.verify_snapshot_bank(
-        test_hash_calculation,
-        accounts_db_skip_shrink,
-        Some(full_snapshot_archive_info.slot()),
-    ) && limit_load_slot_count_from_snapshot.is_none()
+    if !skip_verify_snapshot_bank
+        && !bank.verify_snapshot_bank(
+            test_hash_calculation,
+            accounts_db_skip_shrink,
+            Some(full_snapshot_archive_info.slot()),
+        )
+        && limit_load_slot_count_from_snapshot.is_none()
     {
         panic!("Snapshot bank for slot {} failed to verify", bank.slot());
     }

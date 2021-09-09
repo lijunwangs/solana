@@ -209,7 +209,7 @@ impl AccountsDbReplServiceImpl {
                     error!("Ran into an error getting updated slots: {:?}", err);
                 }
             }
-            sleep(Duration::from_millis(200));
+            sleep(Duration::from_millis(50));
         }
     }
 }

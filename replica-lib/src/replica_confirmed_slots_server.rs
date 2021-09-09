@@ -1,10 +1,11 @@
 use {
     crate::accountsdb_repl_server::{self, ReplicaSlotConfirmationServer},
     crossbeam_channel::Receiver,
+    log::*,
     solana_runtime::bank::Bank,
     solana_sdk::{clock::Slot, commitment_config::CommitmentLevel},
     std::{
-        collections::VecDeque,
+        collections::{HashMap, VecDeque},
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc, RwLock,
@@ -15,11 +16,17 @@ use {
     tonic,
 };
 
+#[derive(Default)]
+struct ReplicaEligibleSlotSetInner {
+    slots: VecDeque<Slot>,
+    slot_bank_map: HashMap<Slot, (Arc<Bank>, CommitmentLevel)>,
+}
+
 /// The structure modelling the slots eligible for replication and
 /// their states.
 #[derive(Default, Clone)]
 struct ReplicaEligibleSlotSet {
-    slot_set: Arc<RwLock<VecDeque<(Arc<Bank>, CommitmentLevel)>>>,
+    slot_set: Arc<RwLock<ReplicaEligibleSlotSetInner>>,
 }
 
 pub(crate) struct ReplicaSlotConfirmationServerImpl {
@@ -29,16 +36,26 @@ pub(crate) struct ReplicaSlotConfirmationServerImpl {
     exit_updated_slot_server: Arc<AtomicBool>,
 }
 
+impl ReplicaEligibleSlotSetInner {
+
+    fn clean_slots(&mut self, count_to_drain: usize) {
+        let slots_to_drop = self.slots.drain(..count_to_drain);
+        for slot in slots_to_drop {
+            self.slot_bank_map.remove(&slot);
+        }
+    }
+}
+
 impl ReplicaSlotConfirmationServer for ReplicaSlotConfirmationServerImpl {
     fn get_confirmed_slots(
         &self,
         request: &accountsdb_repl_server::ReplicaSlotConfirmationRequest,
     ) -> Result<accountsdb_repl_server::ReplicaSlotConfirmationResponse, tonic::Status> {
         let slot_set = self.eligible_slot_set.slot_set.read().unwrap();
-        let updated_slots: Vec<u64> = slot_set
+        let updated_slots: Vec<u64> = slot_set.slots
             .iter()
-            .filter(|(bank, _)| bank.slot() > request.last_replicated_slot)
-            .map(|(bank, _)| bank.slot())
+            .filter(|slot| **slot > request.last_replicated_slot)
+            .map(|slot| *slot)
             .collect();
 
         Ok(accountsdb_repl_server::ReplicaSlotConfirmationResponse { updated_slots })
@@ -56,7 +73,7 @@ impl ReplicaSlotConfirmationServer for ReplicaSlotConfirmationServerImpl {
     }
 }
 
-const MAX_ELIGIBLE_SLOT_SET_SIZE: usize = 262144;
+const MAX_ELIGIBLE_SLOT_SET_SIZE: usize = 512;
 
 impl ReplicaSlotConfirmationServerImpl {
     pub fn new(confirmed_bank_receiver: Receiver<Arc<Bank>>) -> Self {
@@ -88,9 +105,10 @@ impl ReplicaSlotConfirmationServerImpl {
             .name("confirmed_bank_receiver".to_string())
             .spawn(move || {
                 while !exit.load(Ordering::Relaxed) {
-                    if let Ok(slot) = confirmed_bank_receiver.recv() {
+                    if let Ok(bank) = confirmed_bank_receiver.recv() {
                         let mut slot_set = eligible_slot_set.slot_set.write().unwrap();
-                        slot_set.push_back((slot, CommitmentLevel::Confirmed));
+                        slot_set.slots.push_back(bank.slot());
+                        slot_set.slot_bank_map.insert(bank.slot(), (bank, CommitmentLevel::Confirmed));
                     }
                 }
             })
@@ -107,10 +125,11 @@ impl ReplicaSlotConfirmationServerImpl {
             .spawn(move || {
                 while !exit.load(Ordering::Relaxed) {
                     let mut slot_set = eligible_slot_set.slot_set.write().unwrap();
-                    let count_to_drain = slot_set.len().saturating_sub(max_set_size);
+                    let count_to_drain = slot_set.slots.len().saturating_sub(max_set_size);
                     if count_to_drain > 0 {
-                        drop(slot_set.drain(..count_to_drain));
+                        slot_set.clean_slots(count_to_drain);
                     }
+                    info!("zzzz Dropped banks: length {:?}", slot_set.slots.len());
                     drop(slot_set);
                     sleep(Duration::from_millis(200));
                 }
@@ -118,8 +137,13 @@ impl ReplicaSlotConfirmationServerImpl {
             .unwrap()
     }
 
-    pub fn get_latest_confirmed_slot(&self) -> Option<Slot> {
+    pub fn get_latest_confirmed_bank(&self) -> Option<Arc<Bank>> {
         let slot_set = self.eligible_slot_set.slot_set.read().unwrap();
-        slot_set.back().map(|bank| bank.0.slot())
+        slot_set.slots.back().map(|slot| slot_set.slot_bank_map.get(slot).unwrap().0.clone())
+    }
+
+    pub fn get_bank_for_slot(&self, slot: Slot) -> Option<Arc<Bank>> {
+        let slot_set = self.eligible_slot_set.slot_set.read().unwrap();
+        slot_set.slot_bank_map.get(&slot).map(|bank| bank.0.clone())
     }
 }
