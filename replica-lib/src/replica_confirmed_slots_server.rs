@@ -129,7 +129,6 @@ impl ReplicaSlotConfirmationServerImpl {
                     if count_to_drain > 0 {
                         slot_set.clean_slots(count_to_drain);
                     }
-                    info!("zzzz Dropped banks: length {:?}", slot_set.slots.len());
                     drop(slot_set);
                     sleep(Duration::from_millis(200));
                 }

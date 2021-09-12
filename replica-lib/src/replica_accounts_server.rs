@@ -119,7 +119,6 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
         &self,
         request: &ReplicaDiffBetweenSlotsRequest,
     ) -> Result<ReplicaDiffBetweenSlotsResponse, tonic::Status> {
-        info!("zzzz serving get_diff_between_slots");
         let mut measure = Measure::start("get_diff_between_slots-ms");
 
         let mut latest_slot = request.latest_slot;
@@ -141,7 +140,6 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
                 true
             };
 
-            info!("zzzz bank.rc.accounts.scan_account_storage_between_rooted_slots...");
             bank.rc.accounts.scan_account_storage_between_rooted_slots(
                 request.base_slot,
                 bank.slot(),
@@ -167,7 +165,6 @@ impl ReplicaAccountsServer for ReplicaAccountsServerImpl {
                 bank_info,
                 accounts: result_accounts,
             };
-            info!("zzzz done with ReplicaDiffBetweenSlotsResponse");
             return Ok(response);
         } else {
             return Err(tonic::Status::not_found(
