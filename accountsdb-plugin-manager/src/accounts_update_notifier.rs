@@ -62,7 +62,10 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: account.rent_epoch(),
         };
         //let data = account.data().to_vec();
-        Some(ReplicaAccountInfo { account_meta, data: account.data() })
+        Some(ReplicaAccountInfo {
+            account_meta,
+            data: account.data(),
+        })
     }
 
     fn accountinfo_from_stored_account_meta<'a>(
@@ -77,7 +80,10 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: stored_account_meta.account_meta.rent_epoch,
         };
         //let data = stored_account_meta.data.to_vec();
-        Some(ReplicaAccountInfo { account_meta, data: stored_account_meta.data })
+        Some(ReplicaAccountInfo {
+            account_meta,
+            data: stored_account_meta.data,
+        })
     }
 
     fn notify_plugins_of_account_update(&self, account: ReplicaAccountInfo, slot: Slot) {
