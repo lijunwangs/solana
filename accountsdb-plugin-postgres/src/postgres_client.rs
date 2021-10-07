@@ -18,12 +18,49 @@ use {
         thread::{self, Builder, JoinHandle},
         time::Duration,
     },
+    tokio_postgres::types::ToSql,
+    tokio_postgres::{Error, Row},
 };
 
 const MAX_ASYNC_REQUESTS: usize = 10240;
 
+/// Trait encapsulating PostgreSQL client so that it can be easily mocked out for testing
+pub trait PostgresDbClient: Send {
+    fn prepare(&mut self, query: &str) -> Result<Statement, Error>;
+
+    fn query(
+        &mut self,
+        query: &Statement,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<Row>, Error>;
+
+    fn execute(&mut self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error>;
+}
+
+impl PostgresDbClient for Client {
+    fn prepare(&mut self, query: &str) -> Result<Statement, Error> {
+        self.prepare(query)
+    }
+
+    fn query(
+        &mut self,
+        query: &Statement,
+        params: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<Row>, Error> {
+        self.query(query, params)
+    }
+
+    fn execute(&mut self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error> {
+        self.execute(query, params)
+    }
+}
+
+fn create_postgres_db_client(connection_str: &str) -> Result<Box<dyn PostgresDbClient>, Error> {
+    Ok(Box::new(Client::connect(&connection_str, NoTls)?))
+}
+
 struct PostgresSqlClientWrapper {
-    client: Client,
+    client: Box<dyn PostgresDbClient>,
     update_account_stmt: Statement,
 }
 
@@ -60,7 +97,6 @@ impl DbAccountInfo {
         }
     }
 }
-
 pub trait ReadableAccountInfo: Sized {
     fn pubkey(&self) -> &[u8];
     fn owner(&self) -> &[u8];
@@ -141,10 +177,16 @@ pub trait PostgresClient {
     ) -> Result<(), AccountsDbPluginError>;
 }
 
+type CreatePostgresDbClientCallback =
+    fn(connection_str: &str) -> Result<Box<dyn PostgresDbClient>, Error>;
+
 impl SimplePostgresClient {
-    pub fn new(config: &AccountsDbPluginPostgresConfig) -> Result<Self, AccountsDbPluginError> {
+    pub fn new(
+        create_db_client: CreatePostgresDbClientCallback,
+        config: &AccountsDbPluginPostgresConfig,
+    ) -> Result<Self, AccountsDbPluginError> {
         let connection_str = format!("host={} user={}", config.host, config.user);
-        match Client::connect(&connection_str, NoTls) {
+        match create_db_client(&connection_str) {
             Err(err) => {
                 return Err(AccountsDbPluginError::Custom(Box::new(AccountsDbPluginPostgresError::DataStoreConnectionError {
                     msg: format!(
@@ -294,8 +336,11 @@ enum DbWorkItem {
 }
 
 impl PostgresClientWorker {
-    fn new(config: AccountsDbPluginPostgresConfig) -> Result<Self, AccountsDbPluginError> {
-        let client = SimplePostgresClient::new(&config)?;
+    fn new(
+        create_db_client: CreatePostgresDbClientCallback,
+        config: AccountsDbPluginPostgresConfig,
+    ) -> Result<Self, AccountsDbPluginError> {
+        let client = SimplePostgresClient::new(create_db_client, &config)?;
         Ok(PostgresClientWorker { client })
     }
 
@@ -341,7 +386,10 @@ pub struct ParallelPostgresClient {
 }
 
 impl ParallelPostgresClient {
-    pub fn new(config: &AccountsDbPluginPostgresConfig) -> Result<Self, AccountsDbPluginError> {
+    pub fn new(
+        create_db_client: CreatePostgresDbClientCallback,
+        config: &AccountsDbPluginPostgresConfig,
+    ) -> Result<Self, AccountsDbPluginError> {
         let (sender, receiver) = bounded(MAX_ASYNC_REQUESTS);
         let exit_worker = Arc::new(AtomicBool::new(false));
         let mut workers = Vec::default();
@@ -353,7 +401,7 @@ impl ParallelPostgresClient {
             let worker = Builder::new()
                 .name(format!("worker-{}", i))
                 .spawn(move || -> Result<(), AccountsDbPluginError> {
-                    let mut worker = PostgresClientWorker::new(config)?;
+                    let mut worker = PostgresClientWorker::new(create_db_client, config)?;
                     worker.do_work(cloned_receiver, exit_clone)?;
                     Ok(())
                 })
@@ -436,12 +484,12 @@ impl PostgresClientBuilder {
     pub fn build_pararallel_postgres_client(
         config: &AccountsDbPluginPostgresConfig,
     ) -> Result<ParallelPostgresClient, AccountsDbPluginError> {
-        ParallelPostgresClient::new(config)
+        ParallelPostgresClient::new(create_postgres_db_client, config)
     }
 
     pub fn build_simple_postgres_client(
         config: &AccountsDbPluginPostgresConfig,
     ) -> Result<SimplePostgresClient, AccountsDbPluginError> {
-        SimplePostgresClient::new(config)
+        SimplePostgresClient::new(create_postgres_db_client, config)
     }
 }
