@@ -39,7 +39,7 @@ pub trait PostgresDbClient: Send {
 
 impl PostgresDbClient for Client {
     fn prepare(&mut self, query: &str) -> Result<Statement, Error> {
-        self.prepare(query)
+        Client::prepare(self, query)
     }
 
     fn query(
@@ -47,11 +47,11 @@ impl PostgresDbClient for Client {
         query: &Statement,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<Row>, Error> {
-        self.query(query, params)
+        Client::query(self, query, params)
     }
 
     fn execute(&mut self, query: &str, params: &[&(dyn ToSql + Sync)]) -> Result<u64, Error> {
-        self.execute(query, params)
+        Client::execute(self, query, params)
     }
 }
 
