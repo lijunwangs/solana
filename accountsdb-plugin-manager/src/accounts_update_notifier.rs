@@ -63,7 +63,7 @@ impl AccountsUpdateNotifierImpl {
             owner: account.owner().as_ref(),
             executable: account.executable(),
             rent_epoch: account.rent_epoch(),
-            data: account.data(),
+            data: account.get_data_vector(),
         })
     }
 

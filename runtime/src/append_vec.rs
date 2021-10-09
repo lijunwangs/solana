@@ -20,6 +20,7 @@ use std::{
     io::{Seek, SeekFrom, Write},
     mem,
     path::{Path, PathBuf},
+    sync::Arc,
     sync::atomic::{AtomicUsize, Ordering},
     sync::Mutex,
 };
@@ -90,7 +91,7 @@ pub struct StoredAccountMeta<'a> {
     pub meta: &'a StoredMeta,
     /// account data
     pub account_meta: &'a AccountMeta,
-    pub data: &'a [u8],
+    pub data: Arc<Vec<u8>>,
     pub offset: usize,
     pub stored_size: usize,
     pub hash: &'a Hash,

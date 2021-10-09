@@ -1447,7 +1447,7 @@ impl<'a> ReadableAccount for StoredAccountMeta<'a> {
         self.account_meta.lamports
     }
     fn data(&self) -> &[u8] {
-        self.data
+        self.data.as_ref()
     }
     fn owner(&self) -> &Pubkey {
         &self.account_meta.owner
@@ -4105,7 +4105,7 @@ impl AccountsDb {
             &account.account_meta.owner,
             account.account_meta.executable,
             account.account_meta.rent_epoch,
-            account.data,
+            account.data.as_ref(),
             &account.meta.pubkey,
         )
     }
@@ -6432,7 +6432,7 @@ impl AccountsDb {
                     self.accounts_index.update_secondary_indexes(
                         &pubkey,
                         &stored_account.account_meta.owner,
-                        stored_account.data,
+                        stored_account.data.as_ref(),
                         &self.account_indexes,
                     );
                 }

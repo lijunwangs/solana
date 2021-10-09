@@ -3,7 +3,7 @@
 /// In addition, the dynamic library must export a "C" function _create_plugin which
 /// creates the implementation of the plugin.
 use {
-    std::{any::Any, error, io},
+    std::{any::Any, error, io, sync::Arc},
     thiserror::Error,
 };
 
@@ -16,7 +16,7 @@ pub struct ReplicaAccountInfo<'a> {
     pub owner: &'a [u8],
     pub executable: bool,
     pub rent_epoch: u64,
-    pub data: &'a [u8],
+    pub data: Arc<Vec<u8>>,
 }
 
 pub enum ReplicaAccountInfoVersions<'a> {

@@ -46,12 +46,12 @@ pub struct DbAccountInfo {
     pub owner: Vec<u8>,
     pub executable: bool,
     pub rent_epoch: u64,
-    pub data: Vec<u8>,
+    pub data: Arc<Vec<u8>>,
 }
 
 impl DbAccountInfo {
     fn new<T: ReadableAccountInfo>(account: &T) -> DbAccountInfo {
-        let data = account.data().to_vec();
+        let data = account.data();
         Self {
             pubkey: account.pubkey().to_vec(),
             lamports: account.lamports(),
@@ -69,7 +69,7 @@ pub trait ReadableAccountInfo: Sized {
     fn lamports(&self) -> u64;
     fn executable(&self) -> bool;
     fn rent_epoch(&self) -> u64;
-    fn data(&self) -> &[u8];
+    fn data(&self) -> Arc<Vec<u8>>;
 }
 
 impl ReadableAccountInfo for DbAccountInfo {
@@ -93,8 +93,8 @@ impl ReadableAccountInfo for DbAccountInfo {
         self.rent_epoch
     }
 
-    fn data(&self) -> &[u8] {
-        &self.data
+    fn data(&self) -> Arc<Vec<u8>> {
+        self.data.clone()
     }
 }
 
@@ -119,8 +119,8 @@ impl<'a> ReadableAccountInfo for ReplicaAccountInfo<'a> {
         self.rent_epoch
     }
 
-    fn data(&self) -> &[u8] {
-        self.data
+    fn data(&self) -> Arc<Vec<u8>> {
+        self.data.clone()
     }
 }
 
@@ -209,7 +209,7 @@ impl PostgresClient for SimplePostgresClient {
                 &lamports,
                 &account.executable(),
                 &rent_epoch,
-                &account.data(),
+                account.data().as_ref(),
                 &updated_on,
             ],
         );

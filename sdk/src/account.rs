@@ -483,6 +483,9 @@ impl AccountSharedData {
     pub fn serialize_data<T: serde::Serialize>(&mut self, state: &T) -> Result<(), bincode::Error> {
         shared_serialize_data(self, state)
     }
+    pub fn get_data_vector(&self) -> Arc<Vec<u8>> {
+        self.data.clone()
+    }
 }
 
 pub type InheritableAccountFields = (u64, Epoch);
