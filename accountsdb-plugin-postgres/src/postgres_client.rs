@@ -157,7 +157,11 @@ impl SimplePostgresClient {
     fn connect_to_db(
         config: &AccountsDbPluginPostgresConfig,
     ) -> Result<Client, AccountsDbPluginError> {
-        let connection_str = format!("host={} user={}", config.host, config.user);
+        let connection_str = if let Some(port) = config.port {
+            format!("host={} user={} port={}", config.host, config.user, port)
+        } else {
+            format!("host={} user={}", config.host, config.user)
+        };
 
         match Client::connect(&connection_str, NoTls) {
             Err(err) => {

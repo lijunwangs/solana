@@ -33,6 +33,7 @@ pub struct AccountsDbPluginPostgresConfig {
     pub user: String,
     pub threads: Option<usize>,
     pub batch_size: Option<usize>,
+    pub port: Option<u32>,
 }
 
 #[derive(Error, Debug)]
