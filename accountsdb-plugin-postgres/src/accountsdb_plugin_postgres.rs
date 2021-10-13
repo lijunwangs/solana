@@ -17,14 +17,9 @@ use {
     thiserror::Error,
 };
 
-enum PostgresClientEnum {
-    Simple(SimplePostgresClient),
-    Parallel(ParallelPostgresClient),
-}
-
 #[derive(Default)]
 pub struct AccountsDbPluginPostgres {
-    client: Option<PostgresClientEnum>,
+    client: Option<ParallelPostgresClient>,
     accounts_selector: Option<AccountsSelector>,
 }
 
@@ -40,6 +35,7 @@ pub struct AccountsDbPluginPostgresConfig {
     pub user: String,
     pub threads: Option<usize>,
     pub port: Option<u16>,
+    pub batch_size: Option<u32>,
 }
 
 #[derive(Error, Debug)]
@@ -115,13 +111,8 @@ impl AccountsDbPlugin for AccountsDbPluginPostgres {
                 })
             }
             Ok(config) => {
-                self.client = if config.threads.is_some() && config.threads.unwrap() > 1 {
-                    let client = PostgresClientBuilder::build_pararallel_postgres_client(&config)?;
-                    Some(PostgresClientEnum::Parallel(client))
-                } else {
-                    let client = PostgresClientBuilder::build_simple_postgres_client(&config)?;
-                    Some(PostgresClientEnum::Simple(client))
-                };
+                let client = PostgresClientBuilder::build_pararallel_postgres_client(&config)?;
+                self.client = Some(client);
             }
         }
 
@@ -133,16 +124,18 @@ impl AccountsDbPlugin for AccountsDbPluginPostgres {
 
         match &mut self.client {
             None => {}
-            Some(client) => match client {
-                PostgresClientEnum::Parallel(client) => client.join().unwrap(),
-                PostgresClientEnum::Simple(client) => {
-                    client.join().unwrap();
-                }
-            },
+            Some(client) => {
+                client.join().unwrap();
+            }
         }
     }
 
-    fn update_account(&mut self, account: ReplicaAccountInfoVersions, slot: u64) -> Result<()> {
+    fn update_account(
+        &mut self,
+        account: ReplicaAccountInfoVersions,
+        slot: u64,
+        at_startup: bool,
+    ) -> Result<()> {
         match account {
             ReplicaAccountInfoVersions::V0_0_1(account) => {
                 if let Some(accounts_selector) = &self.accounts_selector {
@@ -171,14 +164,7 @@ impl AccountsDbPlugin for AccountsDbPluginPostgres {
                         )));
                     }
                     Some(client) => {
-                        let result = match client {
-                            PostgresClientEnum::Parallel(client) => {
-                                client.update_account(account, slot)
-                            }
-                            PostgresClientEnum::Simple(client) => {
-                                client.update_account(account, slot)
-                            }
-                        };
+                        let result = { client.update_account(account, slot, at_startup) };
 
                         if let Err(err) = result {
                             return Err(AccountsDbPluginError::AccountsUpdateError {
@@ -209,14 +195,7 @@ impl AccountsDbPlugin for AccountsDbPluginPostgres {
                 )));
             }
             Some(client) => {
-                let result = match client {
-                    PostgresClientEnum::Parallel(client) => {
-                        client.update_slot_status(slot, parent, status)
-                    }
-                    PostgresClientEnum::Simple(client) => {
-                        client.update_slot_status(slot, parent, status)
-                    }
-                };
+                let result = { client.update_slot_status(slot, parent, status) };
 
                 if let Err(err) = result {
                     return Err(AccountsDbPluginError::SlotStatusUpdateError{
