@@ -2,9 +2,7 @@
 use {
     crate::{
         accounts_selector::AccountsSelector,
-        postgres_client::{
-            ParallelPostgresClient, PostgresClient, PostgresClientBuilder, SimplePostgresClient,
-        },
+        postgres_client::{ParallelPostgresClient, PostgresClientBuilder},
     },
     bs58,
     log::*,
@@ -34,7 +32,7 @@ pub struct AccountsDbPluginPostgresConfig {
     pub host: String,
     pub user: String,
     pub threads: Option<usize>,
-    pub batch_size: Option<u32>,
+    pub batch_size: Option<usize>,
 }
 
 #[derive(Error, Debug)]
