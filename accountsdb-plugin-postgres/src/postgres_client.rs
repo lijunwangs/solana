@@ -20,11 +20,14 @@ use {
         thread::{self, Builder, JoinHandle},
         time::Duration,
     },
+    tokio_postgres::types::ToSql,
 };
 
 /// The maximum asynchronous requests allowed in the channel to avoid excessive
 /// memory usage. The downside -- calls after this threshold is reached can get blocked.
 const MAX_ASYNC_REQUESTS: usize = 10240;
+const DEFAULT_ACCOUNTS_INSERT_BATCH_SIZE: usize = 10;
+const ACCOUNT_COLUMN_COUNT: usize = 8;
 
 struct PostgresSqlClientWrapper {
     client: Client,
@@ -34,7 +37,7 @@ struct PostgresSqlClientWrapper {
 
 pub struct SimplePostgresClient {
     batch_size: usize,
-    accounts: Vec<(DbAccountInfo, u64)>,
+    accounts: Vec<DbAccountInfo>,
     client: Mutex<PostgresSqlClientWrapper>,
 }
 
@@ -47,23 +50,25 @@ impl Eq for DbAccountInfo {}
 #[derive(Clone, PartialEq, Debug)]
 pub struct DbAccountInfo {
     pub pubkey: Vec<u8>,
-    pub lamports: u64,
+    pub lamports: i64,
     pub owner: Vec<u8>,
     pub executable: bool,
-    pub rent_epoch: u64,
+    pub rent_epoch: i64,
     pub data: Vec<u8>,
+    pub slot: i64,
 }
 
 impl DbAccountInfo {
-    fn new<T: ReadableAccountInfo>(account: &T) -> DbAccountInfo {
+    fn new<T: ReadableAccountInfo>(account: &T, slot: u64) -> DbAccountInfo {
         let data = account.data().to_vec();
         Self {
             pubkey: account.pubkey().to_vec(),
-            lamports: account.lamports(),
+            lamports: account.lamports() as i64,
             owner: account.owner().to_vec(),
             executable: account.executable(),
-            rent_epoch: account.rent_epoch(),
+            rent_epoch: account.rent_epoch() as i64,
             data,
+            slot: slot as i64,
         }
     }
 }
@@ -71,9 +76,9 @@ impl DbAccountInfo {
 pub trait ReadableAccountInfo: Sized {
     fn pubkey(&self) -> &[u8];
     fn owner(&self) -> &[u8];
-    fn lamports(&self) -> u64;
+    fn lamports(&self) -> i64;
     fn executable(&self) -> bool;
-    fn rent_epoch(&self) -> u64;
+    fn rent_epoch(&self) -> i64;
     fn data(&self) -> &[u8];
 }
 
@@ -86,7 +91,7 @@ impl ReadableAccountInfo for DbAccountInfo {
         &self.owner
     }
 
-    fn lamports(&self) -> u64 {
+    fn lamports(&self) -> i64 {
         self.lamports
     }
 
@@ -94,7 +99,7 @@ impl ReadableAccountInfo for DbAccountInfo {
         self.executable
     }
 
-    fn rent_epoch(&self) -> u64 {
+    fn rent_epoch(&self) -> i64 {
         self.rent_epoch
     }
 
@@ -112,16 +117,16 @@ impl<'a> ReadableAccountInfo for ReplicaAccountInfo<'a> {
         self.owner
     }
 
-    fn lamports(&self) -> u64 {
-        self.lamports
+    fn lamports(&self) -> i64 {
+        self.lamports as i64
     }
 
     fn executable(&self) -> bool {
         self.executable
     }
 
-    fn rent_epoch(&self) -> u64 {
-        self.rent_epoch
+    fn rent_epoch(&self) -> i64 {
+        self.rent_epoch as i64
     }
 
     fn data(&self) -> &[u8] {
@@ -137,7 +142,6 @@ pub trait PostgresClient {
     fn update_account(
         &mut self,
         account: DbAccountInfo,
-        slot: u64,
         at_startup: bool,
     ) -> Result<(), AccountsDbPluginError>;
 
@@ -172,10 +176,12 @@ impl SimplePostgresClient {
         client: &mut Client,
         config: &AccountsDbPluginPostgresConfig,
     ) -> Result<Statement, AccountsDbPluginError> {
-        let batch_size = config.batch_size.unwrap_or(1);
+        let batch_size = config
+            .batch_size
+            .unwrap_or(DEFAULT_ACCOUNTS_INSERT_BATCH_SIZE);
         let mut stmt = String::from("INSERT INTO account (pubkey, slot, owner, lamports, executable, rent_epoch, data, updated_on) VALUES");
         for j in 0..batch_size {
-            let row = j * 8;
+            let row = j * ACCOUNT_COLUMN_COUNT;
             let val_str = format!(
                 "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
                 row + 1,
@@ -219,7 +225,7 @@ impl SimplePostgresClient {
         ON CONFLICT (pubkey) DO UPDATE SET slot=$2, owner=$3, lamports=$4, executable=$5, rent_epoch=$6, \
         data=$7, updated_on=$8";
 
-        let stmt = client.prepare(&stmt);
+        let stmt = client.prepare(stmt);
 
         match stmt {
             Err(err) => {
@@ -234,12 +240,7 @@ impl SimplePostgresClient {
         }
     }
 
-    fn upsert_account(
-        &mut self,
-        account: &DbAccountInfo,
-        slot: u64,
-    ) -> Result<(), AccountsDbPluginError> {
-        let slot = slot as i64; // postgres only supports i64
+    fn upsert_account(&mut self, account: &DbAccountInfo) -> Result<(), AccountsDbPluginError> {
         let lamports = account.lamports() as i64;
         let rent_epoch = account.rent_epoch() as i64;
         let updated_on = Utc::now().naive_utc();
@@ -248,7 +249,7 @@ impl SimplePostgresClient {
             &client.update_account_stmt,
             &[
                 &account.pubkey(),
-                &slot,
+                &account.slot,
                 &account.owner(),
                 &lamports,
                 &account.executable(),
@@ -273,11 +274,41 @@ impl SimplePostgresClient {
     fn insert_accounts_in_batch(
         &mut self,
         account: DbAccountInfo,
-        slot: u64,
     ) -> Result<(), AccountsDbPluginError> {
-        self.accounts.push((account, slot));
+        self.accounts.push(account);
 
-        if self.accounts.len() == self.batch_size {}
+        if self.accounts.len() == self.batch_size {
+            let mut values: Vec<&(dyn ToSql + Sync)> =
+                Vec::with_capacity(self.batch_size * ACCOUNT_COLUMN_COUNT);
+            let updated_on = Utc::now().naive_utc();
+            for j in 0..self.batch_size {
+                let account = &self.accounts[j];
+
+                values.push(&account.pubkey);
+                values.push(&account.slot);
+                values.push(&account.owner);
+                values.push(&account.lamports);
+                values.push(&account.executable);
+                values.push(&account.rent_epoch);
+                values.push(&account.data);
+                values.push(&updated_on);
+            }
+
+            let client = self.client.get_mut().unwrap();
+            let result = client
+                .client
+                .query(&client.bulk_account_insert_stmt, &values);
+
+            self.accounts.clear();
+            if let Err(err) = result {
+                let msg = format!(
+                    "Failed to persist the update of account to the PostgreSQL database. Error: {:?}",
+                    err
+                );
+                error!("{}", msg);
+                return Err(AccountsDbPluginError::AccountsUpdateError { msg });
+            }
+        }
         Ok(())
     }
 
@@ -287,9 +318,12 @@ impl SimplePostgresClient {
             Self::build_bulk_account_insert_statement(&mut client, config)?;
         let update_account_stmt = Self::build_single_account_upsert_statement(&mut client, config)?;
 
+        let batch_size = config
+            .batch_size
+            .unwrap_or(DEFAULT_ACCOUNTS_INSERT_BATCH_SIZE);
         Ok(Self {
-            batch_size: config.batch_size.unwrap_or(1),
-            accounts: Vec::default(),
+            batch_size,
+            accounts: Vec::with_capacity(batch_size),
             client: Mutex::new(PostgresSqlClientWrapper {
                 client,
                 update_account_stmt,
@@ -303,19 +337,18 @@ impl PostgresClient for SimplePostgresClient {
     fn update_account(
         &mut self,
         account: DbAccountInfo,
-        slot: u64,
         at_startup: bool,
     ) -> Result<(), AccountsDbPluginError> {
         trace!(
             "Updating account {} with owner {} at slot {}",
             bs58::encode(account.pubkey()).into_string(),
             bs58::encode(account.owner()).into_string(),
-            slot,
+            account.slot,
         );
         if !at_startup {
-            return self.upsert_account(&account, slot);
+            return self.upsert_account(&account);
         }
-        return self.insert_accounts_in_batch(account, slot);
+        self.insert_accounts_in_batch(account)
     }
 
     fn update_slot_status(
@@ -380,7 +413,6 @@ impl PostgresClient for SimplePostgresClient {
 
 struct UpdateAccountRequest {
     account: DbAccountInfo,
-    slot: u64,
     at_startup: bool,
 }
 
@@ -412,11 +444,8 @@ impl PostgresClientWorker {
             match work {
                 Ok(work) => match work {
                     DbWorkItem::UpdateAccount(request) => {
-                        self.client.update_account(
-                            request.account,
-                            request.slot,
-                            request.at_startup,
-                        )?;
+                        self.client
+                            .update_account(request.account, request.at_startup)?;
                     }
                     DbWorkItem::UpdateSlot(request) => {
                         self.client.update_slot_status(
@@ -509,8 +538,7 @@ impl ParallelPostgresClient {
         if let Err(err) = self
             .sender
             .send(DbWorkItem::UpdateAccount(UpdateAccountRequest {
-                account: DbAccountInfo::new(account),
-                slot,
+                account: DbAccountInfo::new(account, slot),
                 at_startup,
             }))
         {
