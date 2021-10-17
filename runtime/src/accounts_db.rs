@@ -7107,9 +7107,8 @@ impl AccountsDb {
                     let mut pure_notify: usize = 0;
                     let mut pure_bookeeping: usize = 0;
                     for account in accounts_to_stream.values() {
-                        /*
                         let mut measure = Measure::start("accountsdb-plugin-notifying-accounts");
-                        notifier.notify_account_restore_from_snapshot(slot, account);
+                        //notifier.notify_account_restore_from_snapshot(slot, account);
                         measure.stop();
                         inc_new_counter_info!(
                             "accountsdb-plugin-notify_account_restore_from_snapshot-ms",
@@ -7132,7 +7131,6 @@ impl AccountsDb {
                         );
                         pure_bookeeping += measure.as_ms() as usize;
                         total_pure_bookeeping += measure.as_ms() as usize;
-                        */
                     }
                     measure.stop();
                     inc_new_counter_info!(
