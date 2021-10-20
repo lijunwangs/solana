@@ -23,6 +23,18 @@ pub enum ReplicaAccountInfoVersions<'a> {
     V0_0_1(&'a ReplicaAccountInfo<'a>),
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct ReplicaTransactionLogInfo {
+    pub signature: Vec<u8>,
+    pub result: String,
+    pub is_vote: bool,
+    pub log_messages: Vec<String>,
+}
+
+pub enum ReplicaTranscaionLogInfoVersions {
+    V0_0_1(ReplicaTransactionLogInfo),
+}
+
 #[derive(Error, Debug)]
 pub enum AccountsDbPluginError {
     #[error("Error opening config file. Error detail: ({0}).")]
@@ -94,5 +106,11 @@ pub trait AccountsDbPlugin: Any + Send + Sync + std::fmt::Debug {
         slot: u64,
         parent: Option<u64>,
         status: SlotStatus,
+    ) -> Result<()>;
+
+    /// Called when an account is updated at a slot.
+    fn notify_transaction(
+        &mut self,
+        account: ReplicaTranscaionLogInfoVersions,
     ) -> Result<()>;
 }
