@@ -3,13 +3,14 @@ use {
     crate::accountsdb_plugin_manager::AccountsDbPluginManager,
     log::*,
     solana_accountsdb_plugin_interface::accountsdb_plugin_interface::{
-        ReplicaAccountInfo, ReplicaAccountInfoVersions, SlotStatus,
+        ReplicaAccountInfo, ReplicaAccountInfoVersions, ReplicaTranscaionLogInfoVersions, SlotStatus,
     },
     solana_measure::measure::Measure,
     solana_metrics::*,
     solana_runtime::{
         accounts_update_notifier_interface::AccountsUpdateNotifierInterface,
         append_vec::StoredAccountMeta,
+        bank::TransactionLogInfo,
     },
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
@@ -98,6 +99,10 @@ impl AccountsUpdateNotifierInterface for AccountsUpdateNotifierImpl {
 
     fn notify_slot_rooted(&self, slot: Slot, parent: Option<Slot>) {
         self.notify_slot_status(slot, parent, SlotStatus::Rooted);
+    }
+
+    fn notify_transaction_log_info(&self, transaction_log_info: &TransactionLogInfo) {
+
     }
 }
 
@@ -223,4 +228,37 @@ impl AccountsUpdateNotifierImpl {
             );
         }
     }
+
+    fn notify_plugins_of_transaction_log_info(
+        &self,
+        transaction_log_info: &TransactionLogInfo,
+    ) {
+        let mut measure2 = Measure::start("accountsdb-plugin-notify_plugins_of_account_update");
+        let mut plugin_manager = self.plugin_manager.write().unwrap();
+
+        if plugin_manager.plugins.is_empty() {
+            return;
+        }
+        for plugin in plugin_manager.plugins.iter_mut() {
+            let mut measure = Measure::start("accountsdb-plugin-update-account");
+            match plugin.notify_transaction(
+                ReplicaTranscaionLogInfoVersions::V0_0_1(transaction_log_info)
+            ) {
+                Err(err) => {
+                    error!(
+                        "Failed to notify transaction, error: {} to plugin {}",
+                        err,
+                        plugin.name()
+                    )
+                }
+                Ok(_) => {
+                    trace!(
+                        "Successfully notified transaction to plugin {}",
+                        plugin.name()
+                    );
+                }
+            }
+        }
+    }
+
 }
