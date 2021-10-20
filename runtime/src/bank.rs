@@ -1007,6 +1007,9 @@ pub struct Bank {
     vote_only_bank: bool,
 
     pub cost_tracker: RwLock<CostTracker>,
+
+    /// AccountsDbPlugin accounts update notifier
+    accounts_update_notifier: Option<AccountsUpdateNotifier>,
 }
 
 impl Default for BlockhashQueue {
@@ -1146,6 +1149,7 @@ impl Bank {
             freeze_started: AtomicBool::default(),
             vote_only_bank: false,
             cost_tracker: RwLock::<CostTracker>::default(),
+            accounts_update_notifier: None,
         }
     }
 
@@ -1222,7 +1226,7 @@ impl Bank {
             accounts_db_caching_enabled,
             shrink_ratio,
             accounts_db_config,
-            accounts_update_notifier,
+            accounts_update_notifier.clone(),
         );
         let mut bank = Self::default_with_accounts(accounts);
         bank.ancestors = Ancestors::from(vec![bank.slot()]);
@@ -1255,6 +1259,7 @@ impl Bank {
         bank.update_rent();
         bank.update_epoch_schedule();
         bank.update_recent_blockhashes();
+        bank.accounts_update_notifier = accounts_update_notifier;
         bank
     }
 
@@ -1403,6 +1408,7 @@ impl Bank {
             )),
             freeze_started: AtomicBool::new(false),
             cost_tracker: RwLock::new(CostTracker::default()),
+            accounts_update_notifier: parent.accounts_update_notifier.clone(),
         };
 
         datapoint_info!(
@@ -1528,6 +1534,7 @@ impl Bank {
         debug_keys: Option<Arc<HashSet<Pubkey>>>,
         additional_builtins: Option<&Builtins>,
         debug_do_not_add_builtins: bool,
+        accounts_update_notifier: Option<AccountsUpdateNotifier>,
     ) -> Self {
         fn new<T: Default>() -> T {
             T::default()
@@ -1590,6 +1597,7 @@ impl Bank {
             freeze_started: AtomicBool::new(fields.hash != Hash::default()),
             vote_only_bank: false,
             cost_tracker: RwLock::new(CostTracker::default()),
+            accounts_update_notifier,
         };
         bank.finish_init(
             genesis_config,
@@ -3931,8 +3939,12 @@ impl Bank {
                 }
             }
 
+            info!("zzzzzzz processing txn filter {:?} notifier: {:?} can commit: {:?}",
+                transaction_log_collector_config.filter, self.accounts_update_notifier.is_some(),
+                Self::can_commit(r));
             if Self::can_commit(r) // Skip log collection for unprocessed transactions
-                && transaction_log_collector_config.filter != TransactionLogCollectorFilter::None
+                && (transaction_log_collector_config.filter != TransactionLogCollectorFilter::None
+                    || self.accounts_update_notifier.is_some())
             {
                 let mut transaction_log_collector = self.transaction_log_collector.write().unwrap();
                 let transaction_log_index = transaction_log_collector.logs.len();
@@ -3965,14 +3977,24 @@ impl Bank {
                     TransactionLogCollectorFilter::OnlyMentionedAddresses => mentioned_address,
                 };
 
-                if store {
+                if store || self.accounts_update_notifier.is_some() {
                     if let Some(log_messages) = transaction_log_messages.get(i).cloned().flatten() {
-                        transaction_log_collector.logs.push(TransactionLogInfo {
+                        let transaction_log_info = TransactionLogInfo {
                             signature: *tx.signature(),
                             result: r.clone(),
                             is_vote,
                             log_messages,
-                        });
+                        };
+
+                        if let Some(accounts_update_notifier) = &self.accounts_update_notifier {
+                            info!("zzzzzzzzzzzzz, notify transaction_log_info");
+                            let notifier = &accounts_update_notifier.read().unwrap();
+                            notifier
+                                .notify_transaction_log_info(&transaction_log_info, self.slot());
+                        }
+                        if store {
+                            transaction_log_collector.logs.push(transaction_log_info);
+                        }
                     }
                 }
             }
