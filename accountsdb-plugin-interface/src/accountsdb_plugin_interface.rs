@@ -24,15 +24,15 @@ pub enum ReplicaAccountInfoVersions<'a> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub struct ReplicaTransactionLogInfo {
-    pub signature: Vec<u8>,
+pub struct ReplicaTransactionLogInfo<'a> {
+    pub signature: &'a [u8],
     pub result: String,
     pub is_vote: bool,
-    pub log_messages: Vec<String>,
+    pub log_messages: &'a [String],
 }
 
-pub enum ReplicaTranscaionLogInfoVersions {
-    V0_0_1(ReplicaTransactionLogInfo),
+pub enum ReplicaTranscaionLogInfoVersions<'a> {
+    V0_0_1(&'a ReplicaTransactionLogInfo<'a>),
 }
 
 #[derive(Error, Debug)]

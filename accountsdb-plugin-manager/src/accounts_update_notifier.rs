@@ -3,7 +3,7 @@ use {
     crate::accountsdb_plugin_manager::AccountsDbPluginManager,
     log::*,
     solana_accountsdb_plugin_interface::accountsdb_plugin_interface::{
-        ReplicaAccountInfo, ReplicaAccountInfoVersions, ReplicaTranscaionLogInfoVersions, SlotStatus,
+        ReplicaAccountInfo, ReplicaAccountInfoVersions, ReplicaTransactionLogInfo, ReplicaTranscaionLogInfoVersions, SlotStatus,
     },
     solana_measure::measure::Measure,
     solana_metrics::*,
@@ -138,6 +138,15 @@ impl AccountsUpdateNotifierImpl {
             rent_epoch: stored_account_meta.account_meta.rent_epoch,
             data: stored_account_meta.data,
         })
+    }
+
+    fn build_replica_transaction_log_info<'a>(transaction_log_info: &'a TransactionLogInfo) -> ReplicaTransactionLogInfo<'a> {
+        ReplicaTransactionLogInfo {
+            signature: transaction_log_info.signature.as_ref(),
+            result: transaction_log_info.result,
+            is_vote: transaction_log_info.is_vote,
+            log_messages: transaction_log_info.log_messages,
+        }
     }
 
     fn notify_plugins_of_account_update(
