@@ -10,7 +10,7 @@ use {
     log::*,
     postgres::{Client, NoTls, Statement},
     solana_accountsdb_plugin_interface::accountsdb_plugin_interface::{
-        AccountsDbPluginError, ReplicaAccountInfo, SlotStatus,
+        AccountsDbPluginError, ReplicaAccountInfo, ReplicaTransactionLogInfo, SlotStatus,
     },
     solana_measure::measure::Measure,
     solana_metrics::*,
@@ -160,6 +160,11 @@ pub trait PostgresClient {
     ) -> Result<(), AccountsDbPluginError>;
 
     fn notify_end_of_startup(&mut self) -> Result<(), AccountsDbPluginError>;
+
+    fn log_transaction(
+        &mut self,
+        transaction_log_info: ReplicaTransactionLogInfo,
+    ) -> Result<(), AccountsDbPluginError>;
 }
 
 impl SimplePostgresClient {
@@ -486,6 +491,14 @@ impl PostgresClient for SimplePostgresClient {
     fn notify_end_of_startup(&mut self) -> Result<(), AccountsDbPluginError> {
         self.flush_buffered_writes()
     }
+
+    fn log_transaction(
+        &mut self,
+        transaction_log_info: ReplicaTransactionLogInfo,
+    ) -> Result<(), AccountsDbPluginError> {
+
+        Ok(())
+    }
 }
 
 struct UpdateAccountRequest {
@@ -502,6 +515,7 @@ struct UpdateSlotRequest {
 enum DbWorkItem {
     UpdateAccount(UpdateAccountRequest),
     UpdateSlot(UpdateSlotRequest),
+    LogTransaction(ReplicaTransactionLogInfo),
 }
 
 impl PostgresClientWorker {
@@ -548,6 +562,9 @@ impl PostgresClientWorker {
                             request.parent,
                             request.slot_status,
                         )?;
+                    }
+                    DbWorkItem::LogTransaction(transaction_log_info) => {
+                        self.client.log_transaction(transaction_log_info)?;
                     }
                 },
                 Err(err) => match err {
@@ -739,6 +756,18 @@ impl ParallelPostgresClient {
         }
 
         info!("Done with notifying the end of startup");
+        Ok(())
+    }
+
+    pub fn log_transaction_info(
+        &mut self,
+        transaction_info: ReplicaTransactionLogInfo,
+    ) -> Result<(), AccountsDbPluginError> {
+        if let Err(err) = self.sender.send(DbWorkItem::LogTransaction(transaction_info)) {
+            return Err(AccountsDbPluginError::SlotStatusUpdateError {
+                msg: format!("Failed to update the transaction, error: {:?}", err),
+            });
+        }
         Ok(())
     }
 }
