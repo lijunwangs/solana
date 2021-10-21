@@ -163,7 +163,7 @@ pub trait PostgresClient {
 
     fn log_transaction(
         &mut self,
-        transaction_log_info: ReplicaTransactionLogInfo,
+        transaction_log_info: LogTransactionRequest,
     ) -> Result<(), AccountsDbPluginError>;
 }
 
@@ -494,7 +494,7 @@ impl PostgresClient for SimplePostgresClient {
 
     fn log_transaction(
         &mut self,
-        transaction_log_info: ReplicaTransactionLogInfo,
+        transaction_log_info: LogTransactionRequest,
     ) -> Result<(), AccountsDbPluginError> {
 
         Ok(())
@@ -512,10 +512,17 @@ struct UpdateSlotRequest {
     slot_status: SlotStatus,
 }
 
+pub struct LogTransactionRequest {
+    signature: Vec<u8>,
+    result: String,
+    is_vote: bool,
+    log_messages: Vec<String>,
+}
+
 enum DbWorkItem {
     UpdateAccount(UpdateAccountRequest),
     UpdateSlot(UpdateSlotRequest),
-    LogTransaction(ReplicaTransactionLogInfo),
+    LogTransaction(LogTransactionRequest),
 }
 
 impl PostgresClientWorker {
@@ -761,9 +768,16 @@ impl ParallelPostgresClient {
 
     pub fn log_transaction_info(
         &mut self,
-        transaction_info: ReplicaTransactionLogInfo,
+        transaction_info: &ReplicaTransactionLogInfo,
     ) -> Result<(), AccountsDbPluginError> {
-        if let Err(err) = self.sender.send(DbWorkItem::LogTransaction(transaction_info)) {
+        let wrk_item = DbWorkItem::LogTransaction(LogTransactionRequest {
+            signature: transaction_info.signature.to_vec(),
+            is_vote: transaction_info.is_vote,
+            result: transaction_info.result.clone(),
+            log_messages: transaction_info.log_messages.to_vec()
+        });
+
+        if let Err(err) = self.sender.send(wrk_item) {
             return Err(AccountsDbPluginError::SlotStatusUpdateError {
                 msg: format!("Failed to update the transaction, error: {:?}", err),
             });
