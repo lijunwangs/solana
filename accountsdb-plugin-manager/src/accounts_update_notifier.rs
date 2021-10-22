@@ -5,14 +5,14 @@ use {
     crate::accountsdb_plugin_manager::AccountsDbPluginManager,
     log::*,
     solana_accountsdb_plugin_interface::accountsdb_plugin_interface::{
-        ReplicaAccountInfo, ReplicaAccountInfoVersions, ReplicaTransactionLogInfo, ReplicaTranscaionLogInfoVersions, SlotStatus,
+        ReplicaAccountInfo, ReplicaAccountInfoVersions, ReplicaTransactionLogInfo,
+        ReplicaTranscaionLogInfoVersions, SlotStatus,
     },
     solana_measure::measure::Measure,
     solana_metrics::*,
     solana_runtime::{
         accounts_update_notifier_interface::AccountsUpdateNotifierInterface,
-        append_vec::StoredAccountMeta,
-        bank::TransactionLogInfo,
+        append_vec::StoredAccountMeta, bank::TransactionLogInfo,
     },
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
@@ -103,8 +103,8 @@ impl AccountsUpdateNotifierInterface for AccountsUpdateNotifierImpl {
         self.notify_slot_status(slot, parent, SlotStatus::Rooted);
     }
 
-    fn notify_transaction_log_info(&self, transaction_log_info: &TransactionLogInfo) {
-
+    fn notify_transaction_log_info(&self, transaction_log_info: &TransactionLogInfo, slot: Slot) {
+        self.notify_plugins_of_transaction_log_info(transaction_log_info, slot);
     }
 }
 
@@ -122,9 +122,10 @@ fn get_transaction_status(result: &Result<(), TransactionError>) -> Option<Strin
         TransactionError::InvalidAccountForFee => "InvalidAccountForFee",
         TransactionError::AlreadyProcessed => "AlreadyProcessed",
         TransactionError::BlockhashNotFound => "BlockhashNotFound",
-        TransactionError::InstructionError(idx, error) => {return Some(format!("InstructionError: idx ({}), error: {}", idx, error));},
+        TransactionError::InstructionError(idx, error) => {
+            return Some(format!("InstructionError: idx ({}), error: {}", idx, error));
+        }
         TransactionError::CallChainTooDeep => "CallChainTooDeep",
-        TransactionError::AccountNotFound => "AccountNotFound",
         TransactionError::MissingSignatureForFee => "MissingSignatureForFee",
         TransactionError::InvalidAccountIndex => "InvalidAccountIndex",
         TransactionError::SignatureFailure => "SignatureFailure",
@@ -174,7 +175,9 @@ impl AccountsUpdateNotifierImpl {
         })
     }
 
-    fn build_replica_transaction_log_info<'a>(transaction_log_info: &'a TransactionLogInfo) -> ReplicaTransactionLogInfo<'a> {
+    fn build_replica_transaction_log_info<'a>(
+        transaction_log_info: &'a TransactionLogInfo,
+    ) -> ReplicaTransactionLogInfo<'a> {
         ReplicaTransactionLogInfo {
             signature: transaction_log_info.signature.as_ref(),
             result: get_transaction_status(&transaction_log_info.result),
@@ -275,8 +278,10 @@ impl AccountsUpdateNotifierImpl {
     fn notify_plugins_of_transaction_log_info(
         &self,
         transaction_log_info: &TransactionLogInfo,
+        slot: Slot,
     ) {
-        let mut measure2 = Measure::start("accountsdb-plugin-notify_plugins_of_account_update");
+        let mut measure =
+            Measure::start("accountsdb-plugin-notify_plugins_of_transaction_log_info");
         let mut plugin_manager = self.plugin_manager.write().unwrap();
 
         if plugin_manager.plugins.is_empty() {
@@ -285,9 +290,9 @@ impl AccountsUpdateNotifierImpl {
 
         let transaction_log_info = Self::build_replica_transaction_log_info(transaction_log_info);
         for plugin in plugin_manager.plugins.iter_mut() {
-            let mut measure = Measure::start("accountsdb-plugin-update-account");
             match plugin.notify_transaction(
-                ReplicaTranscaionLogInfoVersions::V0_0_1(&transaction_log_info)
+                ReplicaTranscaionLogInfoVersions::V0_0_1(&transaction_log_info),
+                slot,
             ) {
                 Err(err) => {
                     error!(
@@ -304,6 +309,12 @@ impl AccountsUpdateNotifierImpl {
                 }
             }
         }
+        measure.stop();
+        inc_new_counter_debug!(
+            "accountsdb-plugin-notify_plugins_of_transaction_log_info-us",
+            measure.as_us() as usize,
+            10000,
+            10000
+        );
     }
-
 }

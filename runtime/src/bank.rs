@@ -3987,7 +3987,8 @@ impl Bank {
 
                         if let Some(accounts_update_notifier) = &self.accounts_update_notifier {
                             let notifier = &accounts_update_notifier.read().unwrap();
-                            notifier.notify_transaction_log_info(&transaction_log_info);   
+                            notifier
+                                .notify_transaction_log_info(&transaction_log_info, self.slot());
                         }
                         transaction_log_collector.logs.push(transaction_log_info);
                     }
