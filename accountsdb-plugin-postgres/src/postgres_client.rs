@@ -271,7 +271,7 @@ impl SimplePostgresClient {
         let stmt = "INSERT INTO transaction_log AS txn (signature, is_vote, result, logs, slot, updated_on) \
         VALUES ($1, $2, $3, $4, $5, $6) \
         ON CONFLICT (signature) DO UPDATE SET slot=excluded.slot, is_vote=excluded.is_vote, result=excluded.result, logs=excluded.logs, \
-        updated_on=excluded.updated_on WHERE acct.slot <= excluded.slot";
+        updated_on=excluded.updated_on WHERE txn.slot <= excluded.slot";
 
         let stmt = client.prepare(stmt);
 

@@ -30,7 +30,8 @@ create TABLE transaction_log (
     is_vote BOOL NOT NULL,
     result varchar(256),
     slot BIGINT NOT NULL,
-    logs text[]
+    logs text[],
+    updated_on TIMESTAMP NOT NULL
 );
 
 /**
