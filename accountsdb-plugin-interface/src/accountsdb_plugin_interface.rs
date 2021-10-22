@@ -26,7 +26,7 @@ pub enum ReplicaAccountInfoVersions<'a> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct ReplicaTransactionLogInfo<'a> {
     pub signature: &'a [u8],
-    pub result: String,
+    pub result: Option<String>,
     pub is_vote: bool,
     pub log_messages: &'a [String],
 }

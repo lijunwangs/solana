@@ -514,7 +514,7 @@ struct UpdateSlotRequest {
 
 pub struct LogTransactionRequest {
     signature: Vec<u8>,
-    result: String,
+    result: Option<String>,
     is_vote: bool,
     log_messages: Vec<String>,
 }

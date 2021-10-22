@@ -1,3 +1,5 @@
+use solana_sdk::transaction::TransactionError;
+
 /// Module responsible for notifying plugins of account updates
 use {
     crate::accountsdb_plugin_manager::AccountsDbPluginManager,
@@ -106,6 +108,38 @@ impl AccountsUpdateNotifierInterface for AccountsUpdateNotifierImpl {
     }
 }
 
+fn get_transaction_status(result: &Result<(), TransactionError>) -> Option<String> {
+    if result.is_ok() {
+        return None;
+    }
+
+    let err = match result.as_ref().err().unwrap() {
+        TransactionError::AccountInUse => "AccountInUse",
+        TransactionError::AccountLoadedTwice => "AccountLoadedTwice",
+        TransactionError::AccountNotFound => "AccountNotFound",
+        TransactionError::ProgramAccountNotFound => "ProgramAccountNotFound",
+        TransactionError::InsufficientFundsForFee => "InsufficientFundsForFee",
+        TransactionError::InvalidAccountForFee => "InvalidAccountForFee",
+        TransactionError::AlreadyProcessed => "AlreadyProcessed",
+        TransactionError::BlockhashNotFound => "BlockhashNotFound",
+        TransactionError::InstructionError(idx, error) => {return Some(format!("InstructionError: idx ({}), error: {}", idx, error));},
+        TransactionError::CallChainTooDeep => "CallChainTooDeep",
+        TransactionError::AccountNotFound => "AccountNotFound",
+        TransactionError::MissingSignatureForFee => "MissingSignatureForFee",
+        TransactionError::InvalidAccountIndex => "InvalidAccountIndex",
+        TransactionError::SignatureFailure => "SignatureFailure",
+        TransactionError::InvalidProgramForExecution => "InvalidProgramForExecution",
+        TransactionError::SanitizeFailure => "SanitizeFailure",
+        TransactionError::ClusterMaintenance => "ClusterMaintenance",
+        TransactionError::AccountBorrowOutstanding => "AccountBorrowOutstanding",
+        TransactionError::WouldExceedMaxBlockCostLimit => "WouldExceedMaxBlockCostLimit",
+        TransactionError::UnsupportedVersion => "UnsupportedVersion",
+        TransactionError::InvalidWritableAccount => "InvalidWritableAccount",
+    };
+
+    Some(err.to_string())
+}
+
 impl AccountsUpdateNotifierImpl {
     pub fn new(plugin_manager: Arc<RwLock<AccountsDbPluginManager>>) -> Self {
         AccountsUpdateNotifierImpl { plugin_manager }
@@ -143,9 +177,9 @@ impl AccountsUpdateNotifierImpl {
     fn build_replica_transaction_log_info<'a>(transaction_log_info: &'a TransactionLogInfo) -> ReplicaTransactionLogInfo<'a> {
         ReplicaTransactionLogInfo {
             signature: transaction_log_info.signature.as_ref(),
-            result: transaction_log_info.result,
+            result: get_transaction_status(&transaction_log_info.result),
             is_vote: transaction_log_info.is_vote,
-            log_messages: transaction_log_info.log_messages,
+            log_messages: &transaction_log_info.log_messages,
         }
     }
 
@@ -248,10 +282,12 @@ impl AccountsUpdateNotifierImpl {
         if plugin_manager.plugins.is_empty() {
             return;
         }
+
+        let transaction_log_info = Self::build_replica_transaction_log_info(transaction_log_info);
         for plugin in plugin_manager.plugins.iter_mut() {
             let mut measure = Measure::start("accountsdb-plugin-update-account");
             match plugin.notify_transaction(
-                ReplicaTranscaionLogInfoVersions::V0_0_1(transaction_log_info)
+                ReplicaTranscaionLogInfoVersions::V0_0_1(&transaction_log_info)
             ) {
                 Err(err) => {
                     error!(
