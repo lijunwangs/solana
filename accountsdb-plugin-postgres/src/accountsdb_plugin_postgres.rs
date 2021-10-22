@@ -11,7 +11,8 @@ use {
     serde_derive::{Deserialize, Serialize},
     serde_json,
     solana_accountsdb_plugin_interface::accountsdb_plugin_interface::{
-        AccountsDbPlugin, AccountsDbPluginError, ReplicaAccountInfoVersions, ReplicaTranscaionLogInfoVersions, Result, SlotStatus,
+        AccountsDbPlugin, AccountsDbPluginError, ReplicaAccountInfoVersions,
+        ReplicaTranscaionLogInfoVersions, Result, SlotStatus,
     },
     solana_metrics::*,
     std::{fs::File, io::Read},
@@ -270,9 +271,19 @@ impl AccountsDbPlugin for AccountsDbPluginPostgres {
         Ok(())
     }
 
-    fn notify_transaction(&mut self, transaction_log_info: ReplicaTranscaionLogInfoVersions) -> Result<()>
-    {
-        if self.config.is_none() || self.config.as_ref().unwrap().store_transaction_logs.unwrap_or(DEFAULT_STORE_TRANSACTION_LOGS) == false {
+    fn notify_transaction(
+        &mut self,
+        transaction_log_info: ReplicaTranscaionLogInfoVersions,
+        slot: u64,
+    ) -> Result<()> {
+        if self.config.is_none()
+            || !self
+                .config
+                .as_ref()
+                .unwrap()
+                .store_transaction_logs
+                .unwrap_or(DEFAULT_STORE_TRANSACTION_LOGS)
+        {
             return Ok(());
         }
 
@@ -284,24 +295,21 @@ impl AccountsDbPlugin for AccountsDbPluginPostgres {
                     },
                 )));
             }
-            Some(client) => {
-                match transaction_log_info {
-                        ReplicaTranscaionLogInfoVersions::V0_0_1(transaction_log_info) => {
-                        let result = client.log_transaction_info(transaction_log_info);
+            Some(client) => match transaction_log_info {
+                ReplicaTranscaionLogInfoVersions::V0_0_1(transaction_log_info) => {
+                    let result = client.log_transaction_info(transaction_log_info, slot);
 
-                        if let Err(err) = result {
-                            return Err(AccountsDbPluginError::SlotStatusUpdateError{
+                    if let Err(err) = result {
+                        return Err(AccountsDbPluginError::SlotStatusUpdateError{
                                 msg: format!("Failed to persist the transaction log to the PostgreSQL database. Error: {:?}", err)
                             });
-                        }
                     }
                 }
-            }
+            },
         }
 
         Ok(())
     }
-
 }
 
 impl AccountsDbPluginPostgres {

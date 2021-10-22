@@ -25,7 +25,7 @@ pub trait AccountsUpdateNotifierInterface: std::fmt::Debug {
     fn notify_slot_rooted(&self, slot: Slot, parent: Option<Slot>);
 
     /// Notify transaction log info
-    fn notify_transaction_log_info(&self, transaction_log_info: &TransactionLogInfo);
+    fn notify_transaction_log_info(&self, transaction_log_info: &TransactionLogInfo, slot: Slot);
 }
 
 pub type AccountsUpdateNotifier = Arc<RwLock<dyn AccountsUpdateNotifierInterface + Sync + Send>>;

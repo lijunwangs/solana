@@ -49,6 +49,9 @@ pub enum AccountsDbPluginError {
     #[error("Error updating slot status. Error message: ({msg})")]
     SlotStatusUpdateError { msg: String },
 
+    #[error("Error updating transaction log. Error message: ({msg})")]
+    TransactionLogUpdateError { msg: String },
+
     #[error("Plugin-defined custom error. Error message: ({0})")]
     Custom(Box<dyn error::Error + Send + Sync>),
 }
@@ -112,5 +115,6 @@ pub trait AccountsDbPlugin: Any + Send + Sync + std::fmt::Debug {
     fn notify_transaction(
         &mut self,
         account: ReplicaTranscaionLogInfoVersions,
+        slot: u64,
     ) -> Result<()>;
 }

@@ -155,6 +155,7 @@ pub mod tests {
                 AccountsUpdateNotifier, AccountsUpdateNotifierInterface,
             },
             append_vec::StoredAccountMeta,
+            bank::TransactionLogInfo,
         },
         dashmap::DashMap,
         solana_sdk::{
@@ -210,6 +211,8 @@ pub mod tests {
         fn notify_end_of_restore_from_snapshot(&self) {
             self.is_startup_done.store(true, Ordering::Relaxed);
         }
+
+        fn notify_transaction_log_info(&self, _transaction_log_info: &TransactionLogInfo, _slot: Slot) {}
     }
 
     #[test]
