@@ -1534,6 +1534,7 @@ impl Bank {
         debug_keys: Option<Arc<HashSet<Pubkey>>>,
         additional_builtins: Option<&Builtins>,
         debug_do_not_add_builtins: bool,
+        accounts_update_notifier: Option<AccountsUpdateNotifier>,
     ) -> Self {
         fn new<T: Default>() -> T {
             T::default()
@@ -1596,7 +1597,7 @@ impl Bank {
             freeze_started: AtomicBool::new(fields.hash != Hash::default()),
             vote_only_bank: false,
             cost_tracker: RwLock::new(CostTracker::default()),
-            accounts_update_notifier: None,
+            accounts_update_notifier,
         };
         bank.finish_init(
             genesis_config,
@@ -3942,8 +3943,10 @@ impl Bank {
                 }
             }
 
+            info!("zzzzzzz processing txn filter {:?} notifier: {:?}", transaction_log_collector_config.filter, self.accounts_update_notifier.is_some());
             if Self::can_commit(r) // Skip log collection for unprocessed transactions
-                && transaction_log_collector_config.filter != TransactionLogCollectorFilter::None
+                && (transaction_log_collector_config.filter != TransactionLogCollectorFilter::None
+                    || self.accounts_update_notifier.is_some())
             {
                 let mut transaction_log_collector = self.transaction_log_collector.write().unwrap();
                 let transaction_log_index = transaction_log_collector.logs.len();
@@ -3976,7 +3979,7 @@ impl Bank {
                     TransactionLogCollectorFilter::OnlyMentionedAddresses => mentioned_address,
                 };
 
-                if store {
+                if store || self.accounts_update_notifier.is_some() {
                     if let Some(log_messages) = transaction_log_messages.get(i).cloned().flatten() {
                         let transaction_log_info = TransactionLogInfo {
                             signature: *tx.signature(),
@@ -3986,11 +3989,14 @@ impl Bank {
                         };
 
                         if let Some(accounts_update_notifier) = &self.accounts_update_notifier {
+                            info!("zzzzzzzzzzzzz, notify transaction_log_info");
                             let notifier = &accounts_update_notifier.read().unwrap();
                             notifier
                                 .notify_transaction_log_info(&transaction_log_info, self.slot());
                         }
-                        transaction_log_collector.logs.push(transaction_log_info);
+                        if store {
+                            transaction_log_collector.logs.push(transaction_log_info);
+                        }
                     }
                 }
             }
