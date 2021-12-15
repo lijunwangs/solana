@@ -326,7 +326,7 @@ impl Validator {
 
         let mut bank_notification_senders = Vec::new();
 
-        let accountsdb_plugin_service =
+        let mut accountsdb_plugin_service =
             if let Some(accountsdb_plugin_config_files) = &config.accountsdb_plugin_config_files {
                 let (confirmed_bank_sender, confirmed_bank_receiver) = unbounded();
                 bank_notification_senders.push(confirmed_bank_sender);
@@ -469,6 +469,10 @@ impl Validator {
             accounts_update_notifier,
             transaction_notifier,
         );
+
+        if let Some(accountsdb_plugin_service) = &mut accountsdb_plugin_service {
+            accountsdb_plugin_service.set_blockstore(blockstore.clone());
+        }
 
         *start_progress.write().unwrap() = ValidatorStartProgress::StartingServices;
 

@@ -2,12 +2,14 @@ use {
     crate::{
         accounts_update_notifier::AccountsUpdateNotifierImpl,
         accountsdb_plugin_manager::AccountsDbPluginManager,
-        slot_status_notifier::SlotStatusNotifierImpl, slot_status_observer::SlotStatusObserver,
+        slot_status_notifier::{SlotStatusNotifierImpl, SlotStatusNotifierInterface},
+        slot_status_observer::SlotStatusObserver,
         transaction_notifier::TransactionNotifierImpl,
     },
     crossbeam_channel::Receiver,
     log::*,
     serde_json,
+    solana_ledger::blockstore::Blockstore,
     solana_rpc::{
         optimistically_confirmed_bank_tracker::BankNotification,
         transaction_notifier_interface::TransactionNotifierLock,
@@ -47,6 +49,7 @@ pub enum AccountsdbPluginServiceError {
 /// The service managing the AccountsDb plugin workflow.
 pub struct AccountsDbPluginService {
     slot_status_observer: Option<SlotStatusObserver>,
+    slot_status_notifier: Option<Arc<RwLock<SlotStatusNotifierImpl>>>,
     plugin_manager: Arc<RwLock<AccountsDbPluginManager>>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
     transaction_notifier: Option<TransactionNotifierLock>,
@@ -102,21 +105,25 @@ impl AccountsDbPluginService {
                 None
             };
 
-        let slot_status_observer =
+        let (slot_status_observer, slot_status_notifier) =
             if account_data_notifications_enabled || transaction_notifications_enabled {
                 let slot_status_notifier = SlotStatusNotifierImpl::new(plugin_manager.clone());
                 let slot_status_notifier = Arc::new(RwLock::new(slot_status_notifier));
-                Some(SlotStatusObserver::new(
-                    confirmed_bank_receiver,
-                    slot_status_notifier,
-                ))
+                (
+                    Some(SlotStatusObserver::new(
+                        confirmed_bank_receiver,
+                        slot_status_notifier.clone(),
+                    )),
+                    Some(slot_status_notifier),
+                )
             } else {
-                None
+                (None, None)
             };
 
         info!("Started AccountsDbPluginService");
         Ok(AccountsDbPluginService {
             slot_status_observer,
+            slot_status_notifier,
             plugin_manager,
             accounts_update_notifier,
             transaction_notifier,
@@ -176,6 +183,16 @@ impl AccountsDbPluginService {
             }
         }
         Ok(())
+    }
+
+    pub fn set_blockstore(&mut self, blockstore: Arc<Blockstore>) {
+        if let Some(slot_status_notifier) = &self.slot_status_notifier {
+            slot_status_notifier
+                .write()
+                .as_mut()
+                .unwrap()
+                .set_blockstore(blockstore);
+        }
     }
 
     pub fn get_accounts_update_notifier(&self) -> Option<AccountsUpdateNotifier> {

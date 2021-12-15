@@ -5,6 +5,7 @@ use {
 };
 
 pub trait TransactionNotifier {
+    /// Call back for notifying transactions
     fn notify_transaction(
         &self,
         slot: Slot,
