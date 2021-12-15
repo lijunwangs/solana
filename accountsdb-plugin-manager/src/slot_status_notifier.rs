@@ -69,7 +69,7 @@ impl SlotStatusNotifierImpl {
                     let confirmed_block = blockstore.get_complete_block(slot, true);
                     info!(
                         "Received confirmed block {:?} for slot {}",
-                        confirmed_block, slot
+                        confirmed_block.map(|block| block.blockhash), slot
                     );
                 }
             }

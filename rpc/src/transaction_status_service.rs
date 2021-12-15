@@ -166,8 +166,6 @@ impl TransactionStatusService {
                         };
 
                         if let Some(transaction_notifier) = transaction_notifier.as_ref() {
-                            let confirmed_block = blockstore.get_complete_block(slot, true);
-                            info!("Confirmed block for slot {} is {:?}", slot, confirmed_block);
                             transaction_notifier.write().unwrap().notify_transaction(
                                 slot,
                                 transaction.signature(),
