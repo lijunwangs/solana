@@ -156,6 +156,7 @@ impl SendTransactionService {
     ) -> Self {
         let retry_transactions = Arc::new(Mutex::new(HashMap::new()));
         let exit = Arc::new(AtomicBool::new(false));
+        let (batch_sender, batch_receiver) = crossbeam_channel::unbounded();
         let receive_txn_thread = Self::receive_txn_thread(
             tpu_address,
             receiver,
@@ -167,6 +168,7 @@ impl SendTransactionService {
 
         let retry_thread = Self::retry_thread(
             tpu_address,
+            batch_receiver,
             bank_forks.clone(),
             leader_info,
             config,
@@ -278,6 +280,7 @@ impl SendTransactionService {
     /// Thread responsible for retrying transactions
     fn retry_thread<T: TpuInfo + std::marker::Send + 'static>(
         tpu_address: SocketAddr,
+        batch_receiver: Receiver<Arc<Mutex<HashMap<Signature, TransactionInfo>>>>,
         bank_forks: Arc<RwLock<BankForks>>,
         mut leader_info: Option<T>,
         config: Config,
@@ -297,12 +300,21 @@ impl SendTransactionService {
         Builder::new()
             .name("send-tx-retry".to_string())
             .spawn(move || loop {
-                let recv_timeout_ms = config.retry_rate_ms;
-                sleep(Duration::from_millis(1000.min(recv_timeout_ms)));
+                let transactions = 
+                match batch_receiver.recv_timeout(Duration::from_millis(1000.min(config.retry_rate_ms))) {
+                    Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        retry_transactions.clone()
+                    }
+                    Ok(transactions) => {
+                        transactions
+                    }
+                };
+
                 if exit.load(Ordering::Relaxed) {
                     break;
                 }
-                let mut transactions = retry_transactions.lock().unwrap();
+                let mut transactions = transactions.lock().unwrap();
                 if !transactions.is_empty() {
                     datapoint_info!(
                         "send_transaction_service-queue-size",
