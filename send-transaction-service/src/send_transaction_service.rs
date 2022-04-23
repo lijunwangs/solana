@@ -181,6 +181,47 @@ where
     }
 }
 
+/// Metrics of the send-transaction-service.
+#[derive(Default)]
+struct SendTransactionServiceStats {
+    /// Count of the received transactions
+    received_transactions: u64,
+
+    /// Count of the received duplicate transactions
+    received_duplicate_transactions: u64,
+
+    /// Count of transactions sent in batch
+    sent_transactions: u64,
+
+    /// Count of transactions not being added to retry queue
+    /// due to queue size limit
+    retry_queue_overflow: u64,
+
+    /// retry queue size
+    retry_queue_size: u64,
+
+    /// Time spent on transactions in batch in micro seconds
+    batch_send_us: u64,
+
+    /// Count of nounce transactions
+    nounce_transactions: u64,
+
+    /// Count of rooted transactions
+    rooted_transactions: u64,
+
+    /// Count of expired transactions
+    expired_transactions: u64,
+
+    /// Count of transactions exceeding max retries
+    transactions_exceeding_max_retries: u64,
+
+    /// Count of transactions retries
+    retries: u64,
+
+    /// Count of transaction failed
+    failed: u64,
+}
+
 impl SendTransactionService {
     pub fn new<T: TpuInfo + std::marker::Send + 'static>(
         tpu_address: SocketAddr,
