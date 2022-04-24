@@ -281,15 +281,22 @@ impl SendTransactionServiceStatsReporter {
         }
     }
 
-    fn update(
-        &self,
-        stats: SendTransactionServiceStats,
-    ) {
+    /// Update the stats and report if necessary
+    fn update(&self, stats: SendTransactionServiceStats) {
         let mut report = self.report.lock().unwrap();
         report.stats.received_transactions += stats.received_transactions;
         report.stats.received_duplicate_transactions += stats.received_duplicate_transactions;
         report.stats.sent_transactions += stats.sent_transactions;
         report.stats.retry_queue_overflow += stats.retry_queue_overflow;
+        report.stats.retry_queue_size = stats.retry_queue_size;
+        report.stats.batch_send_us += stats.batch_send_us;
+        report.stats.send_us += stats.send_us;
+        report.stats.nonced_transactions += stats.nonced_transactions;
+        report.stats.rooted_transactions += stats.rooted_transactions;
+        report.stats.expired_transactions += stats.expired_transactions;
+        report.stats.transactions_exceeding_max_retries += stats.transactions_exceeding_max_retries;
+        report.stats.retries += stats.retries;
+        report.stats.failed += stats.failed;
         report.report();
     }
 }
@@ -438,8 +445,7 @@ impl SendTransactionService {
                         stats.retry_queue_overflow += (txns_to_retry - txns_added_to_retry) as u64;
                     }
 
-                    stats_reporter.update(
-                        stats);
+                    stats_reporter.update(stats);
                     last_batch_sent = Instant::now();
                 }
             })
@@ -491,7 +497,7 @@ impl SendTransactionService {
                         &leader_info_provider,
                         &config,
                         &mut stats,
-                    );                    
+                    );
                 }
                 stats_reporter.update(stats);
             })
@@ -527,7 +533,7 @@ impl SendTransactionService {
         transactions: &mut HashMap<Signature, TransactionInfo>,
         leader_info_provider: &Arc<Mutex<CurrentLeaderInfo<T>>>,
         config: &Config,
-        stats: &mut SendTransactionServiceStats
+        stats: &mut SendTransactionServiceStats,
     ) -> ProcessTransactionsResult {
         let mut result = ProcessTransactionsResult::default();
 
@@ -642,7 +648,11 @@ impl SendTransactionService {
         result
     }
 
-    fn send_transaction(tpu_address: &SocketAddr, wire_transaction: &[u8], stats: &mut SendTransactionServiceStats) {
+    fn send_transaction(
+        tpu_address: &SocketAddr,
+        wire_transaction: &[u8],
+        stats: &mut SendTransactionServiceStats,
+    ) {
         let mut measure = Measure::start("send_transaction_service-us");
         if let Err(err) =
             connection_cache::send_wire_transaction_async(wire_transaction.to_vec(), tpu_address)
@@ -651,10 +661,14 @@ impl SendTransactionService {
         }
         measure.stop();
 
-        stats.send_us +=  measure.as_us();
+        stats.send_us += measure.as_us();
     }
 
-    fn send_transactions_with_metrics(tpu_address: &SocketAddr, wire_transactions: &[&[u8]], stats: &mut SendTransactionServiceStats) {
+    fn send_transactions_with_metrics(
+        tpu_address: &SocketAddr,
+        wire_transactions: &[&[u8]],
+        stats: &mut SendTransactionServiceStats,
+    ) {
         let mut measure = Measure::start("send_transaction_service-batch-us");
 
         let wire_transactions = wire_transactions.iter().map(|t| t.to_vec()).collect();
@@ -670,7 +684,11 @@ impl SendTransactionService {
         stats.batch_send_us += measure.as_us();
     }
 
-    fn send_transactions(tpu_address: &SocketAddr, wire_transactions: &[&[u8]], stats: &mut SendTransactionServiceStats) {
+    fn send_transactions(
+        tpu_address: &SocketAddr,
+        wire_transactions: &[&[u8]],
+        stats: &mut SendTransactionServiceStats,
+    ) {
         if wire_transactions.len() == 1 {
             Self::send_transaction(tpu_address, wire_transactions[0], stats)
         } else {
