@@ -444,10 +444,9 @@ impl SendTransactionService {
                         }
                         stats.retry_queue_overflow += (txns_to_retry - txns_added_to_retry) as u64;
                     }
-
-                    stats_reporter.update(stats);
                     last_batch_sent = Instant::now();
                 }
+                stats_reporter.update(stats);
             })
             .unwrap()
     }
