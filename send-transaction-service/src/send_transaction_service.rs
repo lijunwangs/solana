@@ -251,7 +251,7 @@ impl SendTransactionServiceStatsReport {
                 ("sent-tx", self.stats.sent_transactions, i64),
                 ("queue-overflow", self.stats.retry_queue_overflow, i64),
                 ("queue-size", self.stats.retry_queue_size, i64),
-                ("single-send-us", self.stats.send_us, i64),
+                ("send-us", self.stats.send_us, i64),
                 ("send-count", self.stats.send_count, i64),
                 ("send-failure-count", self.stats.send_failure_count, i64),
                 ("nonced-tx", self.stats.nonced_transactions, i64),
