@@ -218,11 +218,11 @@ struct SendTransactionServiceStats {
     /// Count of transactions exceeding max retries
     transactions_exceeding_max_retries: u64,
 
-    /// Count of transactions retries
+    /// Count of retries of transactions
     retries: u64,
 
-    /// Count of transaction failed
-    failed: u64,
+    /// Count of transactions failed
+    failed_transactions: u64,
 }
 
 struct SendTransactionServiceStatsReport {
@@ -246,18 +246,17 @@ impl SendTransactionServiceStatsReport {
                 ("sent-tx", self.stats.sent_transactions, i64),
                 ("queue-overflow", self.stats.retry_queue_overflow, i64),
                 ("queue-size", self.stats.retry_queue_size, i64),
-                ("queue-size", self.stats.retry_queue_size, i64),
-                ("batch-us", self.stats.batch_send_us, i64),
+                ("batch-send-us", self.stats.batch_send_us, i64),
                 ("nonced-tx", self.stats.nonced_transactions, i64),
                 ("rooted-tx", self.stats.rooted_transactions, i64),
                 ("expired-tx", self.stats.expired_transactions, i64),
                 (
-                    "max_retries-tx",
+                    "max-retries-exceeded-tx",
                     self.stats.transactions_exceeding_max_retries,
                     i64
                 ),
-                ("retry", self.stats.retries, i64),
-                ("failed", self.stats.failed, i64)
+                ("retries", self.stats.retries, i64),
+                ("failed-tx", self.stats.failed_transactions, i64)
             );
         }
     }
@@ -296,7 +295,7 @@ impl SendTransactionServiceStatsReporter {
         report.stats.expired_transactions += stats.expired_transactions;
         report.stats.transactions_exceeding_max_retries += stats.transactions_exceeding_max_retries;
         report.stats.retries += stats.retries;
-        report.stats.failed += stats.failed;
+        report.stats.failed_transactions += stats.failed_transactions;
         report.report();
     }
 }
@@ -615,7 +614,7 @@ impl SendTransactionService {
                     if status.is_err() {
                         info!("Dropping failed transaction: {}", signature);
                         result.failed += 1;
-                        stats.failed += 1;
+                        stats.failed_transactions += 1;
                         false
                     } else {
                         result.retained += 1;
