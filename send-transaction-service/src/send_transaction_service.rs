@@ -6,7 +6,9 @@ use {
     solana_measure::measure::Measure,
     solana_metrics::datapoint_warn,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
-    solana_sdk::{hash::Hash, nonce_account, pubkey::Pubkey, signature::Signature},
+    solana_sdk::{
+        hash::Hash, nonce_account, pubkey::Pubkey, signature::Signature, transport::TransportError,
+    },
     std::{
         collections::{
             hash_map::{Entry, HashMap},
@@ -200,11 +202,14 @@ struct SendTransactionServiceStats {
     /// retry queue size
     retry_queue_size: u64,
 
-    /// Time spent on transactions in batch mode in micro seconds
-    batch_send_us: u64,
+    /// The count of batches
+    send_count: u64,
 
     /// Time spent on transactions in non-batch mode in micro seconds
     send_us: u64,
+
+    /// Send failure count
+    send_failure_count: u64,
 
     /// Count of nonced transactions
     nonced_transactions: u64,
@@ -246,7 +251,9 @@ impl SendTransactionServiceStatsReport {
                 ("sent-tx", self.stats.sent_transactions, i64),
                 ("queue-overflow", self.stats.retry_queue_overflow, i64),
                 ("queue-size", self.stats.retry_queue_size, i64),
-                ("batch-send-us", self.stats.batch_send_us, i64),
+                ("single-send-us", self.stats.send_us, i64),
+                ("send-count", self.stats.send_count, i64),
+                ("send-failure-count", self.stats.send_failure_count, i64),
                 ("nonced-tx", self.stats.nonced_transactions, i64),
                 ("rooted-tx", self.stats.rooted_transactions, i64),
                 ("expired-tx", self.stats.expired_transactions, i64),
@@ -288,7 +295,7 @@ impl SendTransactionServiceStatsReporter {
         report.stats.sent_transactions += stats.sent_transactions;
         report.stats.retry_queue_overflow += stats.retry_queue_overflow;
         report.stats.retry_queue_size = stats.retry_queue_size;
-        report.stats.batch_send_us += stats.batch_send_us;
+        report.stats.send_count += stats.send_count;
         report.stats.send_us += stats.send_us;
         report.stats.nonced_transactions += stats.nonced_transactions;
         report.stats.rooted_transactions += stats.rooted_transactions;
@@ -649,37 +656,16 @@ impl SendTransactionService {
     fn send_transaction(
         tpu_address: &SocketAddr,
         wire_transaction: &[u8],
-        stats: &mut SendTransactionServiceStats,
-    ) {
-        let mut measure = Measure::start("send_transaction_service-us");
-        if let Err(err) =
-            connection_cache::send_wire_transaction_async(wire_transaction.to_vec(), tpu_address)
-        {
-            warn!("Failed to send transaction to {}: {:?}", tpu_address, err);
-        }
-        measure.stop();
-
-        stats.send_us += measure.as_us();
+    ) -> Result<(), TransportError> {
+        connection_cache::send_wire_transaction_async(wire_transaction.to_vec(), tpu_address)
     }
 
     fn send_transactions_with_metrics(
         tpu_address: &SocketAddr,
         wire_transactions: &[&[u8]],
-        stats: &mut SendTransactionServiceStats,
-    ) {
-        let mut measure = Measure::start("send_transaction_service-batch-us");
-
+    ) -> Result<(), TransportError> {
         let wire_transactions = wire_transactions.iter().map(|t| t.to_vec()).collect();
-        let send_result =
-            connection_cache::send_wire_transaction_batch_async(wire_transactions, tpu_address);
-        if let Err(err) = send_result {
-            warn!(
-                "Failed to send transaction batch to {}: {:?}",
-                tpu_address, err
-            );
-        }
-        measure.stop();
-        stats.batch_send_us += measure.as_us();
+        connection_cache::send_wire_transaction_batch_async(wire_transactions, tpu_address)
     }
 
     fn send_transactions(
@@ -687,11 +673,24 @@ impl SendTransactionService {
         wire_transactions: &[&[u8]],
         stats: &mut SendTransactionServiceStats,
     ) {
-        if wire_transactions.len() == 1 {
-            Self::send_transaction(tpu_address, wire_transactions[0], stats)
+        let mut measure = Measure::start("send-us");
+        let result = if wire_transactions.len() == 1 {
+            Self::send_transaction(tpu_address, wire_transactions[0])
         } else {
-            Self::send_transactions_with_metrics(tpu_address, wire_transactions, stats)
+            Self::send_transactions_with_metrics(tpu_address, wire_transactions)
+        };
+
+        if let Err(err) = result {
+            warn!(
+                "Failed to send transaction transaction to {}: {:?}",
+                tpu_address, err
+            );
+            stats.send_failure_count += 1;
         }
+
+        measure.stop();
+        stats.send_us += measure.as_us();
+        stats.send_count += 1;
     }
 
     fn get_tpu_addresses<'a, T: TpuInfo>(
