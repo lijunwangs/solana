@@ -797,6 +797,7 @@ mod test {
 
         info!("Expired transactions are dropped...");
         let leader_info_provider = Arc::new(Mutex::new(CurrentLeaderInfo::new(None)));
+        let mut stats = SendTransactionServiceStats::default();
         transactions.insert(
             Signature::default(),
             TransactionInfo::new(
@@ -815,6 +816,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -844,6 +846,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -873,6 +876,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -902,6 +906,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert_eq!(transactions.len(), 1);
         assert_eq!(
@@ -933,6 +938,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert_eq!(transactions.len(), 1);
         assert_eq!(
@@ -974,6 +980,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert_eq!(transactions.len(), 1);
         assert_eq!(
@@ -991,6 +998,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -1064,6 +1072,7 @@ mod test {
             ),
         );
         let leader_info_provider = Arc::new(Mutex::new(CurrentLeaderInfo::new(None)));
+        let mut stats = SendTransactionServiceStats::default();
         let result = SendTransactionService::process_transactions::<NullTpuInfo>(
             &working_bank,
             &root_bank,
@@ -1071,6 +1080,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -1099,6 +1109,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -1129,6 +1140,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -1157,6 +1169,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -1186,6 +1199,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert!(transactions.is_empty());
         assert_eq!(
@@ -1215,6 +1229,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert_eq!(transactions.len(), 1);
         assert_eq!(
@@ -1246,6 +1261,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert_eq!(transactions.len(), 1);
         assert_eq!(
@@ -1274,6 +1290,7 @@ mod test {
             &mut transactions,
             &leader_info_provider,
             &config,
+            &mut stats,
         );
         assert_eq!(transactions.len(), 0);
         assert_eq!(
