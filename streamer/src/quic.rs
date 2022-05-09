@@ -488,6 +488,7 @@ fn handle_connection(
         Result<Option<quinn::Chunk>, quinn::ReadError>,
         SocketAddr,
         Arc<AtomicU64>,
+        Arc<AtomicBool>,
         u64,
     )>,
     remote_addr: SocketAddr,
@@ -515,7 +516,13 @@ fn handle_connection(
                             if chunk.is_err() {
                                 info!("read_chunk returned error  {:?}", chunk);
                             }
-                            let msg = (chunk, remote_addr, last_update.clone(), stake);
+                            let msg = (
+                                chunk,
+                                remote_addr,
+                                last_update.clone(),
+                                stream_exit.clone(),
+                                stake,
+                            );
                             if let Err(err) = chunk_sender.send(msg) {
                                 info!("Ran into an error while sending chunk {}", err);
                                 break;
@@ -547,6 +554,7 @@ fn chunk_handler(
         Result<Option<quinn::Chunk>, quinn::ReadError>,
         SocketAddr,
         Arc<AtomicU64>,
+        Arc<AtomicBool>,
         u64,
     )>,
     packet_sender: Sender<PacketBatch>,
@@ -571,7 +579,7 @@ fn chunk_handler(
                         break;
                     }
                 }
-                Ok((chunk, remote_addr, last_update, stake)) => {
+                Ok((chunk, remote_addr, last_update, stream_exit, stake)) => {
                     if handle_chunk(
                         &chunk,
                         &mut maybe_batch,
@@ -581,7 +589,7 @@ fn chunk_handler(
                         stake,
                     ) {
                         last_update.store(timing::timestamp(), Ordering::Relaxed);
-                        break;
+                        stream_exit.store(true, Ordering::Relaxed);
                     }
                 }
             }
@@ -597,6 +605,7 @@ fn spawn_server(
         Result<Option<quinn::Chunk>, quinn::ReadError>,
         SocketAddr,
         Arc<AtomicU64>,
+        Arc<AtomicBool>,
         u64,
     )>,
     exit: Arc<AtomicBool>,
@@ -925,7 +934,7 @@ mod test {
             s,
             &keypair,
             ip,
-            sender,
+            chunk_sender,
             exit.clone(),
             1,
             staked_nodes,
