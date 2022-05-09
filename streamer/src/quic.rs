@@ -549,6 +549,7 @@ fn chunk_handler(
 ) -> JoinHandle<()> {
     let mut maybe_batch = None;
 
+    info!("Starting chunk-handler thread");
     thread::Builder::new()
         .name("chunk-handler".to_string())
         .spawn(move || loop {
