@@ -512,8 +512,14 @@ fn handle_connection(
                         stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
                         while !stream_exit.load(Ordering::Relaxed) {
                             let chunk = stream.read_chunk(PACKET_DATA_SIZE, false).await;
+                            if chunk.is_err() {
+                                info!("read_chunk returned error  {:?}", chunk);
+                            }
                             let msg = (chunk, remote_addr, last_update.clone(), stake);
-                            chunk_sender.send(msg).unwrap();
+                            if let Err(err) = chunk_sender.send(msg) {
+                                info!("Ran into an error while sending chunk {}", err);
+                                break;
+                            }
                         }
                     }
                     Err(e) => {
