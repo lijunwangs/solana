@@ -32,6 +32,7 @@ use {
 };
 
 pub struct QuicTpuServer {
+    exit: Arc<AtomicBool>,
     connection_server: JoinHandle<()>,
     chunk_handler: JoinHandle<()>,
 }
@@ -42,12 +43,12 @@ impl QuicTpuServer {
         keypair: &Keypair,
         gossip_host: IpAddr,
         packet_sender: Sender<PacketBatch>,
-        exit: Arc<AtomicBool>,
         max_connections_per_ip: usize,
         staked_nodes: Arc<RwLock<HashMap<IpAddr, u64>>>,
         max_staked_connections: usize,
         max_unstaked_connections: usize,
     ) -> Self {
+        let exit = Arc::new(AtomicBool::default());
         let (chunk_sender, chunk_receiver) = unbounded();
         let stats = Arc::new(StreamStats::default());
 
@@ -73,12 +74,14 @@ impl QuicTpuServer {
         .unwrap();
 
         Self {
+            exit,
             connection_server,
             chunk_handler,
         }
     }
 
     pub fn join(self) {
+        self.exit.store(true, Ordering::Relaxed);
         self.connection_server.join().unwrap();
         self.chunk_handler.join().unwrap();
     }
@@ -770,10 +773,8 @@ mod test {
 
     #[test]
     fn test_quic_server_exit() {
-        let (t, exit, _receiver, _server_address) = setup_quic_server();
-
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        let (server, _server_address, _receiver) = setup_quic_server();
+        server.join();
     }
 
     fn make_client_endpoint(runtime: &Runtime, addr: &SocketAddr) -> NewConnection {
@@ -790,7 +791,7 @@ mod test {
     #[test]
     fn test_quic_timeout() {
         solana_logger::setup();
-        let (t, exit, receiver, server_address) = setup_quic_server();
+        let (server, server_address, receiver) = setup_quic_server();
 
         let runtime = rt();
         let _rt_guard = runtime.enter();
@@ -816,14 +817,13 @@ mod test {
             }
         }
         runtime.block_on(handle).unwrap();
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        server.join();
     }
 
     #[test]
     fn test_quic_server_block_multiple_connections() {
         solana_logger::setup();
-        let (t, exit, _receiver, server_address) = setup_quic_server();
+        let (server, server_address, _receiver) = setup_quic_server();
 
         let runtime = rt();
         let _rt_guard = runtime.enter();
@@ -846,8 +846,7 @@ mod test {
                 .expect_err("shouldn't be able to open 2 connections");
         });
         runtime.block_on(handle).unwrap();
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        server.join();
     }
 
     #[test]
@@ -860,16 +859,23 @@ mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(HashMap::new()));
+        let (chunk_sender, chunk_receiver) = unbounded();
+        let stats = Arc::new(StreamStats::default());
+
+        let chunk_handler =
+            chunk_handler(chunk_receiver, sender.clone(), stats.clone(), exit.clone());
+
         let t = spawn_server(
             s,
             &keypair,
             ip,
-            sender,
+            chunk_sender,
             exit.clone(),
             2,
             staked_nodes,
             10,
             10,
+            stats,
         )
         .unwrap();
 
@@ -915,46 +921,37 @@ mod test {
 
         exit.store(true, Ordering::Relaxed);
         t.join().unwrap();
+        chunk_handler.join().unwrap();
     }
 
-    fn setup_quic_server() -> (
-        std::thread::JoinHandle<()>,
-        Arc<AtomicBool>,
-        crossbeam_channel::Receiver<PacketBatch>,
-        SocketAddr,
-    ) {
+    fn setup_quic_server() -> (QuicTpuServer, SocketAddr, Receiver<PacketBatch>) {
         let s = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(HashMap::new()));
-        let (chunk_sender, chunk_receiver) = unbounded();
-        let stats = Arc::new(StreamStats::default());
 
-        let chunk_handler_t =
-            chunk_handler(chunk_receiver, sender.clone(), stats.clone(), exit.clone());
-        let t = spawn_server(
-            s,
-            &keypair,
-            ip,
-            chunk_sender,
-            exit.clone(),
-            1,
-            staked_nodes,
-            MAX_STAKED_CONNECTIONS,
-            MAX_UNSTAKED_CONNECTIONS,
-            stats,
+        (
+            QuicTpuServer::new(
+                s,
+                &keypair,
+                ip,
+                sender,
+                1,
+                staked_nodes,
+                MAX_STAKED_CONNECTIONS,
+                MAX_UNSTAKED_CONNECTIONS,
+            ),
+            server_address,
+            receiver,
         )
-        .unwrap();
-        (t, exit, receiver, server_address)
     }
 
     #[test]
     fn test_quic_server_multiple_writes() {
         solana_logger::setup();
-        let (t, exit, receiver, server_address) = setup_quic_server();
+        let (server, server_address, receiver) = setup_quic_server();
 
         let runtime = rt();
         let _rt_guard = runtime.enter();
@@ -991,8 +988,7 @@ mod test {
         }
         assert_eq!(total_packets, num_expected_packets);
 
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        server.join();
     }
 
     #[test]
