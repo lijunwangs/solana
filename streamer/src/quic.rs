@@ -222,10 +222,12 @@ fn handle_chunk(
 
                 // shouldn't happen, but sanity check the size and offsets
                 if chunk.offset > PACKET_DATA_SIZE as u64 || chunk_len > PACKET_DATA_SIZE as u64 {
+                    error!("Wrong chun size 1");
                     stats.total_invalid_chunks.fetch_add(1, Ordering::Relaxed);
                     return true;
                 }
                 if chunk.offset + chunk_len > PACKET_DATA_SIZE as u64 {
+                    error!("Wrong chun size 2");
                     stats
                         .total_invalid_chunk_size
                         .fetch_add(1, Ordering::Relaxed);
@@ -252,7 +254,7 @@ fn handle_chunk(
                     stats.total_chunks_received.fetch_add(1, Ordering::Relaxed);
                 }
             } else {
-                trace!("chunk is none");
+                info!("chunk is none");
                 // done receiving chunks
                 if let Some(batch) = maybe_batch.take() {
                     let len = batch.packets[0].meta.size;
@@ -265,7 +267,7 @@ fn handle_chunk(
                         stats
                             .total_packet_batches_sent
                             .fetch_add(1, Ordering::Relaxed);
-                        trace!("sent {} byte packet", len);
+                        info!("sent {} byte packet", len);
                     }
                 } else {
                     stats
@@ -276,7 +278,7 @@ fn handle_chunk(
             }
         }
         Err(e) => {
-            debug!("Received stream error: {:?}", e);
+            info!("Received stream error: {:?}", e);
             stats
                 .total_stream_read_errors
                 .fetch_add(1, Ordering::Relaxed);
@@ -534,6 +536,7 @@ fn handle_connection(
                                 break;
                             }
                         }
+                        info!("End handling for this stream, stream exit {} drop stream: {}", stream_exit.load(Ordering::Relaxed), drop_stream.load(Ordering::Relaxed));
                     }
                     Err(e) => {
                         info!("stream error: {:?}", e);
@@ -595,6 +598,7 @@ fn chunk_handler(
                         stats.clone(),
                         stake,
                     ) {
+                        info!("handle_chunk says ending the stream");
                         last_update.store(timing::timestamp(), Ordering::Relaxed);
                         stream_exit.store(true, Ordering::Relaxed);
                         maybe_batch = None;
