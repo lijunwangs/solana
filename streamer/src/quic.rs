@@ -594,6 +594,7 @@ fn chunk_handler(
                     ) {
                         last_update.store(timing::timestamp(), Ordering::Relaxed);
                         stream_exit.store(true, Ordering::Relaxed);
+                        maybe_batch = None;
                     }
                 }
             }
