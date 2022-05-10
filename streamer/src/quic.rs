@@ -499,7 +499,7 @@ fn handle_connection(
     stake: u64,
 ) {
     tokio::spawn(async move {
-        debug!(
+        info!(
             "quic new connection {} streams: {} connections: {}",
             remote_addr,
             stats.total_streams.load(Ordering::Relaxed),
@@ -533,7 +533,7 @@ fn handle_connection(
                         }
                     }
                     Err(e) => {
-                        debug!("stream error: {:?}", e);
+                        info!("stream error: {:?}", e);
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
                     }
@@ -544,6 +544,7 @@ fn handle_connection(
                 }
             }
         }
+        info!("Quit connection {}", remote_addr);
         connection_table
             .lock()
             .unwrap()
