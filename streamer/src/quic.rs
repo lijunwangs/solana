@@ -254,7 +254,7 @@ fn handle_chunk(
                     stats.total_chunks_received.fetch_add(1, Ordering::Relaxed);
                 }
             } else {
-                info!("chunk is none");
+                info!("chunk is none -- end of batches");
                 // done receiving chunks
                 if let Some(batch) = maybe_batch.take() {
                     let len = batch.packets[0].meta.size;
@@ -524,6 +524,9 @@ fn handle_connection(
                             if chunk.is_err() {
                                 info!("read_chunk returned error  {:?}", chunk);
                             }
+
+                            let last_chunk = chunk.as_ref().map_or(true, |chunk| chunk.is_none());
+
                             let msg = (
                                 chunk,
                                 remote_addr,
@@ -535,8 +538,16 @@ fn handle_connection(
                                 info!("Ran into an error while sending chunk {}", err);
                                 break;
                             }
+                            if last_chunk {
+                                info!("This is the last chunk, quit this stream");
+                                break;
+                            }
                         }
-                        info!("End handling for this stream, stream exit {} drop stream: {}", stream_exit.load(Ordering::Relaxed), drop_stream.load(Ordering::Relaxed));
+                        info!(
+                            "End handling for this stream, stream exit {} drop stream: {}",
+                            stream_exit.load(Ordering::Relaxed),
+                            drop_stream.load(Ordering::Relaxed)
+                        );
                     }
                     Err(e) => {
                         info!("stream error: {:?}", e);
