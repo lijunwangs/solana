@@ -511,7 +511,10 @@ fn handle_connection(
                     Ok(mut stream) => {
                         stats.total_streams.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
-                        while !stream_exit.load(Ordering::Relaxed) {
+                        let drop_stream = Arc::new(AtomicBool::default());
+                        while !stream_exit.load(Ordering::Relaxed)
+                            && !drop_stream.load(Ordering::Relaxed)
+                        {
                             let chunk = stream.read_chunk(PACKET_DATA_SIZE, false).await;
                             if chunk.is_err() {
                                 info!("read_chunk returned error  {:?}", chunk);
@@ -520,7 +523,7 @@ fn handle_connection(
                                 chunk,
                                 remote_addr,
                                 last_update.clone(),
-                                stream_exit.clone(),
+                                drop_stream.clone(),
                                 stake,
                             );
                             if let Err(err) = chunk_sender.send(msg) {
