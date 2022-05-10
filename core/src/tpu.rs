@@ -29,7 +29,7 @@ use {
         vote_sender_types::{ReplayVoteReceiver, ReplayVoteSender},
     },
     solana_sdk::signature::Keypair,
-    solana_streamer::quic::{spawn_server, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
+    solana_streamer::quic::{QuicTpuServer, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
     std::{
         collections::HashMap,
         net::UdpSocket,
@@ -62,7 +62,7 @@ pub struct Tpu {
     banking_stage: BankingStage,
     cluster_info_vote_listener: ClusterInfoVoteListener,
     broadcast_stage: BroadcastStage,
-    tpu_quic_t: thread::JoinHandle<()>,
+    quic_tpu_server: QuicTpuServer,
     find_packet_sender_stake_stage: FindPacketSenderStakeStage,
     vote_find_packet_sender_stake_stage: FindPacketSenderStakeStage,
     staked_nodes_updater_service: StakedNodesUpdaterService,
@@ -145,7 +145,7 @@ impl Tpu {
             bank_forks.clone(),
             staked_nodes.clone(),
         );
-        let tpu_quic_t = spawn_server(
+        let quic_tpu_server = QuicTpuServer::new(
             transactions_quic_sockets,
             keypair,
             cluster_info.my_contact_info().tpu.ip(),
@@ -155,8 +155,7 @@ impl Tpu {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
-        )
-        .unwrap();
+        );
 
         let sigverify_stage = {
             let verifier = TransactionSigVerifier::default();
@@ -227,7 +226,7 @@ impl Tpu {
             banking_stage,
             cluster_info_vote_listener,
             broadcast_stage,
-            tpu_quic_t,
+            quic_tpu_server,
             find_packet_sender_stake_stage,
             vote_find_packet_sender_stake_stage,
             staked_nodes_updater_service,
@@ -261,7 +260,7 @@ impl Tpu {
             self.vote_find_packet_sender_stake_stage.join(),
             self.staked_nodes_updater_service.join(),
         ];
-        self.tpu_quic_t.join()?;
+        self.quic_tpu_server.join();
         let broadcast_result = self.broadcast_stage.join();
         for result in results {
             result?;

@@ -1,5 +1,7 @@
+use std::thread::JoinHandle;
+
 use {
-    crossbeam_channel::Sender,
+    crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender},
     futures_util::stream::StreamExt,
     pem::Pem,
     pkcs8::{der::Document, AlgorithmIdentifier, ObjectIdentifier},
@@ -28,6 +30,59 @@ use {
         time::timeout,
     },
 };
+
+pub struct QuicTpuServer {
+    connection_server: JoinHandle<()>,
+    chunk_handler: JoinHandle<()>,
+}
+
+impl QuicTpuServer {
+    pub fn new(
+        sock: UdpSocket,
+        keypair: &Keypair,
+        gossip_host: IpAddr,
+        packet_sender: Sender<PacketBatch>,
+        exit: Arc<AtomicBool>,
+        max_connections_per_ip: usize,
+        staked_nodes: Arc<RwLock<HashMap<IpAddr, u64>>>,
+        max_staked_connections: usize,
+        max_unstaked_connections: usize,
+    ) -> Self {
+        let (chunk_sender, chunk_receiver) = unbounded();
+        let stats = Arc::new(StreamStats::default());
+
+        let chunk_handler = chunk_handler(
+            chunk_receiver,
+            packet_sender.clone(),
+            stats.clone(),
+            exit.clone(),
+        );
+
+        let connection_server = spawn_server(
+            sock,
+            keypair,
+            gossip_host,
+            chunk_sender,
+            exit.clone(),
+            max_connections_per_ip,
+            staked_nodes,
+            max_staked_connections,
+            max_unstaked_connections,
+            stats,
+        )
+        .unwrap();
+
+        Self {
+            connection_server,
+            chunk_handler,
+        }
+    }
+
+    pub fn join(self) {
+        self.connection_server.join().unwrap();
+        self.chunk_handler.join().unwrap();
+    }
+}
 
 pub const MAX_STAKED_CONNECTIONS: usize = 2000;
 pub const MAX_UNSTAKED_CONNECTIONS: usize = 500;
@@ -429,7 +484,12 @@ impl StreamStats {
 
 fn handle_connection(
     mut uni_streams: IncomingUniStreams,
-    packet_sender: Sender<PacketBatch>,
+    chunk_sender: Sender<(
+        Result<Option<quinn::Chunk>, quinn::ReadError>,
+        SocketAddr,
+        Arc<AtomicU64>,
+        u64,
+    )>,
     remote_addr: SocketAddr,
     last_update: Arc<AtomicU64>,
     connection_table: Arc<Mutex<ConnectionTable>>,
@@ -450,19 +510,10 @@ fn handle_connection(
                     Ok(mut stream) => {
                         stats.total_streams.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
-                        let mut maybe_batch = None;
                         while !stream_exit.load(Ordering::Relaxed) {
-                            if handle_chunk(
-                                &stream.read_chunk(PACKET_DATA_SIZE, false).await,
-                                &mut maybe_batch,
-                                &remote_addr,
-                                &packet_sender,
-                                stats.clone(),
-                                stake,
-                            ) {
-                                last_update.store(timing::timestamp(), Ordering::Relaxed);
-                                break;
-                            }
+                            let chunk = stream.read_chunk(PACKET_DATA_SIZE, false).await;
+                            let msg = (chunk, remote_addr, last_update.clone(), stake);
+                            chunk_sender.send(msg).unwrap();
                         }
                     }
                     Err(e) => {
@@ -485,16 +536,68 @@ fn handle_connection(
     });
 }
 
-pub fn spawn_server(
+fn chunk_handler(
+    chunk_receiver: Receiver<(
+        Result<Option<quinn::Chunk>, quinn::ReadError>,
+        SocketAddr,
+        Arc<AtomicU64>,
+        u64,
+    )>,
+    packet_sender: Sender<PacketBatch>,
+    stats: Arc<StreamStats>,
+    exit: Arc<AtomicBool>,
+) -> JoinHandle<()> {
+    let mut maybe_batch = None;
+
+    thread::Builder::new()
+        .name("chunk-handler".to_string())
+        .spawn(move || loop {
+            let recv_timeout_ms = 1;
+            match chunk_receiver.recv_timeout(Duration::from_millis(recv_timeout_ms)) {
+                Err(RecvTimeoutError::Disconnected) => {
+                    info!("Terminating chunk-handler.");
+                    break;
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    if exit.load(Ordering::Relaxed) {
+                        info!("Terminating chunk-handle.");
+                        break;
+                    }
+                }
+                Ok((chunk, remote_addr, last_update, stake)) => {
+                    if handle_chunk(
+                        &chunk,
+                        &mut maybe_batch,
+                        &remote_addr,
+                        &packet_sender,
+                        stats.clone(),
+                        stake,
+                    ) {
+                        last_update.store(timing::timestamp(), Ordering::Relaxed);
+                        break;
+                    }
+                }
+            }
+        })
+        .unwrap()
+}
+
+fn spawn_server(
     sock: UdpSocket,
     keypair: &Keypair,
     gossip_host: IpAddr,
-    packet_sender: Sender<PacketBatch>,
+    chunk_sender: Sender<(
+        Result<Option<quinn::Chunk>, quinn::ReadError>,
+        SocketAddr,
+        Arc<AtomicU64>,
+        u64,
+    )>,
     exit: Arc<AtomicBool>,
     max_connections_per_ip: usize,
     staked_nodes: Arc<RwLock<HashMap<IpAddr, u64>>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    stats: Arc<StreamStats>,
 ) -> Result<thread::JoinHandle<()>, QuicServerError> {
     let (config, _cert) = configure_server(keypair, gossip_host)?;
 
@@ -505,7 +608,6 @@ pub fn spawn_server(
             .map_err(|_e| QuicServerError::EndpointFailed)?
     };
 
-    let stats = Arc::new(StreamStats::default());
     let handle = thread::spawn(move || {
         let handle = runtime.spawn(async move {
             debug!("spawn quic server");
@@ -568,12 +670,11 @@ pub fn spawn_server(
                             )
                         {
                             drop(connection_table_l);
-                            let packet_sender = packet_sender.clone();
                             let stats = stats.clone();
                             let connection_table1 = connection_table.clone();
                             handle_connection(
                                 uni_streams,
-                                packet_sender,
+                                chunk_sender.clone(),
                                 remote_addr,
                                 last_update,
                                 connection_table1,
@@ -808,6 +909,11 @@ mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(HashMap::new()));
+        let (chunk_sender, chunk_receiver) = unbounded();
+        let stats = Arc::new(StreamStats::default());
+
+        let chunk_handler_t =
+            chunk_handler(chunk_receiver, sender.clone(), stats.clone(), exit.clone());
         let t = spawn_server(
             s,
             &keypair,
@@ -818,6 +924,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            stats,
         )
         .unwrap();
         (t, exit, receiver, server_address)
