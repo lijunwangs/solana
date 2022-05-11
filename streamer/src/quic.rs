@@ -205,10 +205,14 @@ pub enum QuicServerError {
     EndpointFailed,
 }
 
+struct MaybePacketBatch {
+    packet_batch: Option<PacketBatch>,
+}
+
 // Return true if the server should drop the stream
 fn handle_chunk(
     chunk: &Result<Option<quinn::Chunk>, quinn::ReadError>,
-    maybe_batch: &mut Option<PacketBatch>,
+    maybe_batch: &mut MaybePacketBatch,
     remote_addr: &SocketAddr,
     packet_sender: &Sender<PacketBatch>,
     stats: Arc<StreamStats>,
@@ -235,19 +239,19 @@ fn handle_chunk(
                 }
 
                 // chunk looks valid
-                if maybe_batch.is_none() {
+                if maybe_batch.packet_batch.is_none() {
                     let mut batch = PacketBatch::with_capacity(1);
                     let mut packet = Packet::default();
                     packet.meta.set_addr(remote_addr);
                     packet.meta.sender_stake = stake;
                     batch.packets.push(packet);
-                    *maybe_batch = Some(batch);
+                    maybe_batch.packet_batch = Some(batch);
                     stats
                         .total_packets_allocated
                         .fetch_add(1, Ordering::Relaxed);
                 }
 
-                if let Some(batch) = maybe_batch.as_mut() {
+                if let Some(batch) = maybe_batch.packet_batch.as_mut() {
                     let end = chunk.offset as usize + chunk.bytes.len();
                     batch.packets[0].data[chunk.offset as usize..end].copy_from_slice(&chunk.bytes);
                     batch.packets[0].meta.size = std::cmp::max(batch.packets[0].meta.size, end);
@@ -256,7 +260,7 @@ fn handle_chunk(
             } else {
                 info!("chunk is none -- end of batches");
                 // done receiving chunks
-                if let Some(batch) = maybe_batch.take() {
+                if let Some(batch) = maybe_batch.packet_batch.take() {
                     let len = batch.packets[0].meta.size;
                     if let Err(e) = packet_sender.send(batch) {
                         stats
@@ -495,6 +499,7 @@ fn handle_connection(
         Arc<AtomicU64>,
         Arc<AtomicBool>,
         u64,
+        Arc<Mutex<MaybePacketBatch>>,
     )>,
     remote_addr: SocketAddr,
     last_update: Arc<AtomicU64>,
@@ -517,6 +522,8 @@ fn handle_connection(
                         stats.total_streams.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
                         let drop_stream = Arc::new(AtomicBool::default());
+                        let maybe_batch =
+                            Arc::new(Mutex::new(MaybePacketBatch { packet_batch: None }));
                         while !stream_exit.load(Ordering::Relaxed)
                             && !drop_stream.load(Ordering::Relaxed)
                         {
@@ -533,6 +540,7 @@ fn handle_connection(
                                 last_update.clone(),
                                 drop_stream.clone(),
                                 stake,
+                                maybe_batch.clone(),
                             );
                             if let Err(err) = chunk_sender.send(msg) {
                                 info!("Ran into an error while sending chunk {}", err);
@@ -577,13 +585,12 @@ fn chunk_handler(
         Arc<AtomicU64>,
         Arc<AtomicBool>,
         u64,
+        Arc<Mutex<MaybePacketBatch>>,
     )>,
     packet_sender: Sender<PacketBatch>,
     stats: Arc<StreamStats>,
     exit: Arc<AtomicBool>,
 ) -> JoinHandle<()> {
-    let mut maybe_batch = None;
-
     info!("Starting chunk-handler thread");
     thread::Builder::new()
         .name("chunk-handler".to_string())
@@ -600,10 +607,10 @@ fn chunk_handler(
                         break;
                     }
                 }
-                Ok((chunk, remote_addr, last_update, stream_exit, stake)) => {
+                Ok((chunk, remote_addr, last_update, stream_exit, stake, maybe_batch)) => {
                     if handle_chunk(
                         &chunk,
-                        &mut maybe_batch,
+                        &mut maybe_batch.lock().unwrap(),
                         &remote_addr,
                         &packet_sender,
                         stats.clone(),
@@ -612,7 +619,6 @@ fn chunk_handler(
                         info!("handle_chunk says ending the stream");
                         last_update.store(timing::timestamp(), Ordering::Relaxed);
                         stream_exit.store(true, Ordering::Relaxed);
-                        maybe_batch = None;
                     }
                 }
             }
@@ -630,6 +636,7 @@ fn spawn_server(
         Arc<AtomicU64>,
         Arc<AtomicBool>,
         u64,
+        Arc<Mutex<MaybePacketBatch>>,
     )>,
     exit: Arc<AtomicBool>,
     max_connections_per_ip: usize,
