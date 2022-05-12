@@ -1,11 +1,9 @@
-use std::thread::JoinHandle;
-
 use {
     crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender},
     futures_util::stream::StreamExt,
     pem::Pem,
     pkcs8::{der::Document, AlgorithmIdentifier, ObjectIdentifier},
-    quinn::{Endpoint, EndpointConfig, IdleTimeout, IncomingUniStreams, ServerConfig, VarInt},
+    quinn::{Endpoint, EndpointConfig, IdleTimeout, NewConnection, ServerConfig, VarInt},
     rcgen::{CertificateParams, DistinguishedName, DnType, SanType},
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -22,7 +20,7 @@ use {
             atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
             Arc, Mutex, RwLock,
         },
-        thread,
+        thread::{self, JoinHandle},
         time::{Duration, Instant},
     },
     tokio::{
@@ -492,7 +490,7 @@ impl StreamStats {
 }
 
 fn handle_connection(
-    mut uni_streams: IncomingUniStreams,
+    new_connection: NewConnection,
     chunk_sender: Sender<(
         Result<Option<quinn::Chunk>, quinn::ReadError>,
         SocketAddr,
@@ -515,6 +513,8 @@ fn handle_connection(
             stats.total_streams.load(Ordering::Relaxed),
             stats.total_connections.load(Ordering::Relaxed),
         );
+        let mut uni_streams = new_connection.uni_streams;
+
         while !stream_exit.load(Ordering::Relaxed) {
             match uni_streams.next().await {
                 Some(stream_result) => match stream_result {
@@ -558,7 +558,11 @@ fn handle_connection(
                         );
                     }
                     Err(e) => {
-                        info!("stream error: {:?}", e);
+                        info!(
+                            "stream error: {:?} id: {}",
+                            e,
+                            new_connection.connection.stable_id()
+                        );
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
                     }
@@ -679,13 +683,7 @@ fn spawn_server(
                     if let Ok(new_connection) = connection.await {
                         stats.total_connections.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
-                        let quinn::NewConnection {
-                            connection,
-                            uni_streams,
-                            ..
-                        } = new_connection;
-
-                        let remote_addr = connection.remote_address();
+                        let remote_addr = new_connection.connection.remote_address();
 
                         let (mut connection_table_l, stake) = {
                             let staked_nodes = staked_nodes.read().unwrap();
@@ -719,7 +717,7 @@ fn spawn_server(
                             let stats = stats.clone();
                             let connection_table1 = connection_table.clone();
                             handle_connection(
-                                uni_streams,
+                                new_connection,
                                 chunk_sender.clone(),
                                 remote_addr,
                                 last_update,

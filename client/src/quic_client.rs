@@ -215,6 +215,11 @@ impl QuicClient {
             stats.connection_errors.fetch_add(1, Ordering::Relaxed);
         }
         let connection = connecting_result?;
+        info!(
+            "Made connection successfully to {} id: {}",
+            self.addr,
+            connection.connection.stable_id()
+        );
         Ok(Arc::new(connection))
     }
 
@@ -270,15 +275,32 @@ impl QuicClient {
         };
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
-            _ => {
+            Err(err) => {
+                error!(
+                    "Send error: {} id: {}, will retry connection using 0rtt",
+                    err,
+                    connection.connection.stable_id()
+                );
                 let connection = {
                     let connection = self.make_connection_0rtt(stats).await?;
                     let mut conn_guard = self.connection.lock().await;
                     *conn_guard = Some(connection.clone());
                     connection
                 };
-                Self::_send_buffer_using_conn(data, &connection).await?;
-                Ok(connection)
+
+                let result = Self::_send_buffer_using_conn(data, &connection).await;
+
+                match result {
+                    Ok(_) => Ok(connection),
+                    Err(err) => {
+                        error!(
+                            "Send error: {} id: {}",
+                            err,
+                            connection.connection.stable_id()
+                        );
+                        Err(err)
+                    }
+                }
             }
         }
     }
