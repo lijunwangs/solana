@@ -217,9 +217,11 @@ impl QuicClient {
         }
         let connection = connecting_result?;
         info!(
-            "Made connection successfully to {} id: {}",
+            "Made connection successfully to {} id: {}, thread: {:?} self: {:?}",
             self.addr,
-            connection.connection.stable_id()
+            connection.connection.stable_id(),
+            thread::current().id(),
+            self as *const Self,
         );
         Ok(Arc::new(connection))
     }
