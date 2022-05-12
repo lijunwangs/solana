@@ -283,6 +283,7 @@ impl QuicClient {
                 );
                 let connection = {
                     let connection = self.make_connection_0rtt(stats).await?;
+                    info!("Made 0rtt connection to {} with id {}", connection.connection.remote_address(), connection.connection.stable_id());
                     let mut conn_guard = self.connection.lock().await;
                     *conn_guard = Some(connection.clone());
                     connection
