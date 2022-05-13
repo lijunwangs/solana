@@ -339,12 +339,14 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
             //
 
             drop(addr_read_lock);
+            drop(map);
             let mut get_connection_map_lock_measure =
                 Measure::start("get_connection_map_lock_measure");
 
             info!("ZZZZ _addr_write_locklock {:?} acquiring", thread::current().id());
 
             let _addr_write_lock = addr_lock.write().unwrap();
+            let map = (*CONNECTION_MAP).read().unwrap();
             get_connection_map_lock_measure.stop();
 
             lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
