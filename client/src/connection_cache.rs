@@ -14,10 +14,11 @@ use {
         timing::AtomicInterval, transaction::VersionedTransaction, transport::TransportError,
     },
     std::{
+        collections::{hash_map::Entry, HashMap},
         net::{IpAddr, Ipv4Addr, SocketAddr},
         sync::{
             atomic::{AtomicU64, Ordering},
-            Arc, RwLock,
+            Arc, Mutex, RwLock,
         },
     },
 };
@@ -228,6 +229,7 @@ impl ConnectionMap {
 
 lazy_static! {
     static ref CONNECTION_MAP: RwLock<ConnectionMap> = RwLock::new(ConnectionMap::new());
+    static ref CONNECTION_LOCK_MANAGER: LockManager<SocketAddr> = LockManager::<SocketAddr>::new();
 }
 
 pub fn set_use_quic(use_quic: bool) {
@@ -247,7 +249,57 @@ struct GetConnectionResult {
     eviction_timing_ms: u64,
 }
 
+/// A lock manager supporting locking by dictionary keys
+pub struct LockManager<T>
+where
+    T: std::cmp::Eq + std::hash::Hash,
+{
+    locks: Mutex<HashMap<T, Arc<RwLock<()>>>>,
+}
+
+impl<T> LockManager<T>
+where
+    T: std::cmp::Eq + std::hash::Hash,
+{
+    /// Construct the lock manager.
+    pub fn new() -> Self {
+        Self {
+            locks: Mutex::new(HashMap::default()),
+        }
+    }
+
+    /// Get or create a lock for the key
+    pub fn get_lock(&self, key: T) -> Arc<RwLock<()>> {
+        let mut locks = self.locks.lock().unwrap();
+        match locks.entry(key) {
+            Entry::Occupied(entry) => entry.into_mut().clone(),
+            Entry::Vacant(entry) => entry.insert(Arc::new(RwLock::default())).clone(),
+        }
+    }
+
+    /// Remove the lock by the key
+    pub fn remove_lock(&self, key: &T) {
+        let mut locks = self.locks.lock().unwrap();
+        locks.remove(key);
+    }
+
+    // /// Lock the key with read
+    // pub fn lock_read(&mut self, key: T) -> LockResult<RwLockReadGuard<'_, ()>> {
+    //     let lock = self.get_lock(key);
+    //     lock.read().clone()
+    // }
+
+    // /// Lock the key with write
+    // pub fn lock_write(&mut self, key: T) -> LockResult<RwLockWriteGuard<'_, ()>> {
+    //     let lock = self.get_lock(key);
+    //     lock.write()
+    // }
+}
+
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
+    let addr_lock = CONNECTION_LOCK_MANAGER.get_lock(addr.clone());
+    let addr_read_lock = addr_lock.read().unwrap();
+
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
@@ -277,9 +329,13 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         }
         None => {
             // Upgrade to write access by dropping read lock and acquire write lock
-            drop(map);
+            //
+
+            drop(addr_read_lock);
             let mut get_connection_map_lock_measure =
                 Measure::start("get_connection_map_lock_measure");
+            let _addr_write_lock = addr_lock.write().unwrap();
+
             let mut map = (*CONNECTION_MAP).write().unwrap();
             get_connection_map_lock_measure.stop();
 
@@ -320,6 +376,16 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         num_evictions += 1;
                     }
                     get_connection_cache_eviction_measure.stop();
+
+                    drop(map);
+                    let mut get_connection_map_lock_measure =
+                        Measure::start("get_connection_map_lock_measure");
+
+                    let mut map = (*CONNECTION_MAP).write().unwrap();
+                    get_connection_map_lock_measure.stop();
+
+                    lock_timing_ms =
+                        lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
 
                     map.map.insert(*addr, connection.clone());
                     (
