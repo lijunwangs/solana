@@ -34,6 +34,7 @@ pub enum Connection {
 
 #[derive(Default)]
 struct ConnectionCacheStats {
+    get_connection_calls: AtomicU64,
     cache_hits: AtomicU64,
     cache_misses: AtomicU64,
     cache_evictions: AtomicU64,
@@ -89,6 +90,11 @@ impl ConnectionCacheStats {
     fn report(&self) {
         datapoint_info!(
             "quic-client-connection-stats",
+            (
+                "get_connection_calls",
+                self.get_connection_calls.swap(0, Ordering::Relaxed),
+                i64
+            ),
             (
                 "cache_hits",
                 self.cache_hits.swap(0, Ordering::Relaxed),
@@ -480,6 +486,10 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
             .fetch_add(eviction_timing_ms, Ordering::Relaxed);
     }
 
+    connection_cache_stats
+        .get_connection_calls
+        .fetch_add(1, Ordering::Relaxed);
+    
     get_connection_measure.stop();
     connection_cache_stats
         .get_connection_lock_ms
