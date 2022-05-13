@@ -6,6 +6,7 @@ use {
     },
     indexmap::map::IndexMap,
     lazy_static::lazy_static,
+    log::*,
     quinn_proto::ConnectionStats,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
@@ -20,6 +21,7 @@ use {
             atomic::{AtomicU64, Ordering},
             Arc, Mutex, RwLock,
         },
+        thread,
     },
 };
 
@@ -297,12 +299,17 @@ where
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
+
+    info!("ZZZZ addr_readlock {:?}", thread::current().id());
     let addr_lock = CONNECTION_LOCK_MANAGER.get_lock(addr.clone());
     let addr_read_lock = addr_lock.read().unwrap();
+    info!("ZZZZ addr_readlock {:?} acquired", thread::current().id());
 
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
+
+    info!("ZZZZ connection map lock {:?} acquired", thread::current().id());
 
     let mut lock_timing_ms = get_connection_map_lock_measure.as_ms();
 
@@ -334,12 +341,17 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
             drop(addr_read_lock);
             let mut get_connection_map_lock_measure =
                 Measure::start("get_connection_map_lock_measure");
+
+            info!("ZZZZ _addr_write_locklock {:?} acquiring", thread::current().id());
+
             let _addr_write_lock = addr_lock.write().unwrap();
 
             let mut map = (*CONNECTION_MAP).write().unwrap();
             get_connection_map_lock_measure.stop();
 
             lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
+
+            info!("ZZZZ _addr_write_locklock {:?} acquired", thread::current().id());
 
             // Read again, as it is possible that between read lock dropped and the write lock acquired
             // another thread could have setup the connection.
@@ -381,11 +393,15 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     let mut get_connection_map_lock_measure =
                         Measure::start("get_connection_map_lock_measure");
 
+                    info!("ZZZZ CONNECTION_MAP write {:?} acquiring", thread::current().id());
+
                     let mut map = (*CONNECTION_MAP).write().unwrap();
                     get_connection_map_lock_measure.stop();
 
                     lock_timing_ms =
                         lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
+
+                    info!("ZZZZ CONNECTION_MAP write {:?} acquired", thread::current().id());
 
                     map.map.insert(*addr, connection.clone());
                     (
