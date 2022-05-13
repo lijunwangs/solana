@@ -375,17 +375,6 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         Connection::Udp(Arc::new(UdpTpuConnection::new(send_socket, *addr)))
                     };
 
-                    // evict a connection if the cache is reaching upper bounds
-                    let mut num_evictions = 0;
-                    let mut get_connection_cache_eviction_measure =
-                        Measure::start("get_connection_cache_eviction_measure");
-                    while map.map.len() >= MAX_CONNECTIONS {
-                        let mut rng = thread_rng();
-                        let n = rng.gen_range(0, MAX_CONNECTIONS);
-                        map.map.swap_remove_index(n);
-                        num_evictions += 1;
-                    }
-                    get_connection_cache_eviction_measure.stop();
 
                     drop(map);
                     let mut get_connection_map_lock_measure =
@@ -400,6 +389,18 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
 
                     info!("ZZZZ CONNECTION_MAP write {:?} acquired", thread::current().id());
+                    
+                    // evict a connection if the cache is reaching upper bounds
+                    let mut num_evictions = 0;
+                    let mut get_connection_cache_eviction_measure =
+                        Measure::start("get_connection_cache_eviction_measure");
+                    while map.map.len() >= MAX_CONNECTIONS {
+                        let mut rng = thread_rng();
+                        let n = rng.gen_range(0, MAX_CONNECTIONS);
+                        map.map.swap_remove_index(n);
+                        num_evictions += 1;
+                    }
+                    get_connection_cache_eviction_measure.stop();
 
                     map.map.insert(*addr, connection.clone());
                     (
