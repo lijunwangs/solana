@@ -38,6 +38,7 @@ struct ConnectionCacheStats {
     cache_hits: AtomicU64,
     cache_misses: AtomicU64,
     cache_evictions: AtomicU64,
+    create_connection_ms: AtomicU64,
     eviction_time_ms: AtomicU64,
     sent_packets: AtomicU64,
     total_batches: AtomicU64,
@@ -93,6 +94,11 @@ impl ConnectionCacheStats {
             (
                 "get_connection_calls",
                 self.get_connection_calls.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "create_connection_ms",
+                self.create_connection_ms.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
@@ -253,6 +259,7 @@ struct GetConnectionResult {
     other_stats: Option<(Arc<ClientStats>, ConnectionStats)>,
     num_evictions: u64,
     eviction_timing_ms: u64,
+    create_connection_ms: u64,
 }
 
 /// A lock manager supporting locking by dictionary keys
@@ -313,6 +320,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         maybe_stats,
         num_evictions,
         eviction_timing_ms,
+        create_connection_ms,
     ) = match map.map.get(addr) {
         Some(connection) => {
             let mut stats = None;
@@ -320,7 +328,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
             if let Connection::Quic(conn) = connection {
                 stats = conn.stats().map(|s| (conn.base_stats(), s));
             }
-            (connection.clone(), true, map.stats.clone(), stats, 0, 0)
+            (connection.clone(), true, map.stats.clone(), stats, 0, 0, 0)
         }
         None => {
             // Upgrade to write access by dropping read lock and acquire write lock on the connection
@@ -346,9 +354,11 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     if let Connection::Quic(conn) = connection {
                         stats = conn.stats().map(|s| (conn.base_stats(), s));
                     }
-                    (connection.clone(), true, map.stats.clone(), stats, 0, 0)
+                    (connection.clone(), true, map.stats.clone(), stats, 0, 0, 0)
                 }
                 None => {
+                    let mut create_connection_measure = Measure::start("create_connection_measure");
+
                     let (_, send_socket) = solana_net_utils::bind_in_range(
                         IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                         VALIDATOR_PORT_RANGE,
@@ -360,6 +370,8 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     } else {
                         Connection::Udp(Arc::new(UdpTpuConnection::new(send_socket, *addr)))
                     };
+
+                    create_connection_measure.stop();
 
                     let mut get_connection_map_lock_measure =
                         Measure::start("get_connection_map_lock_measure");
@@ -393,6 +405,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         None,
                         num_evictions,
                         get_connection_cache_eviction_measure.as_ms(),
+                        create_connection_measure.as_ms(),
                     )
                 }
             }
@@ -410,6 +423,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         other_stats: maybe_stats,
         num_evictions,
         eviction_timing_ms,
+        create_connection_ms,
     }
 }
 
@@ -427,6 +441,7 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
         other_stats,
         num_evictions,
         eviction_timing_ms,
+        create_connection_ms,
     } = get_or_add_connection(addr);
 
     if report_stats {
@@ -489,7 +504,11 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
     connection_cache_stats
         .get_connection_calls
         .fetch_add(1, Ordering::Relaxed);
-    
+
+    connection_cache_stats
+        .create_connection_ms
+        .fetch_add(create_connection_ms, Ordering::Relaxed);
+
     get_connection_measure.stop();
     connection_cache_stats
         .get_connection_lock_ms
