@@ -48,7 +48,7 @@ struct ConnectionCacheStats {
     get_connection_lock_ms: AtomicU64,
     get_connection_hit_ms: AtomicU64,
     get_connection_miss_ms: AtomicU64,
-
+    update_connection_stats_ms: AtomicU64,
     // Need to track these separately per-connection
     // because we need to track the base stat value from quinn
     total_client_stats: ClientStats,
@@ -99,6 +99,11 @@ impl ConnectionCacheStats {
             (
                 "create_connection_ms",
                 self.create_connection_ms.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "update_connection_stats_ms",
+                self.update_connection_stats_ms.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
@@ -260,6 +265,7 @@ struct GetConnectionResult {
     num_evictions: u64,
     eviction_timing_ms: u64,
     create_connection_ms: u64,
+    update_connection_stats_ms: u64,
 }
 
 /// A lock manager supporting locking by dictionary keys
@@ -313,6 +319,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         .last_stats
         .should_update(CONNECTION_STAT_SUBMISSION_INTERVAL);
 
+    let mut update_connection_stats_ms = 0;
     let (
         connection,
         cache_hit,
@@ -325,9 +332,12 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         Some(connection) => {
             let mut stats = None;
             // update connection stats
+            let mut measure = Measure::start("connection_start");
             if let Connection::Quic(conn) = connection {
                 stats = conn.stats().map(|s| (conn.base_stats(), s));
             }
+            measure.stop();
+            update_connection_stats_ms += measure.as_ms();
             (connection.clone(), true, map.stats.clone(), stats, 0, 0, 0)
         }
         None => {
@@ -351,9 +361,12 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                 Some(connection) => {
                     let mut stats = None;
                     // update connection stats
+                    let mut measure = Measure::start("update_connection_stats");
                     if let Connection::Quic(conn) = connection {
                         stats = conn.stats().map(|s| (conn.base_stats(), s));
                     }
+                    measure.stop();
+                    update_connection_stats_ms += measure.as_ms();
                     (connection.clone(), true, map.stats.clone(), stats, 0, 0, 0)
                 }
                 None => {
@@ -424,6 +437,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         num_evictions,
         eviction_timing_ms,
         create_connection_ms,
+        update_connection_stats_ms,
     }
 }
 
@@ -442,6 +456,7 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
         num_evictions,
         eviction_timing_ms,
         create_connection_ms,
+        update_connection_stats_ms,
     } = get_or_add_connection(addr);
 
     if report_stats {
@@ -508,6 +523,10 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
     connection_cache_stats
         .create_connection_ms
         .fetch_add(create_connection_ms, Ordering::Relaxed);
+
+    connection_cache_stats
+        .update_connection_stats_ms
+        .fetch_add(update_connection_stats_ms, Ordering::Relaxed);
 
     get_connection_measure.stop();
     connection_cache_stats
