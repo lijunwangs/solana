@@ -6,7 +6,6 @@ use {
     },
     indexmap::map::IndexMap,
     lazy_static::lazy_static,
-    log::*,
     quinn_proto::ConnectionStats,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
@@ -21,7 +20,6 @@ use {
             atomic::{AtomicU64, Ordering},
             Arc, Mutex, RwLock,
         },
-        thread,
     },
 };
 
@@ -36,6 +34,7 @@ pub enum Connection {
 
 #[derive(Default)]
 struct ConnectionCacheStats {
+    get_connection_calls: AtomicU64,
     cache_hits: AtomicU64,
     cache_misses: AtomicU64,
     cache_evictions: AtomicU64,
@@ -91,6 +90,11 @@ impl ConnectionCacheStats {
     fn report(&self) {
         datapoint_info!(
             "quic-client-connection-stats",
+            (
+                "get_connection_calls",
+                self.get_connection_calls.swap(0, Ordering::Relaxed),
+                i64
+            ),
             (
                 "cache_hits",
                 self.cache_hits.swap(0, Ordering::Relaxed),
@@ -284,32 +288,16 @@ where
         let mut locks = self.locks.lock().unwrap();
         locks.remove(key);
     }
-
-    // /// Lock the key with read
-    // pub fn lock_read(&mut self, key: T) -> LockResult<RwLockReadGuard<'_, ()>> {
-    //     let lock = self.get_lock(key);
-    //     lock.read().clone()
-    // }
-
-    // /// Lock the key with write
-    // pub fn lock_write(&mut self, key: T) -> LockResult<RwLockWriteGuard<'_, ()>> {
-    //     let lock = self.get_lock(key);
-    //     lock.write()
-    // }
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
-
-    // info!("ZZZZ addr_readlock {:?}", thread::current().id());
-    let addr_lock = CONNECTION_LOCK_MANAGER.get_lock(addr.clone());
-    let addr_read_lock = addr_lock.read().unwrap();
-    // info!("ZZZZ addr_readlock {:?} acquired", thread::current().id());
+    let mut get_connection_map_measure = Measure::start("get_connection_hit_measure");
 
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
+    let addr_lock = CONNECTION_LOCK_MANAGER.get_lock(addr.clone());
+    let addr_read_lock = addr_lock.read().unwrap();
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
-
-    // info!("ZZZZ connection map lock {:?} acquired", thread::current().id());
 
     let mut lock_timing_ms = get_connection_map_lock_measure.as_ms();
 
@@ -317,7 +305,6 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
         .last_stats
         .should_update(CONNECTION_STAT_SUBMISSION_INTERVAL);
 
-    let mut get_connection_map_measure = Measure::start("get_connection_hit_measure");
     let (
         connection,
         cache_hit,
@@ -335,23 +322,19 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
             (connection.clone(), true, map.stats.clone(), stats, 0, 0)
         }
         None => {
-            // Upgrade to write access by dropping read lock and acquire write lock
-            //
+            // Upgrade to write access by dropping read lock and acquire write lock on the connection
+            // the lock on the connection map is still readonly -- as we only need to read it until we
+            // add a connection entry to it
 
-            drop(addr_read_lock);
-            drop(map);
             let mut get_connection_map_lock_measure =
                 Measure::start("get_connection_map_lock_measure");
-
-            // info!("ZZZZ _addr_write_locklock {:?} acquiring", thread::current().id());
-
+            drop(addr_read_lock);
+            drop(map);
             let _addr_write_lock = addr_lock.write().unwrap();
             let map = (*CONNECTION_MAP).read().unwrap();
             get_connection_map_lock_measure.stop();
 
             lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
-
-            // info!("ZZZZ _addr_write_locklock {:?} acquired", thread::current().id());
 
             // Read again, as it is possible that between read lock dropped and the write lock acquired
             // another thread could have setup the connection.
@@ -377,21 +360,15 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         Connection::Udp(Arc::new(UdpTpuConnection::new(send_socket, *addr)))
                     };
 
-
-                    drop(map);
                     let mut get_connection_map_lock_measure =
                         Measure::start("get_connection_map_lock_measure");
-
-                    // info!("ZZZZ CONNECTION_MAP write {:?} acquiring", thread::current().id());
-
+                    drop(map);
                     let mut map = (*CONNECTION_MAP).write().unwrap();
                     get_connection_map_lock_measure.stop();
 
                     lock_timing_ms =
                         lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
 
-                    // info!("ZZZZ CONNECTION_MAP write {:?} acquired", thread::current().id());
-                    
                     // evict a connection if the cache is reaching upper bounds
                     let mut num_evictions = 0;
                     let mut get_connection_cache_eviction_measure =
@@ -399,7 +376,10 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     while map.map.len() >= MAX_CONNECTIONS {
                         let mut rng = thread_rng();
                         let n = rng.gen_range(0, MAX_CONNECTIONS);
-                        map.map.swap_remove_index(n);
+                        let evicted = map.map.swap_remove_index(n);
+                        if let Some((removed_addr, _)) = evicted {
+                            CONNECTION_LOCK_MANAGER.remove_lock(&removed_addr);
+                        }
                         num_evictions += 1;
                     }
                     get_connection_cache_eviction_measure.stop();
@@ -505,6 +485,9 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
             .fetch_add(eviction_timing_ms, Ordering::Relaxed);
     }
 
+    connection_cache_stats
+        .get_connection_calls
+        .fetch_add(1, Ordering::Relaxed);
     get_connection_measure.stop();
     connection_cache_stats
         .get_connection_lock_ms
