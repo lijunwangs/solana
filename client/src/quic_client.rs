@@ -15,6 +15,7 @@ use {
         ClientConfig, Endpoint, EndpointConfig, IdleTimeout, NewConnection, VarInt, WriteError,
     },
     quinn_proto::ConnectionStats,
+    solana_measure::measure::Measure,
     solana_sdk::{
         quic::{
             QUIC_KEEP_ALIVE_MS, QUIC_MAX_CONCURRENT_STREAMS, QUIC_MAX_TIMEOUT_MS, QUIC_PORT_OFFSET,
@@ -186,9 +187,22 @@ impl QuicClient {
     }
 
     pub fn stats(&self) -> Option<ConnectionStats> {
+        let mut lock_connection_measure = Measure::start("lock_connection");
         let conn_guard = self.connection.lock();
         let x = RUNTIME.block_on(conn_guard);
-        x.as_ref().map(|c| c.connection.stats())
+        lock_connection_measure.stop();
+
+        let mut load_stats_measure = Measure::start("load_stats");
+        let stats = x.as_ref().map(|c| c.connection.stats());
+        load_stats_measure.stop();
+
+        datapoint_info!(
+            "quic-client-connection-stats-stats",
+            ("lock_connection", lock_connection_measure.as_ms(), i64),
+            ("load_stats", load_stats_measure.as_ms(), i64)
+        );
+
+        stats
     }
 
     // If this function becomes public, it should be changed to
