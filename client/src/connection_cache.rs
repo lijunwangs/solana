@@ -43,7 +43,7 @@ struct ConnectionCacheStats {
     get_connection_lock_ms: AtomicU64,
     get_connection_hit_ms: AtomicU64,
     get_connection_miss_ms: AtomicU64,
-
+    get_connection_stats_ms: AtomicU64,
     // Need to track these separately per-connection
     // because we need to track the base stat value from quinn
     total_client_stats: ClientStats,
@@ -113,6 +113,11 @@ impl ConnectionCacheStats {
             (
                 "get_connection_ms",
                 self.get_connection_ms.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "get_connection_stats_ms",
+                self.get_connection_stats_ms.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
@@ -345,11 +350,14 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
         eviction_timing_ms,
     } = get_or_add_connection(addr);
 
+    let mut connection_stats_measure = Measure::start("connection_stats_measure");
     let other_stats = if let Connection::Quic(conn) = &connection {
         conn.stats().map(|s| (conn.base_stats(), s))
     } else {
         None
     };
+
+    connection_stats_measure.stop();
 
     if report_stats {
         connection_cache_stats.report();
@@ -412,6 +420,11 @@ fn get_connection(addr: &SocketAddr) -> (Connection, Arc<ConnectionCacheStats>) 
     connection_cache_stats
         .get_connection_lock_ms
         .fetch_add(lock_timing_ms, Ordering::Relaxed);
+
+    connection_cache_stats
+        .get_connection_stats_ms
+        .fetch_add(connection_stats_measure.as_ms(), Ordering::Relaxed);
+
     connection_cache_stats
         .get_connection_ms
         .fetch_add(get_connection_measure.as_ms(), Ordering::Relaxed);
