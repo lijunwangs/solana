@@ -254,8 +254,16 @@ impl QuicClient {
     }
 
     pub fn stats(&self) -> Option<ConnectionStats> {
+        let mut connection_lock_measure = Measure::start("connection_lock_measure");
         let conn_guard = self.connection.lock();
         let x = RUNTIME.block_on(conn_guard);
+        connection_lock_measure.stop();
+
+        datapoint_info!(
+            "quic-client-connection-stats-stats",
+            ("connection_lock_ms", connection_lock_measure.as_ms(), i64)
+        );
+
         x.as_ref().map(|c| c.connection.connection.stats())
     }
 
@@ -277,7 +285,15 @@ impl QuicClient {
         stats: &ClientStats,
     ) -> Result<Arc<NewConnection>, WriteError> {
         let connection = {
+            let mut connection_lock_measure = Measure::start("connection_lock_measure");
+
             let mut conn_guard = self.connection.lock().await;
+            connection_lock_measure.stop();
+
+            datapoint_info!(
+                "quic-client-connection-stats-stats",
+                ("connection_lock2_ms", connection_lock_measure.as_ms(), i64)
+            );
 
             let maybe_conn = conn_guard.clone();
             match maybe_conn {
