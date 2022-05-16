@@ -255,12 +255,25 @@ impl QuicClient {
     }
 
     pub fn stats(&self) -> Option<ConnectionStats> {
+        info!(
+            "quic-client-connection-stats-stats: Lock timing 1 acquiring for {}, this: {:p} thread: {:?}",
+            self.addr,
+            self as *const Self,
+            thread::current().id(),
+        );
+
         let _guard = RUNTIME.enter();
         let mut connection_lock_measure = Measure::start("connection_lock_measure");
         let mut connection_lock_locked_measure = Measure::start("connection_lock_locked_measure");
         let conn_guard = self.connection.lock();
         let x = RUNTIME.block_on(conn_guard);
         connection_lock_measure.stop();
+        info!(
+            "quic-client-connection-stats-stats: Lock timing 1  locked for {}, this: {:p} thread: {:?}",
+            self.addr,
+            self as *const Self,
+            thread::current().id(),
+        );
 
         let stats = { x.as_ref().map(|c| c.connection.connection.stats()) };
 
@@ -306,11 +319,25 @@ impl QuicClient {
         data: &[u8],
         stats: &ClientStats,
     ) -> Result<Arc<NewConnection>, WriteError> {
+        info!(
+            "quic-client-connection-stats-stats: Lock timing 2 acquiring for {}, this: {:p} thread: {:?}",
+            self.addr,
+            self as *const Self,
+            thread::current().id(),
+        );
+
         let mut connection_lock_measure = Measure::start("connection_lock_measure");
         let mut connection_lock_locked_measure = Measure::start("connection_lock_locked_measure");
 
         let mut conn_guard = self.connection.lock().await;
         connection_lock_measure.stop();
+
+        info!(
+            "quic-client-connection-stats-stats: Lock timing 2  locked for {}, this: {:p} thread: {:?}",
+            self.addr,
+            self as *const Self,
+            thread::current().id(),
+        );
 
         let connection = {
             let maybe_conn = conn_guard.clone();
@@ -352,9 +379,43 @@ impl QuicClient {
             Ok(()) => Ok(connection),
             _ => {
                 let connection = {
+                    info!(
+                        "quic-client-connection-stats-stats: Lock timing 3 acquiring for {}, this: {:p} thread: {:?}",
+                        self.addr,
+                        self as *const Self,
+                        thread::current().id(),
+                    );
+
+                    let mut connection_lock_measure = Measure::start("connection_lock_measure");
+                    let mut connection_lock_locked_measure =
+                        Measure::start("connection_lock_locked_measure");
+
                     let mut conn_guard = self.connection.lock().await;
+                    connection_lock_measure.stop();
+
+                    info!(
+                        "quic-client-connection-stats-stats: Lock timing 3  locked for {}, this: {:p} thread: {:?}",
+                        self.addr,
+                        self as *const Self,
+                        thread::current().id(),
+                    );
+
                     let conn = conn_guard.as_mut().unwrap();
-                    conn.make_connection_0rtt(self.addr, stats).await?
+                    let new_connection = conn.make_connection_0rtt(self.addr, stats).await?;
+
+                    drop(conn_guard);
+                    connection_lock_locked_measure.stop();
+
+                    info!(
+                        "quic-client-connection-stats-stats: Lock timing 3 for {}, lock {} total: {} this: {:p} thread: {:?}",
+                        self.addr,
+                        connection_lock_measure.as_ms(),
+                        connection_lock_locked_measure.as_ms(),
+                        self as *const Self,
+                        thread::current().id(),
+                    );
+
+                    new_connection
                 };
                 Self::_send_buffer_using_conn(data, &connection).await?;
                 Ok(connection)
