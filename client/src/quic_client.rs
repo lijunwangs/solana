@@ -256,16 +256,25 @@ impl QuicClient {
     pub fn stats(&self) -> Option<ConnectionStats> {
         let _guard = RUNTIME.enter();
         let mut connection_lock_measure = Measure::start("connection_lock_measure");
-        let conn_guard = self.connection.lock();
+        let mut connection_lock_locked_measure = Measure::start("connection_lock_locked_measure");
+        let conn_guard = self.connection.lock();        
         let x = RUNTIME.block_on(conn_guard);
         connection_lock_measure.stop();
 
+        let stats = {
+            x.as_ref().map(|c| c.connection.connection.stats())
+        };
+
+        drop(x);
+        connection_lock_locked_measure.stop();
+
         datapoint_info!(
             "quic-client-connection-stats-stats",
-            ("connection_lock_ms", connection_lock_measure.as_ms(), i64)
+            ("connection_lock_ms", connection_lock_measure.as_ms(), i64),
+            ("connection_lock_locked_ms", connection_lock_locked_measure.as_ms(), i64)
         );
 
-        x.as_ref().map(|c| c.connection.connection.stats())
+        stats
     }
 
     async fn _send_buffer_using_conn(
@@ -285,17 +294,13 @@ impl QuicClient {
         data: &[u8],
         stats: &ClientStats,
     ) -> Result<Arc<NewConnection>, WriteError> {
+        let mut connection_lock_measure = Measure::start("connection_lock_measure");
+        let mut connection_lock_locked_measure = Measure::start("connection_lock_locked_measure");
+
+        let mut conn_guard = self.connection.lock().await;
+        connection_lock_measure.stop();
+
         let connection = {
-            let mut connection_lock_measure = Measure::start("connection_lock_measure");
-
-            let mut conn_guard = self.connection.lock().await;
-            connection_lock_measure.stop();
-
-            datapoint_info!(
-                "quic-client-connection-stats-stats",
-                ("connection_lock2_ms", connection_lock_measure.as_ms(), i64)
-            );
-
             let maybe_conn = conn_guard.clone();
             match maybe_conn {
                 Some(conn) => {
@@ -309,6 +314,15 @@ impl QuicClient {
                 }
             }
         };
+        drop(conn_guard);
+
+        connection_lock_locked_measure.stop();
+        datapoint_info!(
+            "quic-client-connection-stats-stats",
+            ("connection_lock2_ms", connection_lock_measure.as_ms(), i64),
+            ("connection_lock_locked2_ms", connection_lock_locked_measure.as_ms(), i64)
+        );
+
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
             _ => {
