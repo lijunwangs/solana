@@ -26,6 +26,7 @@ use {
     std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
+        thread,
         time::Duration,
     },
     tokio::{runtime::Runtime, sync::Mutex},
@@ -277,11 +278,12 @@ impl QuicClient {
         );
 
         info!(
-            "quic-client-connection-stats-stats: Lock timing for {}, lock {} total: {} this: {:p}",
+            "quic-client-connection-stats-stats: Lock timing 1 for {}, lock {} total: {} this: {:p} thread: {:?}",
             self.addr,
             connection_lock_measure.as_ms(),
             connection_lock_locked_measure.as_ms(),
-            self as *const Self
+            self as *const Self,
+            thread::current().id(),
         );
 
         stats
@@ -338,11 +340,12 @@ impl QuicClient {
         );
 
         info!(
-            "quic-client-connection-stats-stats: Lock timing 2 for {}, lock {} total: {} this: {:p}",
+            "quic-client-connection-stats-stats: Lock timing 2 for {}, lock {} total: {} this: {:p} thread: {:?}",
             self.addr,
             connection_lock_measure.as_ms(),
             connection_lock_locked_measure.as_ms(),
-            self as *const Self
+            self as *const Self,
+            thread::current().id(),
         );
 
         match Self::_send_buffer_using_conn(data, &connection).await {
