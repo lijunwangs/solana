@@ -347,7 +347,19 @@ impl QuicClient {
                     conn.connection.clone()
                 }
                 None => {
-                    let conn = QuicNewConnection::make_connection(self.addr, stats).await?;
+                    let conn = QuicNewConnection::make_connection(self.addr, stats).await;
+
+                    if conn.is_err() {
+                        info!(
+                            "quic-client-connection-stats-stats: Lock timing 2 for {},  errorred {:?} this: {:p} thread: {:?}",
+                            self.addr,
+                            conn.as_ref().err(),
+                            self as *const Self,
+                            thread::current().id(),
+                        );
+                        return Err(conn.err().unwrap());
+                    }
+                    let conn = conn.unwrap();
                     *conn_guard = Some(conn.clone());
                     conn.connection.clone()
                 }
