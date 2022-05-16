@@ -254,6 +254,7 @@ impl QuicClient {
     }
 
     pub fn stats(&self) -> Option<ConnectionStats> {
+        let _guard = RUNTIME.enter();
         let mut connection_lock_measure = Measure::start("connection_lock_measure");
         let conn_guard = self.connection.lock();
         let x = RUNTIME.block_on(conn_guard);
