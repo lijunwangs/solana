@@ -257,13 +257,11 @@ impl QuicClient {
         let _guard = RUNTIME.enter();
         let mut connection_lock_measure = Measure::start("connection_lock_measure");
         let mut connection_lock_locked_measure = Measure::start("connection_lock_locked_measure");
-        let conn_guard = self.connection.lock();        
+        let conn_guard = self.connection.lock();
         let x = RUNTIME.block_on(conn_guard);
         connection_lock_measure.stop();
 
-        let stats = {
-            x.as_ref().map(|c| c.connection.connection.stats())
-        };
+        let stats = { x.as_ref().map(|c| c.connection.connection.stats()) };
 
         drop(x);
         connection_lock_locked_measure.stop();
@@ -271,7 +269,19 @@ impl QuicClient {
         datapoint_info!(
             "quic-client-connection-stats-stats",
             ("connection_lock_ms", connection_lock_measure.as_ms(), i64),
-            ("connection_lock_locked_ms", connection_lock_locked_measure.as_ms(), i64)
+            (
+                "connection_lock_locked_ms",
+                connection_lock_locked_measure.as_ms(),
+                i64
+            )
+        );
+
+        info!(
+            "quic-client-connection-stats-stats: Lock timing for {}, lock {} total: {} this: {:p}",
+            self.addr,
+            connection_lock_measure.as_ms(),
+            connection_lock_locked_measure.as_ms(),
+            self as *const Self
         );
 
         stats
@@ -320,7 +330,19 @@ impl QuicClient {
         datapoint_info!(
             "quic-client-connection-stats-stats",
             ("connection_lock2_ms", connection_lock_measure.as_ms(), i64),
-            ("connection_lock_locked2_ms", connection_lock_locked_measure.as_ms(), i64)
+            (
+                "connection_lock_locked2_ms",
+                connection_lock_locked_measure.as_ms(),
+                i64
+            )
+        );
+
+        info!(
+            "quic-client-connection-stats-stats: Lock timing 2 for {}, lock {} total: {} this: {:p}",
+            self.addr,
+            connection_lock_measure.as_ms(),
+            connection_lock_locked_measure.as_ms(),
+            self as *const Self
         );
 
         match Self::_send_buffer_using_conn(data, &connection).await {
