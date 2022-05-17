@@ -98,15 +98,17 @@ impl QuicNewConnection {
         let connecting = endpoint.connect(addr, "connect").unwrap();
         stats.total_connections.fetch_add(1, Ordering::Relaxed);
         let connecting_result = connecting.await;
-        if connecting_result.is_err() {
-            stats.connection_errors.fetch_add(1, Ordering::Relaxed);
-        }
-        let connection = connecting_result?;
 
         make_connection_measure.stop();
         stats
             .make_connection_ms
             .fetch_add(make_connection_measure.as_ms(), Ordering::Relaxed);
+
+        if connecting_result.is_err() {
+            stats.connection_errors.fetch_add(1, Ordering::Relaxed);
+        }
+        let connection = connecting_result?;
+
         Ok(Self {
             endpoint,
             connection: Arc::new(connection),
