@@ -265,7 +265,7 @@ impl QuicClient {
         let mut send_stream = send_stream?;
         datapoint_info!(
             "quic-client-connection-stats",
-            ("open_uni_ms", open_uni_measure.as_ms(), i64)
+            ("open_uni_us", open_uni_measure.as_us(), i64)
         );
 
         send_stream.write_all(data).await?;
