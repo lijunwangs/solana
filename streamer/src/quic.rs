@@ -1,9 +1,9 @@
 use {
-    crossbeam_channel::Sender,
+    crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender},
     futures_util::stream::StreamExt,
     pem::Pem,
     pkcs8::{der::Document, AlgorithmIdentifier, ObjectIdentifier},
-    quinn::{Endpoint, EndpointConfig, IdleTimeout, IncomingUniStreams, ServerConfig, VarInt},
+    quinn::{Endpoint, EndpointConfig, IdleTimeout, NewConnection, ServerConfig, VarInt},
     rcgen::{CertificateParams, DistinguishedName, DnType, SanType},
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -20,7 +20,7 @@ use {
             atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
             Arc, Mutex, RwLock,
         },
-        thread,
+        thread::{self, JoinHandle},
         time::{Duration, Instant},
     },
     tokio::{
@@ -28,6 +28,62 @@ use {
         time::timeout,
     },
 };
+
+pub struct QuicTpuServer {
+    exit: Arc<AtomicBool>,
+    connection_server: JoinHandle<()>,
+    chunk_handler: JoinHandle<()>,
+}
+
+impl QuicTpuServer {
+    pub fn new(
+        sock: UdpSocket,
+        keypair: &Keypair,
+        gossip_host: IpAddr,
+        packet_sender: Sender<PacketBatch>,
+        max_connections_per_ip: usize,
+        staked_nodes: Arc<RwLock<HashMap<IpAddr, u64>>>,
+        max_staked_connections: usize,
+        max_unstaked_connections: usize,
+    ) -> Self {
+        let exit = Arc::new(AtomicBool::default());
+        let (chunk_sender, chunk_receiver) = unbounded();
+        let stats = Arc::new(StreamStats::default());
+
+        let chunk_handler = chunk_handler(
+            chunk_receiver,
+            packet_sender.clone(),
+            stats.clone(),
+            exit.clone(),
+        );
+
+        let connection_server = spawn_server(
+            sock,
+            keypair,
+            gossip_host,
+            chunk_sender,
+            exit.clone(),
+            max_connections_per_ip,
+            staked_nodes,
+            max_staked_connections,
+            max_unstaked_connections,
+            stats,
+        )
+        .unwrap();
+
+        Self {
+            exit,
+            connection_server,
+            chunk_handler,
+        }
+    }
+
+    pub fn join(self) {
+        self.exit.store(true, Ordering::Relaxed);
+        self.connection_server.join().unwrap();
+        self.chunk_handler.join().unwrap();
+    }
+}
 
 pub const MAX_STAKED_CONNECTIONS: usize = 2000;
 pub const MAX_UNSTAKED_CONNECTIONS: usize = 500;
@@ -147,10 +203,14 @@ pub enum QuicServerError {
     EndpointFailed,
 }
 
+struct MaybePacketBatch {
+    packet_batch: Option<PacketBatch>,
+}
+
 // Return true if the server should drop the stream
 fn handle_chunk(
     chunk: &Result<Option<quinn::Chunk>, quinn::ReadError>,
-    maybe_batch: &mut Option<PacketBatch>,
+    maybe_batch: &mut MaybePacketBatch,
     remote_addr: &SocketAddr,
     packet_sender: &Sender<PacketBatch>,
     stats: Arc<StreamStats>,
@@ -164,10 +224,12 @@ fn handle_chunk(
 
                 // shouldn't happen, but sanity check the size and offsets
                 if chunk.offset > PACKET_DATA_SIZE as u64 || chunk_len > PACKET_DATA_SIZE as u64 {
+                    error!("Wrong chun size 1");
                     stats.total_invalid_chunks.fetch_add(1, Ordering::Relaxed);
                     return true;
                 }
                 if chunk.offset + chunk_len > PACKET_DATA_SIZE as u64 {
+                    error!("Wrong chun size 2");
                     stats
                         .total_invalid_chunk_size
                         .fetch_add(1, Ordering::Relaxed);
@@ -175,28 +237,28 @@ fn handle_chunk(
                 }
 
                 // chunk looks valid
-                if maybe_batch.is_none() {
+                if maybe_batch.packet_batch.is_none() {
                     let mut batch = PacketBatch::with_capacity(1);
                     let mut packet = Packet::default();
                     packet.meta.set_addr(remote_addr);
                     packet.meta.sender_stake = stake;
                     batch.packets.push(packet);
-                    *maybe_batch = Some(batch);
+                    maybe_batch.packet_batch = Some(batch);
                     stats
                         .total_packets_allocated
                         .fetch_add(1, Ordering::Relaxed);
                 }
 
-                if let Some(batch) = maybe_batch.as_mut() {
+                if let Some(batch) = maybe_batch.packet_batch.as_mut() {
                     let end = chunk.offset as usize + chunk.bytes.len();
                     batch.packets[0].data[chunk.offset as usize..end].copy_from_slice(&chunk.bytes);
                     batch.packets[0].meta.size = std::cmp::max(batch.packets[0].meta.size, end);
                     stats.total_chunks_received.fetch_add(1, Ordering::Relaxed);
                 }
             } else {
-                trace!("chunk is none");
+                info!("chunk is none -- end of batches");
                 // done receiving chunks
-                if let Some(batch) = maybe_batch.take() {
+                if let Some(batch) = maybe_batch.packet_batch.take() {
                     let len = batch.packets[0].meta.size;
                     if let Err(e) = packet_sender.send(batch) {
                         stats
@@ -207,7 +269,7 @@ fn handle_chunk(
                         stats
                             .total_packet_batches_sent
                             .fetch_add(1, Ordering::Relaxed);
-                        trace!("sent {} byte packet", len);
+                        info!("sent {} byte packet", len);
                     }
                 } else {
                     stats
@@ -218,7 +280,7 @@ fn handle_chunk(
             }
         }
         Err(e) => {
-            debug!("Received stream error: {:?}", e);
+            info!("Received stream error: {:?}", e);
             stats
                 .total_stream_read_errors
                 .fetch_add(1, Ordering::Relaxed);
@@ -428,8 +490,15 @@ impl StreamStats {
 }
 
 fn handle_connection(
-    mut uni_streams: IncomingUniStreams,
-    packet_sender: Sender<PacketBatch>,
+    new_connection: NewConnection,
+    chunk_sender: Sender<(
+        Result<Option<quinn::Chunk>, quinn::ReadError>,
+        SocketAddr,
+        Arc<AtomicU64>,
+        Arc<AtomicBool>,
+        u64,
+        Arc<Mutex<MaybePacketBatch>>,
+    )>,
     remote_addr: SocketAddr,
     last_update: Arc<AtomicU64>,
     connection_table: Arc<Mutex<ConnectionTable>>,
@@ -438,35 +507,62 @@ fn handle_connection(
     stake: u64,
 ) {
     tokio::spawn(async move {
-        debug!(
+        info!(
             "quic new connection {} streams: {} connections: {}",
             remote_addr,
             stats.total_streams.load(Ordering::Relaxed),
             stats.total_connections.load(Ordering::Relaxed),
         );
+        let mut uni_streams = new_connection.uni_streams;
+
         while !stream_exit.load(Ordering::Relaxed) {
             match uni_streams.next().await {
                 Some(stream_result) => match stream_result {
                     Ok(mut stream) => {
                         stats.total_streams.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
-                        let mut maybe_batch = None;
-                        while !stream_exit.load(Ordering::Relaxed) {
-                            if handle_chunk(
-                                &stream.read_chunk(PACKET_DATA_SIZE, false).await,
-                                &mut maybe_batch,
-                                &remote_addr,
-                                &packet_sender,
-                                stats.clone(),
+                        let drop_stream = Arc::new(AtomicBool::default());
+                        let maybe_batch =
+                            Arc::new(Mutex::new(MaybePacketBatch { packet_batch: None }));
+                        while !stream_exit.load(Ordering::Relaxed)
+                            && !drop_stream.load(Ordering::Relaxed)
+                        {
+                            let chunk = stream.read_chunk(PACKET_DATA_SIZE, false).await;
+                            if chunk.is_err() {
+                                info!("read_chunk returned error  {:?}", chunk);
+                            }
+
+                            let last_chunk = chunk.as_ref().map_or(true, |chunk| chunk.is_none());
+
+                            let msg = (
+                                chunk,
+                                remote_addr,
+                                last_update.clone(),
+                                drop_stream.clone(),
                                 stake,
-                            ) {
-                                last_update.store(timing::timestamp(), Ordering::Relaxed);
+                                maybe_batch.clone(),
+                            );
+                            if let Err(err) = chunk_sender.send(msg) {
+                                info!("Ran into an error while sending chunk {}", err);
+                                break;
+                            }
+                            if last_chunk {
+                                info!("This is the last chunk, quit this stream");
                                 break;
                             }
                         }
+                        info!(
+                            "End handling for this stream, stream exit {} drop stream: {}",
+                            stream_exit.load(Ordering::Relaxed),
+                            drop_stream.load(Ordering::Relaxed)
+                        );
                     }
                     Err(e) => {
-                        debug!("stream error: {:?}", e);
+                        info!(
+                            "stream error: {:?} id: {}",
+                            e,
+                            new_connection.connection.stable_id()
+                        );
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
                     }
@@ -477,6 +573,7 @@ fn handle_connection(
                 }
             }
         }
+        info!("Quit connection {}", remote_addr);
         connection_table
             .lock()
             .unwrap()
@@ -485,16 +582,72 @@ fn handle_connection(
     });
 }
 
-pub fn spawn_server(
+fn chunk_handler(
+    chunk_receiver: Receiver<(
+        Result<Option<quinn::Chunk>, quinn::ReadError>,
+        SocketAddr,
+        Arc<AtomicU64>,
+        Arc<AtomicBool>,
+        u64,
+        Arc<Mutex<MaybePacketBatch>>,
+    )>,
+    packet_sender: Sender<PacketBatch>,
+    stats: Arc<StreamStats>,
+    exit: Arc<AtomicBool>,
+) -> JoinHandle<()> {
+    info!("Starting chunk-handler thread");
+    thread::Builder::new()
+        .name("chunk-handler".to_string())
+        .spawn(move || loop {
+            let recv_timeout_ms = 1;
+            match chunk_receiver.recv_timeout(Duration::from_millis(recv_timeout_ms)) {
+                Err(RecvTimeoutError::Disconnected) => {
+                    info!("Terminating chunk-handler.");
+                    break;
+                }
+                Err(RecvTimeoutError::Timeout) => {
+                    if exit.load(Ordering::Relaxed) {
+                        info!("Terminating chunk-handle.");
+                        break;
+                    }
+                }
+                Ok((chunk, remote_addr, last_update, stream_exit, stake, maybe_batch)) => {
+                    if handle_chunk(
+                        &chunk,
+                        &mut maybe_batch.lock().unwrap(),
+                        &remote_addr,
+                        &packet_sender,
+                        stats.clone(),
+                        stake,
+                    ) {
+                        info!("handle_chunk says ending the stream");
+                        last_update.store(timing::timestamp(), Ordering::Relaxed);
+                        stream_exit.store(true, Ordering::Relaxed);
+                    }
+                }
+            }
+        })
+        .unwrap()
+}
+
+fn spawn_server(
     sock: UdpSocket,
     keypair: &Keypair,
     gossip_host: IpAddr,
-    packet_sender: Sender<PacketBatch>,
+    chunk_sender: Sender<(
+        Result<Option<quinn::Chunk>, quinn::ReadError>,
+        SocketAddr,
+        Arc<AtomicU64>,
+        Arc<AtomicBool>,
+        u64,
+        Arc<Mutex<MaybePacketBatch>>,
+    )>,
     exit: Arc<AtomicBool>,
     max_connections_per_ip: usize,
     staked_nodes: Arc<RwLock<HashMap<IpAddr, u64>>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    stats: Arc<StreamStats>,
 ) -> Result<thread::JoinHandle<()>, QuicServerError> {
     let (config, _cert) = configure_server(keypair, gossip_host)?;
 
@@ -505,7 +658,6 @@ pub fn spawn_server(
             .map_err(|_e| QuicServerError::EndpointFailed)?
     };
 
-    let stats = Arc::new(StreamStats::default());
     let handle = thread::spawn(move || {
         let handle = runtime.spawn(async move {
             debug!("spawn quic server");
@@ -531,13 +683,7 @@ pub fn spawn_server(
                     if let Ok(new_connection) = connection.await {
                         stats.total_connections.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
-                        let quinn::NewConnection {
-                            connection,
-                            uni_streams,
-                            ..
-                        } = new_connection;
-
-                        let remote_addr = connection.remote_address();
+                        let remote_addr = new_connection.connection.remote_address();
 
                         let (mut connection_table_l, stake) = {
                             let staked_nodes = staked_nodes.read().unwrap();
@@ -568,12 +714,11 @@ pub fn spawn_server(
                             )
                         {
                             drop(connection_table_l);
-                            let packet_sender = packet_sender.clone();
                             let stats = stats.clone();
                             let connection_table1 = connection_table.clone();
                             handle_connection(
-                                uni_streams,
-                                packet_sender,
+                                new_connection,
+                                chunk_sender.clone(),
                                 remote_addr,
                                 last_update,
                                 connection_table1,
@@ -648,10 +793,8 @@ mod test {
 
     #[test]
     fn test_quic_server_exit() {
-        let (t, exit, _receiver, _server_address) = setup_quic_server();
-
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        let (server, _server_address, _receiver) = setup_quic_server();
+        server.join();
     }
 
     fn make_client_endpoint(runtime: &Runtime, addr: &SocketAddr) -> NewConnection {
@@ -668,7 +811,7 @@ mod test {
     #[test]
     fn test_quic_timeout() {
         solana_logger::setup();
-        let (t, exit, receiver, server_address) = setup_quic_server();
+        let (server, server_address, receiver) = setup_quic_server();
 
         let runtime = rt();
         let _rt_guard = runtime.enter();
@@ -694,14 +837,13 @@ mod test {
             }
         }
         runtime.block_on(handle).unwrap();
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        server.join();
     }
 
     #[test]
     fn test_quic_server_block_multiple_connections() {
         solana_logger::setup();
-        let (t, exit, _receiver, server_address) = setup_quic_server();
+        let (server, server_address, _receiver) = setup_quic_server();
 
         let runtime = rt();
         let _rt_guard = runtime.enter();
@@ -724,8 +866,7 @@ mod test {
                 .expect_err("shouldn't be able to open 2 connections");
         });
         runtime.block_on(handle).unwrap();
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        server.join();
     }
 
     #[test]
@@ -738,16 +879,23 @@ mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(HashMap::new()));
+        let (chunk_sender, chunk_receiver) = unbounded();
+        let stats = Arc::new(StreamStats::default());
+
+        let chunk_handler =
+            chunk_handler(chunk_receiver, sender.clone(), stats.clone(), exit.clone());
+
         let t = spawn_server(
             s,
             &keypair,
             ip,
-            sender,
+            chunk_sender,
             exit.clone(),
             2,
             staked_nodes,
             10,
             10,
+            stats,
         )
         .unwrap();
 
@@ -793,40 +941,37 @@ mod test {
 
         exit.store(true, Ordering::Relaxed);
         t.join().unwrap();
+        chunk_handler.join().unwrap();
     }
 
-    fn setup_quic_server() -> (
-        std::thread::JoinHandle<()>,
-        Arc<AtomicBool>,
-        crossbeam_channel::Receiver<PacketBatch>,
-        SocketAddr,
-    ) {
+    fn setup_quic_server() -> (QuicTpuServer, SocketAddr, Receiver<PacketBatch>) {
         let s = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(HashMap::new()));
-        let t = spawn_server(
-            s,
-            &keypair,
-            ip,
-            sender,
-            exit.clone(),
-            1,
-            staked_nodes,
-            MAX_STAKED_CONNECTIONS,
-            MAX_UNSTAKED_CONNECTIONS,
+
+        (
+            QuicTpuServer::new(
+                s,
+                &keypair,
+                ip,
+                sender,
+                1,
+                staked_nodes,
+                MAX_STAKED_CONNECTIONS,
+                MAX_UNSTAKED_CONNECTIONS,
+            ),
+            server_address,
+            receiver,
         )
-        .unwrap();
-        (t, exit, receiver, server_address)
     }
 
     #[test]
     fn test_quic_server_multiple_writes() {
         solana_logger::setup();
-        let (t, exit, receiver, server_address) = setup_quic_server();
+        let (server, server_address, receiver) = setup_quic_server();
 
         let runtime = rt();
         let _rt_guard = runtime.enter();
@@ -863,8 +1008,7 @@ mod test {
         }
         assert_eq!(total_packets, num_expected_packets);
 
-        exit.store(true, Ordering::Relaxed);
-        t.join().unwrap();
+        server.join();
     }
 
     #[test]

@@ -24,6 +24,7 @@ use {
     std::{
         net::{SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
+        thread,
         time::Duration,
     },
     tokio::runtime::Runtime,
@@ -215,6 +216,13 @@ impl QuicClient {
             stats.connection_errors.fetch_add(1, Ordering::Relaxed);
         }
         let connection = connecting_result?;
+        info!(
+            "Made connection successfully to {} id: {}, thread: {:?} self: {:?}",
+            self.addr,
+            connection.connection.stable_id(),
+            thread::current().id(),
+            self as *const Self,
+        );
         Ok(Arc::new(connection))
     }
 
@@ -270,15 +278,39 @@ impl QuicClient {
         };
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
-            _ => {
+            Err(err) => {
+                error!(
+                    "Send error: {} id: {}, will retry connection using 0rtt. Thread: {:?}",
+                    err,
+                    connection.connection.stable_id(),
+                    thread::current().id(),
+                );
                 let connection = {
-                    let connection = self.make_connection_0rtt(stats).await?;
+                    let new_connection = self.make_connection_0rtt(stats).await?;
+                    info!(
+                        "Made 0rtt connection to {} with id {} for old connection {}",
+                        new_connection.connection.remote_address(),
+                        new_connection.connection.stable_id(),
+                        connection.connection.stable_id(),
+                    );
                     let mut conn_guard = self.connection.lock().await;
-                    *conn_guard = Some(connection.clone());
-                    connection
+                    *conn_guard = Some(new_connection.clone());
+                    new_connection
                 };
-                Self::_send_buffer_using_conn(data, &connection).await?;
-                Ok(connection)
+
+                let result = Self::_send_buffer_using_conn(data, &connection).await;
+
+                match result {
+                    Ok(_) => Ok(connection),
+                    Err(err) => {
+                        error!(
+                            "Send error even with 0rtt connection: {} id: {}",
+                            err,
+                            connection.connection.stable_id()
+                        );
+                        Err(err)
+                    }
+                }
             }
         }
     }
