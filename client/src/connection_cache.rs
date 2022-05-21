@@ -5,8 +5,8 @@ use {
         udp_client::UdpTpuConnection,
     },
     indexmap::map::{Entry, IndexMap},
-    log::*,
     lazy_static::lazy_static,
+    log::*,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
     solana_sdk::{
@@ -326,7 +326,11 @@ fn create_connection(
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
-    info!("zzzzz get_or_add_connection {} {}", addr, thread::current().id());
+    info!(
+        "zzzzz get_or_add_connection {} {:?}",
+        addr,
+        thread::current().id()
+    );
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
