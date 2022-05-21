@@ -5,6 +5,7 @@ use {
         udp_client::UdpTpuConnection,
     },
     indexmap::map::{Entry, IndexMap},
+    log::*,
     lazy_static::lazy_static,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
@@ -292,6 +293,7 @@ fn create_connection(
 
             match map.map.entry(*addr) {
                 Entry::Occupied(mut entry) => {
+                    info!("zzzzz add additional connection for {}", addr);
                     entry.get_mut().push(connection);
                 }
                 Entry::Vacant(entry) => {
