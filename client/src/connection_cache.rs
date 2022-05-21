@@ -18,6 +18,7 @@ use {
             atomic::{AtomicU64, Ordering},
             Arc, RwLock,
         },
+        thread,
     },
 };
 
@@ -325,6 +326,7 @@ fn create_connection(
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
+    info!("zzzzz get_or_add_connection {} {}", addr, thread::current().id());
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
