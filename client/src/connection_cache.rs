@@ -4,7 +4,7 @@ use {
         tpu_connection::{ClientStats, TpuConnection},
         udp_client::UdpTpuConnection,
     },
-    indexmap::map::IndexMap,
+    indexmap::map::{Entry, IndexMap},
     lazy_static::lazy_static,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
@@ -213,8 +213,9 @@ impl ConnectionCacheStats {
     }
 }
 
+const CONNECTION_POOL_SIZE: usize = 2;
 struct ConnectionMap {
-    map: IndexMap<SocketAddr, Connection>,
+    map: IndexMap<SocketAddr, Vec<Connection>>,
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
@@ -255,6 +256,72 @@ struct GetConnectionResult {
     eviction_timing_ms: u64,
 }
 
+fn create_connection(
+    lock_timing_ms: &mut u64,
+    addr: &SocketAddr,
+) -> (Connection, bool, Arc<ConnectionCacheStats>, u64, u64) {
+    let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
+    let mut map = (*CONNECTION_MAP).write().unwrap();
+    get_connection_map_lock_measure.stop();
+    *lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
+    // Read again, as it is possible that between read lock dropped and the write lock acquired
+    // another thread could have setup the connection.
+    let to_ceate_connection: bool = map
+        .map
+        .get(addr)
+        .map_or(true, |connections| connections.len() < CONNECTION_POOL_SIZE);
+    let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
+        if to_ceate_connection {
+            let connection = if map.use_quic {
+                Connection::Quic(Arc::new(QuicTpuConnection::new(*addr, map.stats.clone())))
+            } else {
+                Connection::Udp(Arc::new(UdpTpuConnection::new(*addr, map.stats.clone())))
+            };
+
+            // evict a connection if the cache is reaching upper bounds
+            let mut num_evictions = 0;
+            let mut get_connection_cache_eviction_measure =
+                Measure::start("get_connection_cache_eviction_measure");
+            while map.map.len() >= MAX_CONNECTIONS {
+                let mut rng = thread_rng();
+                let n = rng.gen_range(0, MAX_CONNECTIONS);
+                map.map.swap_remove_index(n);
+                num_evictions += 1;
+            }
+            get_connection_cache_eviction_measure.stop();
+
+            match map.map.entry(*addr) {
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().push(connection);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![connection]);
+                }
+            }
+            (
+                false,
+                map.stats.clone(),
+                num_evictions,
+                get_connection_cache_eviction_measure.as_ms(),
+            )
+        } else {
+            (true, map.stats.clone(), 0, 0)
+        };
+
+    let connections = map.map.get(addr).unwrap();
+    let mut rng = thread_rng();
+    let n = rng.gen_range(0, connections.len());
+    let connection = connections[n].clone();
+
+    (
+        connection,
+        cache_hit,
+        connection_cache_stats,
+        num_evictions,
+        eviction_timing_ms,
+    )
+}
+
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
@@ -269,57 +336,22 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let mut get_connection_map_measure = Measure::start("get_connection_hit_measure");
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         match map.map.get(addr) {
-            Some(connection) => (connection.clone(), true, map.stats.clone(), 0, 0),
+            Some(connections) => {
+                if connections.len() < CONNECTION_POOL_SIZE {
+                    // create more connection and put it in the pool
+                    drop(map);
+                    create_connection(&mut lock_timing_ms, addr)
+                } else {
+                    let mut rng = thread_rng();
+                    let n = rng.gen_range(0, connections.len());
+                    let connection = connections[n].clone();
+                    (connection, true, map.stats.clone(), 0, 0)
+                }
+            }
             None => {
                 // Upgrade to write access by dropping read lock and acquire write lock
                 drop(map);
-                let mut get_connection_map_lock_measure =
-                    Measure::start("get_connection_map_lock_measure");
-                let mut map = (*CONNECTION_MAP).write().unwrap();
-                get_connection_map_lock_measure.stop();
-
-                lock_timing_ms =
-                    lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
-
-                // Read again, as it is possible that between read lock dropped and the write lock acquired
-                // another thread could have setup the connection.
-                match map.map.get(addr) {
-                    Some(connection) => (connection.clone(), true, map.stats.clone(), 0, 0),
-                    None => {
-                        let connection = if map.use_quic {
-                            Connection::Quic(Arc::new(QuicTpuConnection::new(
-                                *addr,
-                                map.stats.clone(),
-                            )))
-                        } else {
-                            Connection::Udp(Arc::new(UdpTpuConnection::new(
-                                *addr,
-                                map.stats.clone(),
-                            )))
-                        };
-
-                        // evict a connection if the cache is reaching upper bounds
-                        let mut num_evictions = 0;
-                        let mut get_connection_cache_eviction_measure =
-                            Measure::start("get_connection_cache_eviction_measure");
-                        while map.map.len() >= MAX_CONNECTIONS {
-                            let mut rng = thread_rng();
-                            let n = rng.gen_range(0, MAX_CONNECTIONS);
-                            map.map.swap_remove_index(n);
-                            num_evictions += 1;
-                        }
-                        get_connection_cache_eviction_measure.stop();
-
-                        map.map.insert(*addr, connection.clone());
-                        (
-                            connection,
-                            false,
-                            map.stats.clone(),
-                            num_evictions,
-                            get_connection_cache_eviction_measure.as_ms(),
-                        )
-                    }
-                }
+                create_connection(&mut lock_timing_ms, addr)
             }
         };
     get_connection_map_measure.stop();
@@ -539,7 +571,7 @@ mod tests {
             let map = (*CONNECTION_MAP).read().unwrap();
             assert!(map.map.len() == MAX_CONNECTIONS);
             addrs.iter().for_each(|a| {
-                let conn = map.map.get(a).expect("Address not found");
+                let conn = &map.map.get(a).expect("Address not found")[0];
                 assert!(a.ip() == ip(conn.clone()));
             });
         }
