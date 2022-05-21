@@ -48,6 +48,7 @@ fn main() {
         target_node,
         external_client_type,
         use_quic,
+        tpu_connection_pool_size,
         ..
     } = &cli_config;
 
@@ -104,6 +105,7 @@ fn main() {
             if *use_quic {
                 connection_cache::set_use_quic(true);
             }
+            connection_cache::set_connection_pool_size(*tpu_connection_pool_size);
             let client = if let Ok(rpc_addr) = value_t!(matches, "rpc_addr", String) {
                 let rpc = rpc_addr.parse().unwrap_or_else(|e| {
                     eprintln!("RPC address should parse as socketaddr {:?}", e);
@@ -173,6 +175,8 @@ fn main() {
             if *use_quic {
                 connection_cache::set_use_quic(true);
             }
+            connection_cache::set_connection_pool_size(*tpu_connection_pool_size);
+
             let client = Arc::new(
                 TpuClient::new(rpc_client, websocket_url, TpuClientConfig::default())
                     .unwrap_or_else(|err| {

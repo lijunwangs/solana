@@ -1,14 +1,18 @@
 use {
     crate::{
+        nonblocking::quic_client::QuicLazyEndpoint,
         quic_client::QuicTpuConnection,
         tpu_connection::{ClientStats, Connection},
         udp_client::UdpTpuConnection,
     },
     indexmap::map::IndexMap,
     lazy_static::lazy_static,
+    log::*,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
-    solana_sdk::timing::AtomicInterval,
+    solana_sdk::{
+        quic::QUIC_PORT_OFFSET, timing::AtomicInterval,
+    },
     std::{
         net::SocketAddr,
         sync::{
@@ -20,6 +24,7 @@ use {
 
 // Should be non-zero
 static MAX_CONNECTIONS: usize = 1024;
+
 
 #[derive(Default)]
 pub struct ConnectionCacheStats {
@@ -210,11 +215,55 @@ impl ConnectionCacheStats {
     }
 }
 
+pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
+
+/// Models the pool of connections
+struct ConnectionPool {
+    /// The connections in the pool
+    connections: Vec<Arc<Connection>>,
+
+    /// A simple reference count of connections being used.
+    /// A connection can be used multiple times. The reference count will be dropped
+    /// whe the connection object is dropped.
+    /// This helps to avoid creating new connections in case of the count of threads using
+    /// the pool is less than the pool size.
+    references: AtomicU64,
+
+    /// Connections in this pool share the same endpoint
+    endpoint: Arc<QuicLazyEndpoint>,
+}
+
+impl ConnectionPool {
+    /// Get a connection from the pool. It must have at least one connection in the pool.
+    /// This randomly picks a connection in the pool and increment the reference count.
+    fn borrow_connection(&self) -> Arc<Connection> {
+        let mut rng = thread_rng();
+        let n = rng.gen_range(0, self.connections.len());
+        let connection = self.connections[n].clone();
+        self.references.fetch_add(1, Ordering::Relaxed);
+        connection
+    }
+
+    /// Return the connection to the pool. The _connection is not used for now,
+    /// which can be used to build more accurate reference counting on a connection instance.
+    fn return_connection(&self, _connection: &Arc<Connection>) {
+        self.references.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    /// Check if we need to create a new connection. If the count of the connections
+    /// is smaller than the pool size and we have outstanding users of the pool.
+    fn need_new_connection(&self, required_pool_size: usize) -> bool {
+        self.connections.len() < required_pool_size && self.references.load(Ordering::Relaxed) > 0
+    }
+}
+
 struct ConnectionMap {
-    map: IndexMap<SocketAddr, Arc<Connection>>,
+    /// From SocketAddr maps to a pool of connection for the address
+    map: IndexMap<SocketAddr, ConnectionPool>,
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
+    connection_pool_size: usize,
 }
 
 impl ConnectionMap {
@@ -224,11 +273,26 @@ impl ConnectionMap {
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
             use_quic: false,
+            connection_pool_size: DEFAULT_CONNECTION_POOL_SIZE,
         }
     }
 
     pub fn set_use_quic(&mut self, use_quic: bool) {
         self.use_quic = use_quic;
+    }
+
+    pub fn set_connection_pool_size(&mut self, connection_pool_size: usize) {
+        info!(
+            "Configure the connection pool size to {}",
+            connection_pool_size
+        );
+        self.connection_pool_size = 1.max(connection_pool_size);
+    }
+
+    pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &Arc<Connection>) {
+        if let Some(entry) = self.map.get(address) {
+            entry.return_connection(connection);
+        }
     }
 }
 
@@ -241,6 +305,11 @@ pub fn set_use_quic(use_quic: bool) {
     map.set_use_quic(use_quic);
 }
 
+pub fn set_connection_pool_size(connection_pool_size: usize) {
+    let mut map = (*CONNECTION_MAP).write().unwrap();
+    map.set_connection_pool_size(connection_pool_size);
+}
+
 struct GetConnectionResult {
     connection: Arc<Connection>,
     cache_hit: bool,
@@ -250,6 +319,88 @@ struct GetConnectionResult {
     connection_cache_stats: Arc<ConnectionCacheStats>,
     num_evictions: u64,
     eviction_timing_ms: u64,
+}
+
+/// Create a lazy connection object under the exclusive lock of the cache map.
+fn create_connection(
+    lock_timing_ms: &mut u64,
+    addr: &SocketAddr,
+) -> (Arc<Connection>, bool, Arc<ConnectionCacheStats>, u64, u64) {
+    let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
+    let mut map = (*CONNECTION_MAP).write().unwrap();
+    get_connection_map_lock_measure.stop();
+    *lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
+    // Read again, as it is possible that between read lock dropped and the write lock acquired
+    // another thread could have setup the connection.
+
+    let (to_create_connection, endpoint) =
+        map.map
+            .get(addr)
+            .map_or((true, Arc::new(QuicLazyEndpoint::new())), |pool| {
+                (
+                    pool.need_new_connection(map.connection_pool_size),
+                    pool.endpoint.clone(),
+                )
+            });
+
+    let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
+        if to_create_connection {
+            let connection: Connection = if map.use_quic {
+                QuicTpuConnection::new(
+                    endpoint,
+                    *addr,
+                    map.stats.clone(),
+                ).into()
+            } else {
+                UdpTpuConnection::new(*addr, map.stats.clone()).into()
+            };
+
+            let connection = Arc::new(connection);
+            // evict a connection if the cache is reaching upper bounds
+            let mut num_evictions = 0;
+            let mut get_connection_cache_eviction_measure =
+                Measure::start("get_connection_cache_eviction_measure");
+            while map.map.len() >= MAX_CONNECTIONS {
+                let mut rng = thread_rng();
+                let n = rng.gen_range(0, MAX_CONNECTIONS);
+                map.map.swap_remove_index(n);
+                num_evictions += 1;
+            }
+            get_connection_cache_eviction_measure.stop();
+
+            match map.map.entry(*addr) {
+                Entry::Occupied(mut entry) => {
+                    let pool = entry.get_mut();
+                    pool.connections.push(connection);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(ConnectionPool {
+                        connections: vec![connection],
+                        references: AtomicU64::new(0),
+                        endpoint: Arc::new(QuicLazyEndpoint::new()),
+                    });
+                }
+            }
+            (
+                false,
+                map.stats.clone(),
+                num_evictions,
+                get_connection_cache_eviction_measure.as_ms(),
+            )
+        } else {
+            (true, map.stats.clone(), 0, 0)
+        };
+
+    let pool = map.map.get(addr).unwrap();
+    let connection = pool.borrow_connection();
+
+    (
+        connection,
+        cache_hit,
+        connection_cache_stats,
+        num_evictions,
+        eviction_timing_ms,
+    )
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
@@ -266,53 +417,20 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let mut get_connection_map_measure = Measure::start("get_connection_hit_measure");
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         match map.map.get(addr) {
-            Some(connection) => (connection.clone(), true, map.stats.clone(), 0, 0),
+            Some(pool) => {
+                if pool.need_new_connection(map.connection_pool_size) {
+                    // create more connection and put it in the pool
+                    drop(map);
+                    create_connection(&mut lock_timing_ms, addr)
+                } else {
+                    let connection = pool.borrow_connection();
+                    (connection, true, map.stats.clone(), 0, 0)
+                }
+            }
             None => {
                 // Upgrade to write access by dropping read lock and acquire write lock
                 drop(map);
-                let mut get_connection_map_lock_measure =
-                    Measure::start("get_connection_map_lock_measure");
-                let mut map = (*CONNECTION_MAP).write().unwrap();
-                get_connection_map_lock_measure.stop();
-
-                lock_timing_ms =
-                    lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
-
-                // Read again, as it is possible that between read lock dropped and the write lock acquired
-                // another thread could have setup the connection.
-                match map.map.get(addr) {
-                    Some(connection) => (connection.clone(), true, map.stats.clone(), 0, 0),
-                    None => {
-                        let connection: Connection = if map.use_quic {
-                            QuicTpuConnection::new(*addr, map.stats.clone()).into()
-                        } else {
-                            UdpTpuConnection::new(*addr, map.stats.clone()).into()
-                        };
-
-                        let connection = Arc::new(connection);
-
-                        // evict a connection if the cache is reaching upper bounds
-                        let mut num_evictions = 0;
-                        let mut get_connection_cache_eviction_measure =
-                            Measure::start("get_connection_cache_eviction_measure");
-                        while map.map.len() >= MAX_CONNECTIONS {
-                            let mut rng = thread_rng();
-                            let n = rng.gen_range(0, MAX_CONNECTIONS);
-                            map.map.swap_remove_index(n);
-                            num_evictions += 1;
-                        }
-                        get_connection_cache_eviction_measure.stop();
-
-                        map.map.insert(*addr, connection.clone());
-                        (
-                            connection,
-                            false,
-                            map.stats.clone(),
-                            num_evictions,
-                            get_connection_cache_eviction_measure.as_ms(),
-                        )
-                    }
-                }
+                create_connection(&mut lock_timing_ms, addr)
             }
         };
     get_connection_map_measure.stop();
@@ -431,8 +549,8 @@ mod tests {
             let map = (*CONNECTION_MAP).read().unwrap();
             assert!(map.map.len() == MAX_CONNECTIONS);
             addrs.iter().for_each(|a| {
-                let conn = map.map.get(a).expect("Address not found");
-                assert!(a.ip() == conn.tpu_addr().ip());
+                let conn = &map.map.get(a).expect("Address not found")[0];
+                assert!(a.ip() == ip(conn.clone()));
             });
         }
 
