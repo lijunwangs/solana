@@ -10,7 +10,8 @@ use {
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
     solana_sdk::{
-        timing::AtomicInterval, transaction::VersionedTransaction, transport::TransportError,
+        quic::QUIC_PORT_OFFSET, timing::AtomicInterval, transaction::VersionedTransaction,
+        transport::TransportError,
     },
     std::{
         net::SocketAddr,
@@ -34,11 +35,14 @@ pub enum Connection {
 impl Drop for Connection {
     fn drop(&mut self) {
         let address = match self {
-            Self::Udp(connection) => connection.tpu_addr(),
-            Self::Quic(connection) => connection.tpu_addr(),
+            Self::Udp(connection) => *connection.tpu_addr(),
+            Self::Quic(connection) => {
+                let address = connection.tpu_addr();
+                SocketAddr::new(address.ip(), address.port() - QUIC_PORT_OFFSET)
+            }
         };
         let map = (*CONNECTION_MAP).read().unwrap();
-        map.decrement_connection_reference(address);
+        map.decrement_connection_reference(&address);
     }
 }
 
