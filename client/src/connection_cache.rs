@@ -325,7 +325,7 @@ fn create_connection(
                     entry.1.fetch_add(1, Ordering::Relaxed);
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert((vec![connection], AtomicU64::default()));
+                    entry.insert((vec![connection], AtomicU64::new(1)));
                 }
             }
             (
