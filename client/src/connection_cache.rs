@@ -377,6 +377,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                 } else {
                     let mut rng = thread_rng();
                     let n = rng.gen_range(0, connections.0.len());
+                    connections.1.fetch_add(1, Ordering::Relaxed);
                     let connection = connections.0[n].clone();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
