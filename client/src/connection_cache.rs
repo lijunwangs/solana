@@ -254,9 +254,10 @@ impl ConnectionMap {
 
     pub fn decrement_connection_reference(&self, address: &SocketAddr) {
         info!(
-            "zzzzz try decrement reference for connection {} {} ",
+            "zzzzz try decrement reference for connection {} {} contains {}",
             address,
-            self.map.len()
+            self.map.len(),
+            self.map.contains_key(address),
         );
 
         if let Some(entry) = self.map.get(address) {
