@@ -226,7 +226,7 @@ impl ConnectionCacheStats {
     }
 }
 
-const CONNECTION_POOL_SIZE: usize = 2;
+const CONNECTION_POOL_SIZE: usize = 4;
 struct ConnectionMap {
     /// From SocketAddr maps to a vector of connection for the address
     /// And the reference count the connections being used. A connection
