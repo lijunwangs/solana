@@ -253,9 +253,13 @@ impl ConnectionMap {
     }
 
     pub fn decrement_connection_reference(&self, address: &SocketAddr) {
-        info!("zzzzz decrement reference for connection {}", address);
         if let Some(entry) = self.map.get(address) {
             entry.1.fetch_sub(1, Ordering::Relaxed);
+            info!(
+                "zzzzz decrement reference for connection {} {}",
+                address,
+                entry.1.load(Ordering::Relaxed)
+            );
         }
     }
 }
