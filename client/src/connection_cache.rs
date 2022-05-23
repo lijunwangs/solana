@@ -31,6 +31,17 @@ pub enum Connection {
     Quic(Arc<QuicTpuConnection>),
 }
 
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let address = match self {
+            Self::Udp(connection) => connection.tpu_addr(),
+            Self::Quic(connection) => connection.tpu_addr(),
+        };
+        let map = (*CONNECTION_MAP).read().unwrap();
+        map.decrement_connection_reference(address);
+    }
+}
+
 #[derive(Default)]
 pub struct ConnectionCacheStats {
     cache_hits: AtomicU64,
@@ -217,7 +228,11 @@ impl ConnectionCacheStats {
 
 const CONNECTION_POOL_SIZE: usize = 2;
 struct ConnectionMap {
-    map: IndexMap<SocketAddr, Vec<Connection>>,
+    /// From SocketAddr maps to a vector of connection for the address
+    /// And the reference count the connections being used. A connection
+    /// can be used multiple times. The reference count will be dropped
+    /// whe the connection object is dropped.
+    map: IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
@@ -235,6 +250,13 @@ impl ConnectionMap {
 
     pub fn set_use_quic(&mut self, use_quic: bool) {
         self.use_quic = use_quic;
+    }
+
+    pub fn decrement_connection_reference(&self, address: &SocketAddr) {
+        info!("zzzzz decrement reference for connection {}", address);
+        if let Some(entry) = self.map.get(address) {
+            entry.1.fetch_sub(1, Ordering::Relaxed);
+        }
     }
 }
 
@@ -268,10 +290,9 @@ fn create_connection(
     *lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
-    let to_ceate_connection: bool = map
-        .map
-        .get(addr)
-        .map_or(true, |connections| connections.len() < CONNECTION_POOL_SIZE);
+    let to_ceate_connection: bool = map.map.get(addr).map_or(true, |connections| {
+        connections.0.len() < CONNECTION_POOL_SIZE && connections.1.load(Ordering::Relaxed) > 0
+    });
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_ceate_connection {
             let connection = if map.use_quic {
@@ -295,10 +316,12 @@ fn create_connection(
             match map.map.entry(*addr) {
                 Entry::Occupied(mut entry) => {
                     info!("zzzzz add additional connection for {}", addr);
-                    entry.get_mut().push(connection);
+                    let entry = entry.get_mut();
+                    entry.0.push(connection);
+                    entry.1.fetch_add(1, Ordering::Relaxed);
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert(vec![connection]);
+                    entry.insert((vec![connection], AtomicU64::default()));
                 }
             }
             (
@@ -311,7 +334,7 @@ fn create_connection(
             (true, map.stats.clone(), 0, 0)
         };
 
-    let connections = map.map.get(addr).unwrap();
+    let connections = &map.map.get(addr).unwrap().0;
     let mut rng = thread_rng();
     let n = rng.gen_range(0, connections.len());
     let connection = connections[n].clone();
@@ -345,14 +368,16 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         match map.map.get(addr) {
             Some(connections) => {
-                if connections.len() < CONNECTION_POOL_SIZE {
+                if connections.0.len() < CONNECTION_POOL_SIZE
+                    && connections.1.load(Ordering::Relaxed) > 0
+                {
                     // create more connection and put it in the pool
                     drop(map);
                     create_connection(&mut lock_timing_ms, addr)
                 } else {
                     let mut rng = thread_rng();
-                    let n = rng.gen_range(0, connections.len());
-                    let connection = connections[n].clone();
+                    let n = rng.gen_range(0, connections.0.len());
+                    let connection = connections.0[n].clone();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
             }
@@ -442,7 +467,7 @@ pub fn send_wire_transaction_batch(
 ) -> Result<(), TransportError> {
     let (conn, stats) = get_connection(addr);
     let client_stats = ClientStats::default();
-    let r = match conn {
+    let r = match &conn {
         Connection::Udp(conn) => conn.send_wire_transaction_batch(packets, &client_stats),
         Connection::Quic(conn) => conn.send_wire_transaction_batch(packets, &client_stats),
     };
@@ -456,7 +481,7 @@ pub fn send_wire_transaction_async(
 ) -> Result<(), TransportError> {
     let (conn, stats) = get_connection(addr);
     let client_stats = Arc::new(ClientStats::default());
-    let r = match conn {
+    let r = match &conn {
         Connection::Udp(conn) => conn.send_wire_transaction_async(packets, client_stats.clone()),
         Connection::Quic(conn) => conn.send_wire_transaction_async(packets, client_stats.clone()),
     };
@@ -471,7 +496,7 @@ pub fn send_wire_transaction_batch_async(
     let (conn, stats) = get_connection(addr);
     let client_stats = Arc::new(ClientStats::default());
     let len = packets.len();
-    let r = match conn {
+    let r = match &conn {
         Connection::Udp(conn) => {
             conn.send_wire_transaction_batch_async(packets, client_stats.clone())
         }
@@ -496,7 +521,7 @@ pub fn serialize_and_send_transaction(
 ) -> Result<(), TransportError> {
     let (conn, stats) = get_connection(addr);
     let client_stats = ClientStats::default();
-    let r = match conn {
+    let r = match &conn {
         Connection::Udp(conn) => conn.serialize_and_send_transaction(transaction, &client_stats),
         Connection::Quic(conn) => conn.serialize_and_send_transaction(transaction, &client_stats),
     };
@@ -510,7 +535,7 @@ pub fn par_serialize_and_send_transaction_batch(
 ) -> Result<(), TransportError> {
     let (conn, stats) = get_connection(addr);
     let client_stats = ClientStats::default();
-    let r = match conn {
+    let r = match &conn {
         Connection::Udp(conn) => {
             conn.par_serialize_and_send_transaction_batch(transactions, &client_stats)
         }
