@@ -42,7 +42,7 @@ impl Drop for Connection {
             }
         };
         let map = (*CONNECTION_MAP).read().unwrap();
-        map.decrement_connection_reference(&address);
+        map.decrement_connection_reference(&address, self);
     }
 }
 
@@ -242,12 +242,22 @@ struct ConnectionPool {
 
 impl ConnectionPool {
     /// Get a connection from the pool. It must have at least one connection in the pool.
-    fn get_connection(&self) -> Connection {
+    fn borrow_connection(&self) -> Connection {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
         let connection = self.connections[n].clone();
         self.references.fetch_add(1, Ordering::Relaxed);
         connection
+    }
+
+    /// Return the connection to the pool
+    fn return_connection(&self, _connection: &Connection) {
+        self.references.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    /// Check if we need to create a new connection
+    fn need_new_connection(&self) -> bool {
+        self.connections.len() < CONNECTION_POOL_SIZE && self.references.load(Ordering::Relaxed) > 0
     }
 }
 
@@ -276,9 +286,9 @@ impl ConnectionMap {
         self.use_quic = use_quic;
     }
 
-    pub fn decrement_connection_reference(&self, address: &SocketAddr) {
+    pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &Connection) {
         if let Some(entry) = self.map.get(address) {
-            entry.references.fetch_sub(1, Ordering::Relaxed);
+            entry.return_connection(connection);
             info!(
                 "zzzzz really decrement reference for connection {} {} thread {:?}",
                 address,
@@ -319,9 +329,10 @@ fn create_connection(
     *lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
-    let to_ceate_connection: bool = map.map.get(addr).map_or(true, |pool| {
-        pool.connections.len() < CONNECTION_POOL_SIZE && pool.references.load(Ordering::Relaxed) > 0
-    });
+    let to_ceate_connection: bool = map
+        .map
+        .get(addr)
+        .map_or(true, |pool| pool.need_new_connection());
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_ceate_connection {
             let connection = if map.use_quic {
@@ -366,7 +377,7 @@ fn create_connection(
         };
 
     let pool = map.map.get(addr).unwrap();
-    let connection = pool.get_connection();
+    let connection = pool.borrow_connection();
 
     (
         connection,
@@ -397,9 +408,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         match map.map.get(addr) {
             Some(pool) => {
-                if pool.connections.len() < CONNECTION_POOL_SIZE
-                    && pool.references.load(Ordering::Relaxed) > 0
-                {
+                if pool.need_new_connection() {
                     // create more connection and put it in the pool
                     drop(map);
                     create_connection(&mut lock_timing_ms, addr)
@@ -411,7 +420,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         &map.map as *const IndexMap<SocketAddr, ConnectionPool>,
                         thread::current().id(),
                     );
-                    let connection = pool.get_connection();
+                    let connection = pool.borrow_connection();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
             }
