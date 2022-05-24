@@ -231,12 +231,21 @@ impl ConnectionCacheStats {
 }
 
 const CONNECTION_POOL_SIZE: usize = 4;
+
+/// Models the pool of connections
+struct ConnectionPool {
+    /// The connections in the pool
+    connections: Vec<Connection>,
+    /// The reference count of connections being used
+    references: AtomicU64,
+}
+
 struct ConnectionMap {
     /// From SocketAddr maps to a vector of connection for the address
     /// And the reference count the connections being used. A connection
     /// can be used multiple times. The reference count will be dropped
     /// whe the connection object is dropped.
-    map: IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
+    map: IndexMap<SocketAddr, ConnectionPool>,
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
@@ -258,11 +267,11 @@ impl ConnectionMap {
 
     pub fn decrement_connection_reference(&self, address: &SocketAddr) {
         if let Some(entry) = self.map.get(address) {
-            entry.1.fetch_sub(1, Ordering::Relaxed);
+            entry.references.fetch_sub(1, Ordering::Relaxed);
             info!(
                 "zzzzz really decrement reference for connection {} {} thread {:?}",
                 address,
-                entry.1.load(Ordering::Relaxed),
+                entry.references.load(Ordering::Relaxed),
                 thread::current().id()
             );
         }
@@ -299,8 +308,8 @@ fn create_connection(
     *lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
-    let to_ceate_connection: bool = map.map.get(addr).map_or(true, |connections| {
-        connections.0.len() < CONNECTION_POOL_SIZE && connections.1.load(Ordering::Relaxed) > 0
+    let to_ceate_connection: bool = map.map.get(addr).map_or(true, |pool| {
+        pool.connections.len() < CONNECTION_POOL_SIZE && pool.references.load(Ordering::Relaxed) > 0
     });
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_ceate_connection {
@@ -325,11 +334,14 @@ fn create_connection(
             match map.map.entry(*addr) {
                 Entry::Occupied(mut entry) => {
                     info!("zzzzz add additional connection for {}", addr);
-                    let entry = entry.get_mut();
-                    entry.0.push(connection);
+                    let pool = entry.get_mut();
+                    pool.connections.push(connection);
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert((vec![connection], AtomicU64::new(0)));
+                    entry.insert(ConnectionPool {
+                        connections: vec![connection],
+                        references: AtomicU64::new(0),
+                    });
                 }
             }
             (
@@ -342,16 +354,16 @@ fn create_connection(
             (true, map.stats.clone(), 0, 0)
         };
 
-    let entry = map.map.get(addr).unwrap();
+    let pool = map.map.get(addr).unwrap();
     let mut rng = thread_rng();
-    let n = rng.gen_range(0, entry.0.len());
-    let connection = entry.0[n].clone();
-    entry.1.fetch_add(1, Ordering::Relaxed);
+    let n = rng.gen_range(0, pool.connections.len());
+    let connection = pool.connections[n].clone();
+    pool.references.fetch_add(1, Ordering::Relaxed);
 
     info!(
         "zzzzz Making new connection for {} ref count: {}, thread {:?}",
         addr,
-        entry.1.load(Ordering::Relaxed),
+        pool.references.load(Ordering::Relaxed),
         thread::current().id(),
     );
     (
@@ -382,25 +394,25 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let mut get_connection_map_measure = Measure::start("get_connection_hit_measure");
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         match map.map.get(addr) {
-            Some(connections) => {
-                if connections.0.len() < CONNECTION_POOL_SIZE
-                    && connections.1.load(Ordering::Relaxed) > 0
+            Some(pool) => {
+                if pool.connections.len() < CONNECTION_POOL_SIZE
+                    && pool.references.load(Ordering::Relaxed) > 0
                 {
                     // create more connection and put it in the pool
                     drop(map);
                     create_connection(&mut lock_timing_ms, addr)
                 } else {
                     let mut rng = thread_rng();
-                    let n = rng.gen_range(0, connections.0.len());
-                    connections.1.fetch_add(1, Ordering::Relaxed);
+                    let n = rng.gen_range(0, pool.connections.len());
+                    pool.references.fetch_add(1, Ordering::Relaxed);
                     info!(
                         "zzzzz returning connection from cache for {} {} {:p}, thread {:?}",
                         addr,
-                        connections.1.load(Ordering::Relaxed),
-                        &map.map as *const IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
+                        pool.references.load(Ordering::Relaxed),
+                        &map.map as *const IndexMap<SocketAddr, ConnectionPool>,
                         thread::current().id(),
                     );
-                    let connection = connections.0[n].clone();
+                    let connection = pool.connections[n].clone();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
             }
