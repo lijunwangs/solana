@@ -334,10 +334,9 @@ fn create_connection(
                     info!("zzzzz add additional connection for {}", addr);
                     let entry = entry.get_mut();
                     entry.0.push(connection);
-                    entry.1.fetch_add(1, Ordering::Relaxed);
                 }
                 Entry::Vacant(entry) => {
-                    entry.insert((vec![connection], AtomicU64::new(1)));
+                    entry.insert((vec![connection], AtomicU64::new(0)));
                 }
             }
             (
@@ -350,11 +349,17 @@ fn create_connection(
             (true, map.stats.clone(), 0, 0)
         };
 
-    let connections = &map.map.get(addr).unwrap().0;
+    let entry = map.map.get(addr).unwrap();
     let mut rng = thread_rng();
-    let n = rng.gen_range(0, connections.len());
-    let connection = connections[n].clone();
+    let n = rng.gen_range(0, entry.0.len());
+    let connection = entry.0[n].clone();
+    entry.1.fetch_add(1, Ordering::Relaxed);
 
+    info!(
+        "zzzzz Making new connection for {} ref count: {}",
+        addr,
+        entry.1.load(Ordering::Relaxed)
+    );
     (
         connection,
         cache_hit,
