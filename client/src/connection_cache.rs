@@ -240,6 +240,17 @@ struct ConnectionPool {
     references: AtomicU64,
 }
 
+impl ConnectionPool {
+    /// Get a connection from the pool. It must have at least one connection in the pool.
+    fn get_connection(&self) -> Connection {
+        let mut rng = thread_rng();
+        let n = rng.gen_range(0, self.connections.len());
+        let connection = self.connections[n].clone();
+        self.references.fetch_add(1, Ordering::Relaxed);
+        connection
+    }
+}
+
 struct ConnectionMap {
     /// From SocketAddr maps to a vector of connection for the address
     /// And the reference count the connections being used. A connection
@@ -355,17 +366,8 @@ fn create_connection(
         };
 
     let pool = map.map.get(addr).unwrap();
-    let mut rng = thread_rng();
-    let n = rng.gen_range(0, pool.connections.len());
-    let connection = pool.connections[n].clone();
-    pool.references.fetch_add(1, Ordering::Relaxed);
+    let connection = pool.get_connection();
 
-    info!(
-        "zzzzz Making new connection for {} ref count: {}, thread {:?}",
-        addr,
-        pool.references.load(Ordering::Relaxed),
-        thread::current().id(),
-    );
     (
         connection,
         cache_hit,
@@ -402,9 +404,6 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     drop(map);
                     create_connection(&mut lock_timing_ms, addr)
                 } else {
-                    let mut rng = thread_rng();
-                    let n = rng.gen_range(0, pool.connections.len());
-                    pool.references.fetch_add(1, Ordering::Relaxed);
                     info!(
                         "zzzzz returning connection from cache for {} {} {:p}, thread {:?}",
                         addr,
@@ -412,7 +411,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                         &map.map as *const IndexMap<SocketAddr, ConnectionPool>,
                         thread::current().id(),
                     );
-                    let connection = pool.connections[n].clone();
+                    let connection = pool.get_connection();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
             }
