@@ -257,20 +257,13 @@ impl ConnectionMap {
     }
 
     pub fn decrement_connection_reference(&self, address: &SocketAddr) {
-        info!(
-            "zzzzz try decrement reference for connection {} {} contains {} {:p}",
-            address,
-            self.map.len(),
-            self.map.contains_key(address),
-            &self.map as *const IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
-        );
-
         if let Some(entry) = self.map.get(address) {
             entry.1.fetch_sub(1, Ordering::Relaxed);
             info!(
-                "zzzzz really decrement reference for connection {} {}",
+                "zzzzz really decrement reference for connection {} {} thread {:?}",
                 address,
-                entry.1.load(Ordering::Relaxed)
+                entry.1.load(Ordering::Relaxed),
+                thread::current().id()
             );
         }
     }
@@ -356,9 +349,10 @@ fn create_connection(
     entry.1.fetch_add(1, Ordering::Relaxed);
 
     info!(
-        "zzzzz Making new connection for {} ref count: {}",
+        "zzzzz Making new connection for {} ref count: {}, thread {:?}",
         addr,
-        entry.1.load(Ordering::Relaxed)
+        entry.1.load(Ordering::Relaxed),
+        thread::current().id(),
     );
     (
         connection,
@@ -400,10 +394,11 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     let n = rng.gen_range(0, connections.0.len());
                     connections.1.fetch_add(1, Ordering::Relaxed);
                     info!(
-                        "zzzzz returning connection from cache for {} {} {:p}",
+                        "zzzzz returning connection from cache for {} {} {:p}, thread {:?}",
                         addr,
                         connections.1.load(Ordering::Relaxed),
                         &map.map as *const IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
+                        thread::current().id(),
                     );
                     let connection = connections.0[n].clone();
                     (connection, true, map.stats.clone(), 0, 0)
