@@ -6,7 +6,6 @@ use {
     },
     indexmap::map::{Entry, IndexMap},
     lazy_static::lazy_static,
-    log::*,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
     solana_sdk::{
@@ -19,7 +18,6 @@ use {
             atomic::{AtomicU64, Ordering},
             Arc, RwLock,
         },
-        thread,
     },
 };
 
@@ -295,12 +293,6 @@ impl ConnectionMap {
     pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &Connection) {
         if let Some(entry) = self.map.get(address) {
             entry.return_connection(connection);
-            info!(
-                "zzzzz really decrement reference for connection {} {} thread {:?}",
-                address,
-                entry.references.load(Ordering::Relaxed),
-                thread::current().id()
-            );
         }
     }
 }
@@ -365,7 +357,6 @@ fn create_connection(
 
             match map.map.entry(*addr) {
                 Entry::Occupied(mut entry) => {
-                    info!("zzzzz add additional connection for {}", addr);
                     let pool = entry.get_mut();
                     pool.connections.push(connection);
                 }
@@ -399,11 +390,6 @@ fn create_connection(
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
-    info!(
-        "zzzzz get_or_add_connection {} {:?}",
-        addr,
-        thread::current().id()
-    );
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
@@ -423,13 +409,6 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     drop(map);
                     create_connection(&mut lock_timing_ms, addr)
                 } else {
-                    info!(
-                        "zzzzz returning connection from cache for {} {} {:p}, thread {:?}",
-                        addr,
-                        pool.references.load(Ordering::Relaxed),
-                        &map.map as *const IndexMap<SocketAddr, ConnectionPool>,
-                        thread::current().id(),
-                    );
                     let connection = pool.borrow_connection();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
