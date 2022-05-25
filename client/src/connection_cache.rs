@@ -6,6 +6,7 @@ use {
     },
     indexmap::map::{Entry, IndexMap},
     lazy_static::lazy_static,
+    log::*,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
     solana_sdk::{
@@ -295,6 +296,10 @@ impl ConnectionMap {
     }
 
     pub fn set_connection_pool_size(&mut self, connection_pool_size: usize) {
+        info!(
+            "Configure the connection pool size to {}",
+            connection_pool_size
+        );
         self.connection_pool_size = 1.min(connection_pool_size);
     }
 
