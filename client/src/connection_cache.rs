@@ -1,6 +1,6 @@
 use {
     crate::{
-        quic_client::QuicTpuConnection,
+        quic_client::{QuicLazyEndpoint, QuicTpuConnection},
         tpu_connection::{ClientStats, TpuConnection},
         udp_client::UdpTpuConnection,
     },
@@ -236,12 +236,17 @@ const CONNECTION_POOL_SIZE: usize = 1;
 struct ConnectionPool {
     /// The connections in the pool
     connections: Vec<Connection>,
-    /// The reference count of connections being used
+    /// A simple reference count of connections being used.
+    /// A connection can be used multiple times. The reference count will be dropped
+    /// whe the connection object is dropped.
+    /// This helps to avoid creating new connections in case of the count of threads using
+    /// the pool is less than the pool size.
     references: AtomicU64,
 }
 
 impl ConnectionPool {
     /// Get a connection from the pool. It must have at least one connection in the pool.
+    /// This randomly pick a connection in the pool and increment the reference count.
     fn borrow_connection(&self) -> Connection {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
@@ -250,26 +255,26 @@ impl ConnectionPool {
         connection
     }
 
-    /// Return the connection to the pool
+    /// Return the connection to the pool. The _connection is not used for now,
+    /// which can be used to build more accurate reference counting on a connection instance.
     fn return_connection(&self, _connection: &Connection) {
         self.references.fetch_sub(1, Ordering::Relaxed);
     }
 
-    /// Check if we need to create a new connection
+    /// Check if we need to create a new connection. If the count of the connections
+    /// is smaller than the pool size and we have outstanding users of the pool.
     fn need_new_connection(&self) -> bool {
         self.connections.len() < CONNECTION_POOL_SIZE && self.references.load(Ordering::Relaxed) > 0
     }
 }
 
 struct ConnectionMap {
-    /// From SocketAddr maps to a vector of connection for the address
-    /// And the reference count the connections being used. A connection
-    /// can be used multiple times. The reference count will be dropped
-    /// whe the connection object is dropped.
+    /// From SocketAddr maps to a pool of connection for the address
     map: IndexMap<SocketAddr, ConnectionPool>,
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
+    endpoint: Arc<QuicLazyEndpoint>,
 }
 
 impl ConnectionMap {
@@ -279,6 +284,7 @@ impl ConnectionMap {
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
             use_quic: false,
+            endpoint: Arc::new(QuicLazyEndpoint::new()),
         }
     }
 
@@ -336,7 +342,11 @@ fn create_connection(
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_ceate_connection {
             let connection = if map.use_quic {
-                Connection::Quic(Arc::new(QuicTpuConnection::new(*addr, map.stats.clone())))
+                Connection::Quic(Arc::new(QuicTpuConnection::new(
+                    map.endpoint.clone(),
+                    *addr,
+                    map.stats.clone(),
+                )))
             } else {
                 Connection::Udp(Arc::new(UdpTpuConnection::new(*addr, map.stats.clone())))
             };

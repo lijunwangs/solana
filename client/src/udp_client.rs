@@ -22,19 +22,6 @@ pub struct UdpTpuConnection {
 }
 
 impl TpuConnection for UdpTpuConnection {
-    fn new(tpu_addr: SocketAddr, _connection_stats: Arc<ConnectionCacheStats>) -> Self {
-        let (_, client_socket) = solana_net_utils::bind_in_range(
-            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
-            VALIDATOR_PORT_RANGE,
-        )
-        .unwrap();
-
-        Self {
-            socket: client_socket,
-            addr: tpu_addr,
-        }
-    }
-
     fn tpu_addr(&self) -> &SocketAddr {
         &self.addr
     }
@@ -80,5 +67,20 @@ impl TpuConnection for UdpTpuConnection {
         let pkts: Vec<_> = buffers.into_iter().zip(repeat(self.tpu_addr())).collect();
         batch_send(&self.socket, &pkts)?;
         Ok(())
+    }
+}
+
+impl UdpTpuConnection {
+    pub fn new(tpu_addr: SocketAddr, _connection_stats: Arc<ConnectionCacheStats>) -> Self {
+        let (_, client_socket) = solana_net_utils::bind_in_range(
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+            VALIDATOR_PORT_RANGE,
+        )
+        .unwrap();
+
+        Self {
+            socket: client_socket,
+            addr: tpu_addr,
+        }
     }
 }
