@@ -29,7 +29,7 @@ use {
         thread,
         time::Duration,
     },
-    tokio::runtime::Runtime,
+    tokio::{runtime::Runtime, sync::RwLock},
 };
 
 struct SkipServerVerification;
@@ -64,14 +64,23 @@ lazy_static! {
 /// of creating a new connection.
 #[derive(Clone)]
 struct QuicNewConnection {
-    endpoint: Endpoint,
+    endpoint: Arc<Endpoint>,
     connection: Arc<NewConnection>,
 }
 
-impl QuicNewConnection {
-    /// Create a QuicNewConnection given the remote address 'addr'.
-    async fn make_connection(addr: SocketAddr, stats: &ClientStats) -> Result<Self, WriteError> {
-        let mut make_connection_measure = Measure::start("make_connection_measure");
+/// A lazy initialized Quic Endpoint
+pub struct QuicLazyEndpoint {
+    endpoint: RwLock<Option<Arc<Endpoint>>>,
+}
+
+impl QuicLazyEndpoint {
+    pub fn new() -> Self {
+        Self {
+            endpoint: RwLock::new(None),
+        }
+    }
+
+    fn create_endpoint(&self) -> Endpoint {
         let (_, client_socket) = solana_net_utils::bind_in_range(
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             VALIDATOR_PORT_RANGE,
@@ -94,6 +103,42 @@ impl QuicNewConnection {
         transport_config.keep_alive_interval(Some(Duration::from_millis(QUIC_KEEP_ALIVE_MS)));
 
         endpoint.set_default_client_config(config);
+        endpoint
+    }
+
+    async fn get_endpoint(&self) -> Arc<Endpoint> {
+        let lock = self.endpoint.read().await;
+        let endpoint = lock.as_ref();
+
+        match endpoint {
+            Some(endpoint) => endpoint.clone(),
+            None => {
+                drop(lock);
+                let mut lock = self.endpoint.write().await;
+                let endpoint = lock.as_ref();
+
+                match endpoint {
+                    Some(endpoint) => endpoint.clone(),
+                    None => {
+                        let connection = Arc::new(self.create_endpoint());
+                        *lock = Some(connection.clone());
+                        connection
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl QuicNewConnection {
+    /// Create a QuicNewConnection given the remote address 'addr'.
+    async fn make_connection(
+        endpoint: Arc<QuicLazyEndpoint>,
+        addr: SocketAddr,
+        stats: &ClientStats,
+    ) -> Result<Self, WriteError> {
+        let mut make_connection_measure = Measure::start("make_connection_measure");
+        let endpoint = endpoint.get_endpoint().await;
 
         let connecting = endpoint.connect(addr, "connect").unwrap();
         stats.total_connections.fetch_add(1, Ordering::Relaxed);
@@ -148,6 +193,7 @@ impl QuicNewConnection {
 }
 
 struct QuicClient {
+    endpoint: Arc<QuicLazyEndpoint>,
     connection: Arc<Mutex<Option<QuicNewConnection>>>,
     addr: SocketAddr,
     stats: Arc<ClientStats>,
@@ -165,16 +211,6 @@ impl QuicTpuConnection {
 }
 
 impl TpuConnection for QuicTpuConnection {
-    fn new(tpu_addr: SocketAddr, connection_stats: Arc<ConnectionCacheStats>) -> Self {
-        let tpu_addr = SocketAddr::new(tpu_addr.ip(), tpu_addr.port() + QUIC_PORT_OFFSET);
-        let client = Arc::new(QuicClient::new(tpu_addr));
-
-        Self {
-            client,
-            connection_stats,
-        }
-    }
-
     fn tpu_addr(&self) -> &SocketAddr {
         &self.client.addr
     }
@@ -250,9 +286,26 @@ impl TpuConnection for QuicTpuConnection {
     }
 }
 
-impl QuicClient {
-    pub fn new(addr: SocketAddr) -> Self {
+impl QuicTpuConnection {
+    pub fn new(
+        endpoint: Arc<QuicLazyEndpoint>,
+        tpu_addr: SocketAddr,
+        connection_stats: Arc<ConnectionCacheStats>,
+    ) -> Self {
+        let tpu_addr = SocketAddr::new(tpu_addr.ip(), tpu_addr.port() + QUIC_PORT_OFFSET);
+        let client = Arc::new(QuicClient::new(endpoint, tpu_addr));
+
         Self {
+            client,
+            connection_stats,
+        }
+    }
+}
+
+impl QuicClient {
+    pub fn new(endpoint: Arc<QuicLazyEndpoint>, addr: SocketAddr) -> Self {
+        Self {
+            endpoint,
             connection: Arc::new(Mutex::new(None)),
             addr,
             stats: Arc::new(ClientStats::default()),
@@ -288,7 +341,9 @@ impl QuicClient {
                     conn.connection.clone()
                 }
                 None => {
-                    let conn = QuicNewConnection::make_connection(self.addr, stats).await?;
+                    let conn =
+                        QuicNewConnection::make_connection(self.endpoint.clone(), self.addr, stats)
+                            .await?;
                     *conn_guard = Some(conn.clone());
                     conn.connection.clone()
                 }

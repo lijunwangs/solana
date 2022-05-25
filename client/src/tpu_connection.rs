@@ -1,5 +1,4 @@
 use {
-    crate::connection_cache::ConnectionCacheStats,
     rayon::iter::{IntoParallelIterator, ParallelIterator},
     solana_metrics::MovingStat,
     solana_sdk::{transaction::VersionedTransaction, transport::Result as TransportResult},
@@ -26,8 +25,6 @@ pub struct ClientStats {
 }
 
 pub trait TpuConnection {
-    fn new(tpu_addr: SocketAddr, connection_stats: Arc<ConnectionCacheStats>) -> Self;
-
     fn tpu_addr(&self) -> &SocketAddr;
 
     fn serialize_and_send_transaction(
