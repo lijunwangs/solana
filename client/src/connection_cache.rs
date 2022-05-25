@@ -228,12 +228,13 @@ impl ConnectionCacheStats {
     }
 }
 
-const CONNECTION_POOL_SIZE: usize = 4;
+pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
 
 /// Models the pool of connections
 struct ConnectionPool {
     /// The connections in the pool
     connections: Vec<Connection>,
+
     /// A simple reference count of connections being used.
     /// A connection can be used multiple times. The reference count will be dropped
     /// whe the connection object is dropped.
@@ -247,7 +248,7 @@ struct ConnectionPool {
 
 impl ConnectionPool {
     /// Get a connection from the pool. It must have at least one connection in the pool.
-    /// This randomly pick a connection in the pool and increment the reference count.
+    /// This randomly picks a connection in the pool and increment the reference count.
     fn borrow_connection(&self) -> Connection {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
@@ -264,8 +265,8 @@ impl ConnectionPool {
 
     /// Check if we need to create a new connection. If the count of the connections
     /// is smaller than the pool size and we have outstanding users of the pool.
-    fn need_new_connection(&self) -> bool {
-        self.connections.len() < CONNECTION_POOL_SIZE && self.references.load(Ordering::Relaxed) > 0
+    fn need_new_connection(&self, required_pool_size: usize) -> bool {
+        self.connections.len() < required_pool_size && self.references.load(Ordering::Relaxed) > 0
     }
 }
 
@@ -275,6 +276,7 @@ struct ConnectionMap {
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
+    connection_pool_size: usize,
 }
 
 impl ConnectionMap {
@@ -284,11 +286,16 @@ impl ConnectionMap {
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
             use_quic: false,
+            connection_pool_size: DEFAULT_CONNECTION_POOL_SIZE,
         }
     }
 
     pub fn set_use_quic(&mut self, use_quic: bool) {
         self.use_quic = use_quic;
+    }
+
+    pub fn set_connection_pool_size(&mut self, connection_pool_size: usize) {
+        self.connection_pool_size = 1.min(connection_pool_size);
     }
 
     pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &Connection) {
@@ -307,6 +314,11 @@ pub fn set_use_quic(use_quic: bool) {
     map.set_use_quic(use_quic);
 }
 
+pub fn set_connection_pool_size(connection_pool_size: usize) {
+    let mut map = (*CONNECTION_MAP).write().unwrap();
+    map.set_connection_pool_size(connection_pool_size);
+}
+
 struct GetConnectionResult {
     connection: Connection,
     cache_hit: bool,
@@ -318,6 +330,7 @@ struct GetConnectionResult {
     eviction_timing_ms: u64,
 }
 
+/// Create a lazy connection object under the exclusive lock of the cache map.
 fn create_connection(
     lock_timing_ms: &mut u64,
     addr: &SocketAddr,
@@ -329,12 +342,15 @@ fn create_connection(
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
 
-    let (to_ceate_connection, endpoint) = map
-        .map
-        .get(addr)
-        .map_or((true, Arc::new(QuicLazyEndpoint::new())), |pool| {
-            (pool.need_new_connection(), pool.endpoint.clone())
-        });
+    let (to_ceate_connection, endpoint) =
+        map.map
+            .get(addr)
+            .map_or((true, Arc::new(QuicLazyEndpoint::new())), |pool| {
+                (
+                    pool.need_new_connection(map.connection_pool_size),
+                    pool.endpoint.clone(),
+                )
+            });
 
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_ceate_connection {
@@ -410,7 +426,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         match map.map.get(addr) {
             Some(pool) => {
-                if pool.need_new_connection() {
+                if pool.need_new_connection(map.connection_pool_size) {
                     // create more connection and put it in the pool
                     drop(map);
                     create_connection(&mut lock_timing_ms, addr)
