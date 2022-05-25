@@ -379,7 +379,12 @@ impl QuicClient {
 
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
-            _ => {
+            Err(err) => {
+                info!(
+                    "zzzzzz error in sending transactions: {} for connection {}",
+                    err,
+                    connection.connection.stable_id()
+                );
                 let connection = {
                     let mut conn_guard = self.connection.lock().await;
                     let conn = conn_guard.as_mut().unwrap();

@@ -240,6 +240,9 @@ struct ConnectionPool {
     /// This helps to avoid creating new connections in case of the count of threads using
     /// the pool is less than the pool size.
     references: AtomicU64,
+
+    /// Connections in this pool share the same endpoint
+    endpoint: Arc<QuicLazyEndpoint>,
 }
 
 impl ConnectionPool {
@@ -272,7 +275,6 @@ struct ConnectionMap {
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     use_quic: bool,
-    endpoint: Arc<QuicLazyEndpoint>,
 }
 
 impl ConnectionMap {
@@ -282,7 +284,6 @@ impl ConnectionMap {
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
             use_quic: false,
-            endpoint: Arc::new(QuicLazyEndpoint::new()),
         }
     }
 
@@ -327,15 +328,19 @@ fn create_connection(
     *lock_timing_ms = lock_timing_ms.saturating_add(get_connection_map_lock_measure.as_ms());
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
-    let to_ceate_connection: bool = map
+
+    let (to_ceate_connection, endpoint) = map
         .map
         .get(addr)
-        .map_or(true, |pool| pool.need_new_connection());
+        .map_or((true, Arc::new(QuicLazyEndpoint::new())), |pool| {
+            (pool.need_new_connection(), pool.endpoint.clone())
+        });
+
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_ceate_connection {
             let connection = if map.use_quic {
                 Connection::Quic(Arc::new(QuicTpuConnection::new(
-                    map.endpoint.clone(),
+                    endpoint,
                     *addr,
                     map.stats.clone(),
                 )))
@@ -364,6 +369,7 @@ fn create_connection(
                     entry.insert(ConnectionPool {
                         connections: vec![connection],
                         references: AtomicU64::new(0),
+                        endpoint: Arc::new(QuicLazyEndpoint::new()),
                     });
                 }
             }
