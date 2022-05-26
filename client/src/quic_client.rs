@@ -27,6 +27,7 @@ use {
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
         time::Duration,
+        thread,
     },
     tokio::{runtime::Runtime, sync::RwLock},
 };
@@ -394,10 +395,11 @@ impl QuicClient {
             }
             Err(err) => {
                 info!(
-                    "zzzzz error sending to {} id {} {}",
+                    "zzzzz error sending to {} id {} {} thread {:?}",
                     self.addr,
                     connection.connection.stable_id(),
-                    err
+                    err,
+                    thread::current().id(),
                 );
                 let connection = {
                     let mut conn_guard = self.connection.lock().await;
