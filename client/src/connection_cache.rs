@@ -347,7 +347,7 @@ fn create_connection(
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
 
-    let (to_ceate_connection, endpoint) =
+    let (to_create_connection, endpoint) =
         map.map
             .get(addr)
             .map_or((true, Arc::new(QuicLazyEndpoint::new())), |pool| {
@@ -356,9 +356,11 @@ fn create_connection(
                     pool.endpoint.clone(),
                 )
             });
+    
+    info!("zzzzz to_create_connection {} for address {}", to_create_connection, addr);
 
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
-        if to_ceate_connection {
+        if to_create_connection {
             let connection = if map.use_quic {
                 Connection::Quic(Arc::new(QuicTpuConnection::new(
                     endpoint,
