@@ -438,8 +438,8 @@ fn handle_connection(
     stake: u64,
 ) {
     tokio::spawn(async move {
-        debug!(
-            "quic new connection {} streams: {} connections: {}",
+        info!(
+            "zzzzz quic new connection {} streams: {} connections: {}",
             remote_addr,
             stats.total_streams.load(Ordering::Relaxed),
             stats.total_connections.load(Ordering::Relaxed),
@@ -466,7 +466,7 @@ fn handle_connection(
                         }
                     }
                     Err(e) => {
-                        debug!("stream error: {:?}", e);
+                        info!("stream error: {:?} for {}", e, remote_addr);
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
                     }
@@ -539,6 +539,11 @@ pub fn spawn_server(
 
                         let remote_addr = connection.remote_address();
 
+                        info!(
+                            "zzzz Received connection from address {} id {}",
+                            remote_addr,
+                            connection.stable_id()
+                        );
                         let (mut connection_table_l, stake) = {
                             let staked_nodes = staked_nodes.read().unwrap();
                             if let Some(stake) = staked_nodes.get(&remote_addr.ip()) {
@@ -582,6 +587,11 @@ pub fn spawn_server(
                                 stake,
                             );
                         } else {
+                            info!(
+                                "zzzzzz failed to add connection from address {} id {}",
+                                remote_addr,
+                                connection.stable_id()
+                            );
                             stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
                         }
                     } else {
