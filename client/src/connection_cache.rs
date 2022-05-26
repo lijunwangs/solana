@@ -300,7 +300,7 @@ impl ConnectionMap {
             "Configure the connection pool size to {}",
             connection_pool_size
         );
-        self.connection_pool_size = 1.min(connection_pool_size);
+        self.connection_pool_size = 1.max(connection_pool_size);
     }
 
     pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &Connection) {
@@ -356,8 +356,11 @@ fn create_connection(
                     pool.endpoint.clone(),
                 )
             });
-    
-    info!("zzzzz to_create_connection {} for address {} pool size: {}", to_create_connection, addr, map.connection_pool_size);
+
+    info!(
+        "zzzzz to_create_connection {} for address {} pool size: {}",
+        to_create_connection, addr, map.connection_pool_size
+    );
 
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_create_connection {
