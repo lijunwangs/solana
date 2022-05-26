@@ -382,6 +382,7 @@ impl QuicClient {
             .tx_acks
             .update_stat(&self.stats.tx_acks, new_stats.frame_tx.acks);
 
+        let old_connection_id = connection.connection.stable_id();
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
             Err(err) => {
@@ -394,25 +395,38 @@ impl QuicClient {
                 let connection = {
                     let mut conn_guard = self.connection.lock().await;
                     let conn = conn_guard.as_mut().unwrap();
-                    let result = conn.make_connection_0rtt(self.addr, stats).await;
-                    match result {
-                        Ok(connection) => {
-                            info!(
-                                "zzzzz Made new 0rtt connection to {} id {}",
-                                self.addr,
-                                connection.connection.stable_id()
-                            );
-                            connection
+                    let new_connection_id = conn.connection.connection.stable_id();
+                    if new_connection_id == old_connection_id {
+                        let result = conn.make_connection_0rtt(self.addr, stats).await;
+                        match result {
+                            Ok(connection) => {
+                                info!(
+                                    "zzzzz Made new 0rtt connection to {} id {}",
+                                    self.addr,
+                                    connection.connection.stable_id()
+                                );
+                                connection
+                            }
+                            Err(error) => {
+                                info!(
+                                    "zzzzz Error to create new 0rtt connection to {} id  for {} {}",
+                                    self.addr,
+                                    connection.connection.stable_id(),
+                                    error
+                                );
+                                return Err(error);
+                            }
                         }
-                        Err(error) => {
-                            info!(
-                                "zzzzz Error to create new 0rtt connection to {} id  for {} {}",
-                                self.addr,
-                                connection.connection.stable_id(),
-                                error
-                            );
-                            return Err(error);
-                        }
+                    } else {
+                        // The connection has already been re-created by someone else.
+                        // Do no not race creating the connection repeatedly.
+                        info!(
+                            "zzzzz already had a new connection for {} old id {} new id {}",
+                            self.addr,
+                            old_connection_id,
+                            new_connection_id,
+                        );                        
+                        conn.connection.clone()
                     }
                 };
                 if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
