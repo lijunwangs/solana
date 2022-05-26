@@ -466,12 +466,19 @@ fn handle_connection(
                         }
                     }
                     Err(e) => {
-                        info!("stream error: {:?} for {}", e, remote_addr);
+                        info!(
+                            "stream error: {:?} for {}, breaking the connection",
+                            e, remote_addr
+                        );
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
                     }
                 },
                 None => {
+                    info!(
+                        "Did not receive a stream from {}, breaking the connection",
+                        remote_addr
+                    );
                     stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                     break;
                 }

@@ -384,7 +384,14 @@ impl QuicClient {
 
         let old_connection_id = connection.connection.stable_id();
         match Self::_send_buffer_using_conn(data, &connection).await {
-            Ok(()) => Ok(connection),
+            Ok(()) => {
+                info!(
+                    "Successfully sent data to  {} id {}",
+                    self.addr,
+                    connection.connection.stable_id()
+                );
+                Ok(connection)
+            }
             Err(err) => {
                 info!(
                     "zzzzz error sending to {} id {} {}",
@@ -422,10 +429,8 @@ impl QuicClient {
                         // Do no not race creating the connection repeatedly.
                         info!(
                             "zzzzz already had a new connection for {} old id {} new id {}",
-                            self.addr,
-                            old_connection_id,
-                            new_connection_id,
-                        );                        
+                            self.addr, old_connection_id, new_connection_id,
+                        );
                         conn.connection.clone()
                     }
                 };
@@ -438,6 +443,11 @@ impl QuicClient {
                     );
                     return Err(err);
                 }
+                info!(
+                    "Successfully sent data to  {} id {} via 0rtt",
+                    self.addr,
+                    connection.connection.stable_id()
+                );
                 Ok(connection)
             }
         }
