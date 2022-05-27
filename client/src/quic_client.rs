@@ -153,11 +153,11 @@ impl QuicNewConnection {
 
         let connection = connecting_result?;
 
-        info!(
-            "zzzzz Made connection to {} id {}",
-            addr,
-            connection.connection.stable_id()
-        );
+        // info!(
+        //     "zzzzz Made connection to {} id {}",
+        //     addr,
+        //     connection.connection.stable_id()
+        // );
         Ok(Self {
             endpoint,
             connection: Arc::new(connection),
@@ -437,12 +437,12 @@ impl QuicClient {
                     }
                 };
                 if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
-                    info!(
-                        "zzzzz error sending to {} id {} in new 0rtt connection {}",
-                        self.addr,
-                        connection.connection.stable_id(),
-                        err
-                    );
+                    // info!(
+                    //     "zzzzz error sending to {} id {} in new 0rtt connection {}",
+                    //     self.addr,
+                    //     connection.connection.stable_id(),
+                    //     err
+                    // );
                     return Err(err);
                 }
                 // info!(
