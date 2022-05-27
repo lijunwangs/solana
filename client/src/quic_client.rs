@@ -385,12 +385,12 @@ impl QuicClient {
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
             Err(err) => {
-                info!(
-                    "zzzzz error sending to {} id {} {}",
-                    self.addr,
-                    connection.connection.stable_id(),
-                    err
-                );
+                // info!(
+                //     "zzzzz error sending to {} id {} {}",
+                //     self.addr,
+                //     connection.connection.stable_id(),
+                //     err
+                // );
                 let connection = {
                     let mut conn_guard = self.connection.lock().await;
                     let conn = conn_guard.as_mut().unwrap();
@@ -416,12 +416,12 @@ impl QuicClient {
                     }
                 };
                 if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
-                    info!(
-                        "zzzzz error sending to {} id {} in new 0rtt connection {}",
-                        self.addr,
-                        connection.connection.stable_id(),
-                        err
-                    );
+                    // info!(
+                    //     "zzzzz error sending to {} id {} in new 0rtt connection {}",
+                    //     self.addr,
+                    //     connection.connection.stable_id(),
+                    //     err
+                    // );
                     return Err(err);
                 }
                 Ok(connection)
