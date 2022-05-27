@@ -259,12 +259,12 @@ impl ConnectionMap {
     pub fn decrement_connection_reference(&self, address: &SocketAddr) {
         if let Some(entry) = self.map.get(address) {
             entry.1.fetch_sub(1, Ordering::Relaxed);
-            info!(
-                "zzzzz really decrement reference for connection {} {} thread {:?}",
-                address,
-                entry.1.load(Ordering::Relaxed),
-                thread::current().id()
-            );
+            // info!(
+            //     "zzzzz really decrement reference for connection {} {} thread {:?}",
+            //     address,
+            //     entry.1.load(Ordering::Relaxed),
+            //     thread::current().id()
+            // );
         }
     }
 }
@@ -324,7 +324,7 @@ fn create_connection(
 
             match map.map.entry(*addr) {
                 Entry::Occupied(mut entry) => {
-                    info!("zzzzz add additional connection for {}", addr);
+                    // info!("zzzzz add additional connection for {}", addr);
                     let entry = entry.get_mut();
                     entry.0.push(connection);
                 }
@@ -348,12 +348,12 @@ fn create_connection(
     let connection = entry.0[n].clone();
     entry.1.fetch_add(1, Ordering::Relaxed);
 
-    info!(
-        "zzzzz Making new connection for {} ref count: {}, thread {:?}",
-        addr,
-        entry.1.load(Ordering::Relaxed),
-        thread::current().id(),
-    );
+    // info!(
+    //     "zzzzz Making new connection for {} ref count: {}, thread {:?}",
+    //     addr,
+    //     entry.1.load(Ordering::Relaxed),
+    //     thread::current().id(),
+    // );
     (
         connection,
         cache_hit,
@@ -364,11 +364,11 @@ fn create_connection(
 }
 
 fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
-    info!(
-        "zzzzz get_or_add_connection {} {:?}",
-        addr,
-        thread::current().id()
-    );
+    // info!(
+    //     "zzzzz get_or_add_connection {} {:?}",
+    //     addr,
+    //     thread::current().id()
+    // );
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
@@ -393,13 +393,13 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
                     let mut rng = thread_rng();
                     let n = rng.gen_range(0, connections.0.len());
                     connections.1.fetch_add(1, Ordering::Relaxed);
-                    info!(
-                        "zzzzz returning connection from cache for {} {} {:p}, thread {:?}",
-                        addr,
-                        connections.1.load(Ordering::Relaxed),
-                        &map.map as *const IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
-                        thread::current().id(),
-                    );
+                    // info!(
+                    //     "zzzzz returning connection from cache for {} {} {:p}, thread {:?}",
+                    //     addr,
+                    //     connections.1.load(Ordering::Relaxed),
+                    //     &map.map as *const IndexMap<SocketAddr, (Vec<Connection>, AtomicU64)>,
+                    //     thread::current().id(),
+                    // );
                     let connection = connections.0[n].clone();
                     (connection, true, map.stats.clone(), 0, 0)
                 }
