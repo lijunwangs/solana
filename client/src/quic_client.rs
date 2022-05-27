@@ -323,12 +323,12 @@ impl QuicClient {
             .tx_acks
             .update_stat(&self.stats.tx_acks, new_stats.frame_tx.acks);
 
-        info!(
-            "zzzzz Sending data using connection {} for addr {} thread {:?}",
-            connection.connection.stable_id(),
-            self.addr,
-            thread::current().id()
-        );
+        // info!(
+        //     "zzzzz Sending data using connection {} for addr {} thread {:?}",
+        //     connection.connection.stable_id(),
+        //     self.addr,
+        //     thread::current().id()
+        // );
         match Self::_send_buffer_using_conn(data, &connection).await {
             Ok(()) => Ok(connection),
             _ => {
