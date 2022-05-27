@@ -357,10 +357,10 @@ fn create_connection(
                 )
             });
 
-    info!(
-        "zzzzz to_create_connection {} for address {} pool size: {}",
-        to_create_connection, addr, map.connection_pool_size
-    );
+    // info!(
+    //     "zzzzz to_create_connection {} for address {} pool size: {}",
+    //     to_create_connection, addr, map.connection_pool_size
+    // );
 
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_create_connection {
