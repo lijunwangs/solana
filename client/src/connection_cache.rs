@@ -230,7 +230,7 @@ impl ConnectionCacheStats {
     }
 }
 
-const CONNECTION_POOL_SIZE: usize = 4;
+const CONNECTION_POOL_SIZE: usize = 1;
 
 /// Models the pool of connections
 struct ConnectionPool {
