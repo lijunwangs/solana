@@ -58,6 +58,11 @@ lazy_static! {
         .enable_all()
         .build()
         .unwrap();
+
+    static ref CONTROL_RUNTIME: Runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 }
 
 /// A wrapper over NewConnection with additional capability to create the endpoint as part
@@ -321,6 +326,7 @@ impl QuicClient {
         data: &[u8],
         connection: &NewConnection,
     ) -> Result<(), WriteError> {
+
         let mut send_stream = connection.connection.open_uni().await?;
 
         send_stream.write_all(data).await?;
@@ -437,12 +443,12 @@ impl QuicClient {
                     }
                 };
                 if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
-                    // info!(
-                    //     "zzzzz error sending to {} id {} in new 0rtt connection {}",
-                    //     self.addr,
-                    //     connection.connection.stable_id(),
-                    //     err
-                    // );
+                    info!(
+                        "zzzzz error sending to {} id {} in new 0rtt connection {}",
+                        self.addr,
+                        connection.connection.stable_id(),
+                        err
+                    );
                     return Err(err);
                 }
                 // info!(
