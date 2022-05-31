@@ -26,8 +26,8 @@ use {
     std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
-        time::Duration,
         thread,
+        time::Duration,
     },
     tokio::{runtime::Runtime, sync::RwLock},
 };
@@ -58,7 +58,6 @@ lazy_static! {
         .enable_all()
         .build()
         .unwrap();
-
     static ref CONTROL_RUNTIME: Runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -326,7 +325,6 @@ impl QuicClient {
         data: &[u8],
         connection: &NewConnection,
     ) -> Result<(), WriteError> {
-
         let mut send_stream = connection.connection.open_uni().await?;
 
         send_stream.write_all(data).await?;
@@ -407,7 +405,7 @@ impl QuicClient {
                 //     err,
                 //     thread::current().id(),
                 // );
-                let connection = {
+                let (connection, is_new_connection) = {
                     let mut conn_guard = self.connection.lock().await;
                     let conn = conn_guard.as_mut().unwrap();
                     let new_connection_id = conn.connection.connection.stable_id();
@@ -420,7 +418,7 @@ impl QuicClient {
                                 //     self.addr,
                                 //     connection.connection.stable_id()
                                 // );
-                                connection
+                                (connection, true)
                             }
                             Err(error) => {
                                 // info!(
@@ -439,15 +437,16 @@ impl QuicClient {
                         //     "zzzzz already had a new connection for {} old id {} new id {}",
                         //     self.addr, old_connection_id, new_connection_id,
                         // );
-                        conn.connection.clone()
+                        (conn.connection.clone(), false)
                     }
                 };
                 if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
                     info!(
-                        "zzzzz error sending to {} id {} in new 0rtt connection {}",
+                        "zzzzz error sending to {} id {} in new 0rtt connection {}, is_new_connection: {}",
                         self.addr,
                         connection.connection.stable_id(),
-                        err
+                        err,
+                        is_new_connection
                     );
                     return Err(err);
                 }
