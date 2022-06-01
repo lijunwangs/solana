@@ -446,6 +446,7 @@ impl QuicClient {
         }
 
         // if we come here, that means we have exhausted maximum retries, return the error
+        info!("Ran into error sending transactions {:?}, exhausted retries to {}", last_error, self.addr);
         Err(last_error.unwrap())
     }
 
