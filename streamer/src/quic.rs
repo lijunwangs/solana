@@ -3,7 +3,7 @@ use {
     futures_util::stream::StreamExt,
     pem::Pem,
     pkcs8::{der::Document, AlgorithmIdentifier, ObjectIdentifier},
-    quinn::{Endpoint, EndpointConfig, IdleTimeout, IncomingUniStreams, ServerConfig, VarInt},
+    quinn::{Connection, Endpoint, EndpointConfig, IdleTimeout, IncomingUniStreams, ServerConfig, VarInt},
     rcgen::{CertificateParams, DistinguishedName, DnType, SanType},
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -428,6 +428,7 @@ impl StreamStats {
 }
 
 fn handle_connection(
+    connection: Connection,
     mut uni_streams: IncomingUniStreams,
     packet_sender: Sender<PacketBatch>,
     remote_addr: SocketAddr,
@@ -439,8 +440,9 @@ fn handle_connection(
 ) {
     tokio::spawn(async move {
         info!(
-            "zzzzz quic new connection {} streams: {} connections: {}",
+            "zzzzz quic new connection {} id: {}, streams: {} connections: {}",
             remote_addr,
+            connection.stable_id(),
             stats.total_streams.load(Ordering::Relaxed),
             stats.total_connections.load(Ordering::Relaxed),
         );
@@ -467,8 +469,8 @@ fn handle_connection(
                     }
                     Err(e) => {
                         info!(
-                            "stream error: {:?} for {}, breaking the connection",
-                            e, remote_addr
+                            "stream error: {:?} for {}, breaking the connection {}",
+                            e, remote_addr, connection.stable_id()
                         );
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
@@ -476,8 +478,8 @@ fn handle_connection(
                 },
                 None => {
                     info!(
-                        "Did not receive a stream from {}, breaking the connection",
-                        remote_addr
+                        "Did not receive a stream from {}, breaking the connection {}",
+                        remote_addr, connection.stable_id()
                     );
                     stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                     break;
@@ -584,6 +586,7 @@ pub fn spawn_server(
                             let stats = stats.clone();
                             let connection_table1 = connection_table.clone();
                             handle_connection(
+                                connection,
                                 uni_streams,
                                 packet_sender,
                                 remote_addr,
