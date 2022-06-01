@@ -340,133 +340,113 @@ impl QuicClient {
         stats: &ClientStats,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Result<Arc<NewConnection>, WriteError> {
-        let connection = {
-            let mut conn_guard = self.connection.lock().await;
+        let mut try_count = 0;
+        let mut last_connection_id = 0;
+        let mut last_error = None;
 
-            let maybe_conn = conn_guard.clone();
-            match maybe_conn {
-                Some(conn) => {
-                    stats.connection_reuse.fetch_add(1, Ordering::Relaxed);
-                    conn.connection.clone()
-                }
-                None => {
-                    let conn =
-                        QuicNewConnection::make_connection(self.endpoint.clone(), self.addr, stats)
+        while try_count < 3 {
+            let connection = {
+                let mut conn_guard = self.connection.lock().await;
+
+                let maybe_conn = conn_guard.clone();
+                match maybe_conn {
+                    Some(conn) => {
+                        if conn.connection.connection.stable_id() == last_connection_id {
+                            // this is the problematic connection we had used before, create a new one
+                            let conn = QuicNewConnection::make_connection(
+                                self.endpoint.clone(),
+                                self.addr,
+                                stats,
+                            )
                             .await?;
-                    *conn_guard = Some(conn.clone());
-                    conn.connection.clone()
-                }
-            }
-        };
-
-        let new_stats = connection.connection.stats();
-
-        connection_stats
-            .total_client_stats
-            .congestion_events
-            .update_stat(
-                &self.stats.congestion_events,
-                new_stats.path.congestion_events,
-            );
-
-        connection_stats
-            .total_client_stats
-            .tx_streams_blocked_uni
-            .update_stat(
-                &self.stats.tx_streams_blocked_uni,
-                new_stats.frame_tx.streams_blocked_uni,
-            );
-
-        connection_stats
-            .total_client_stats
-            .tx_data_blocked
-            .update_stat(&self.stats.tx_data_blocked, new_stats.frame_tx.data_blocked);
-
-        connection_stats
-            .total_client_stats
-            .tx_acks
-            .update_stat(&self.stats.tx_acks, new_stats.frame_tx.acks);
-
-        let old_connection_id = connection.connection.stable_id();
-        match Self::_send_buffer_using_conn(data, &connection).await {
-            Ok(()) => {
-                // info!(
-                //     "Successfully sent data to  {} id {}",
-                //     self.addr,
-                //     connection.connection.stable_id()
-                // );
-                Ok(connection)
-            }
-            Err(err) => {
-                // info!(
-                //     "zzzzz error sending to {} id {} {} thread {:?}",
-                //     self.addr,
-                //     connection.connection.stable_id(),
-                //     err,
-                //     thread::current().id(),
-                // );
-                let (connection, is_new_connection) = {
-                    let mut conn_guard = self.connection.lock().await;
-                    let conn = conn_guard.as_mut().unwrap();
-                    let new_connection_id = conn.connection.connection.stable_id();
-                    if new_connection_id == old_connection_id {
-                        let result = QuicNewConnection::make_connection(
+                            *conn_guard = Some(conn.clone());
+                            conn.connection.clone()
+                        } else {
+                            stats.connection_reuse.fetch_add(1, Ordering::Relaxed);
+                            conn.connection.clone()
+                        }
+                    }
+                    None => {
+                        let conn = QuicNewConnection::make_connection(
                             self.endpoint.clone(),
                             self.addr,
                             stats,
                         )
-                        .await;
-                        match result {
-                            Ok(connection) => {
-                                info!(
-                                    "zzzzz Made new 0rtt connection to {} id {}",
-                                    self.addr,
-                                    connection.connection.connection.stable_id()
-                                );
-                                *conn_guard = Some(connection.clone());
-                                (connection.connection.clone(), true)
-                            }
-                            Err(error) => {
-                                info!(
-                                    "zzzzz Error to create new 0rtt connection to {} id  for {} {:?}",
-                                    self.addr,
-                                    connection.connection.stable_id(),
-                                    error
-                                );
-                                return Err(error);
-                            }
-                        }
-                    } else {
-                        // The connection has already been re-created by someone else.
-                        // Do no not race creating the connection repeatedly.
-                        // info!(
-                        //     "zzzzz already had a new connection for {} old id {} new id {}",
-                        //     self.addr, old_connection_id, new_connection_id,
-                        // );
-                        (conn.connection.clone(), false)
+                        .await?;
+                        *conn_guard = Some(conn.clone());
+                        conn.connection.clone()
                     }
-                };
-                let new_connection_id = connection.connection.stable_id();
-                if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
-                    info!(
-                        "zzzzz error sending to {} id {} in new 0rtt connection {}, is_new_connection: {} old-connection-id: {} new-connection-id: {}",
-                        self.addr,
-                        connection.connection.stable_id(),
-                        err,
-                        is_new_connection,
-                        old_connection_id,
-                        new_connection_id,
-                    );
-                    return Err(err);
                 }
-                // info!(
-                //     "Successfully sent data to  {} id {} via 0rtt",
-                //     self.addr,
-                //     connection.connection.stable_id()
-                // );
-                Ok(connection)
+            };
+
+            let new_stats = connection.connection.stats();
+
+            connection_stats
+                .total_client_stats
+                .congestion_events
+                .update_stat(
+                    &self.stats.congestion_events,
+                    new_stats.path.congestion_events,
+                );
+
+            connection_stats
+                .total_client_stats
+                .tx_streams_blocked_uni
+                .update_stat(
+                    &self.stats.tx_streams_blocked_uni,
+                    new_stats.frame_tx.streams_blocked_uni,
+                );
+
+            connection_stats
+                .total_client_stats
+                .tx_data_blocked
+                .update_stat(&self.stats.tx_data_blocked, new_stats.frame_tx.data_blocked);
+
+            connection_stats
+                .total_client_stats
+                .tx_acks
+                .update_stat(&self.stats.tx_acks, new_stats.frame_tx.acks);
+
+            last_connection_id = connection.connection.stable_id();
+            match Self::_send_buffer_using_conn(data, &connection).await {
+                Ok(()) => {
+                    // info!(
+                    //     "Successfully sent data to  {} id {}",
+                    //     self.addr,
+                    //     connection.connection.stable_id()
+                    // );
+                    return Ok(connection);
+                }
+                Err(err) => {
+                    // info!(
+                    //     "zzzzz error sending to {} id {} {} thread {:?}",
+                    //     self.addr,
+                    //     connection.connection.stable_id(),
+                    //     err,
+                    //     thread::current().id(),
+                    // );
+                    match err {
+                        WriteError::ConnectionLost(_) => {
+                            last_error = Some(err);
+                            try_count += 1;
+                        }
+                        _ => {
+                            info!(
+                                "zzzzz error sending to {} id {} {:?} thread {:?}",
+                                self.addr,
+                                connection.connection.stable_id(),
+                                err,
+                                thread::current().id(),
+                            );
+                            return Err(err);
+                        }
+                    }
+                }
             }
         }
+
+        // if we come here, that means we have exhausted maximum retries, return the error
+        Err(last_error.unwrap())
     }
 
     pub async fn send_buffer<T>(
