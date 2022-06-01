@@ -358,9 +358,18 @@ impl QuicClient {
                                 self.addr,
                                 stats,
                             )
-                            .await?;
-                            *conn_guard = Some(conn.clone());
-                            conn.connection.clone()
+                            .await;
+                            match conn {
+                                Ok(conn) => {
+                                    *conn_guard = Some(conn.clone());
+                                    conn.connection.clone()        
+                                }
+                                Err(err) => {
+                                    info!("Cannot make connection to {}, error {:}", self.addr, err);
+                                    return Err(err);
+                                }
+                            }
+                            
                         } else {
                             stats.connection_reuse.fetch_add(1, Ordering::Relaxed);
                             conn.connection.clone()
