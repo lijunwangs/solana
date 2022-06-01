@@ -268,7 +268,10 @@ impl TpuConnection for QuicTpuConnection {
         let _ = RUNTIME.spawn(async move {
             let send_buffer = client.send_buffer(wire_transaction, &stats, connection_stats);
             if let Err(e) = send_buffer.await {
-                warn!("Failed to send transaction async to {}, error: {:?} ", client.addr, e);
+                warn!(
+                    "Failed to send transaction async to {}, error: {:?} ",
+                    client.addr, e
+                );
                 datapoint_warn!("send-wire-async", ("failure", 1, i64),);
             }
         });
@@ -362,14 +365,16 @@ impl QuicClient {
                             match conn {
                                 Ok(conn) => {
                                     *conn_guard = Some(conn.clone());
-                                    conn.connection.clone()        
+                                    conn.connection.clone()
                                 }
                                 Err(err) => {
-                                    info!("Cannot make connection to {}, error {:}", self.addr, err);
+                                    info!(
+                                        "Cannot make connection to {}, error {:}",
+                                        self.addr, err
+                                    );
                                     return Err(err);
                                 }
                             }
-                            
                         } else {
                             stats.connection_reuse.fetch_add(1, Ordering::Relaxed);
                             conn.connection.clone()
@@ -381,9 +386,17 @@ impl QuicClient {
                             self.addr,
                             stats,
                         )
-                        .await?;
-                        *conn_guard = Some(conn.clone());
-                        conn.connection.clone()
+                        .await;
+                        match conn {
+                            Ok(conn) => {
+                                *conn_guard = Some(conn.clone());
+                                conn.connection.clone()
+                            }
+                            Err(err) => {
+                                info!("Cannot make connection to {}, error {:}", self.addr, err);
+                                return Err(err);
+                            }
+                        }
                     }
                 }
             };
@@ -455,7 +468,10 @@ impl QuicClient {
         }
 
         // if we come here, that means we have exhausted maximum retries, return the error
-        info!("Ran into error sending transactions {:?}, exhausted retries to {}", last_error, self.addr);
+        info!(
+            "Ran into error sending transactions {:?}, exhausted retries to {}",
+            last_error, self.addr
+        );
         Err(last_error.unwrap())
     }
 
