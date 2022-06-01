@@ -418,21 +418,21 @@ impl QuicClient {
                         .await;
                         match result {
                             Ok(connection) => {
-                                // info!(
-                                //     "zzzzz Made new 0rtt connection to {} id {}",
-                                //     self.addr,
-                                //     connection.connection.stable_id()
-                                // );
+                                info!(
+                                    "zzzzz Made new 0rtt connection to {} id {}",
+                                    self.addr,
+                                    connection.connection.connection.stable_id()
+                                );
                                 *conn_guard = Some(connection.clone());
                                 (connection.connection.clone(), true)
                             }
                             Err(error) => {
-                                // info!(
-                                //     "zzzzz Error to create new 0rtt connection to {} id  for {} {}",
-                                //     self.addr,
-                                //     connection.connection.stable_id(),
-                                //     error
-                                // );
+                                info!(
+                                    "zzzzz Error to create new 0rtt connection to {} id  for {} {}",
+                                    self.addr,
+                                    connection.connection.stable_id(),
+                                    error
+                                );
                                 return Err(error);
                             }
                         }
