@@ -218,7 +218,7 @@ fn handle_chunk(
             }
         }
         Err(e) => {
-            debug!("Received stream error: {:?}", e);
+            info!("Received stream error: {:?}", e);
             stats
                 .total_stream_read_errors
                 .fetch_add(1, Ordering::Relaxed);

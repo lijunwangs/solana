@@ -428,7 +428,7 @@ impl QuicClient {
                             }
                             Err(error) => {
                                 info!(
-                                    "zzzzz Error to create new 0rtt connection to {} id  for {} {}",
+                                    "zzzzz Error to create new 0rtt connection to {} id  for {} {:?}",
                                     self.addr,
                                     connection.connection.stable_id(),
                                     error
