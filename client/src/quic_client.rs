@@ -440,13 +440,16 @@ impl QuicClient {
                         (conn.connection.clone(), false)
                     }
                 };
+                let new_connection_id = connection.connection.stable_id();
                 if let Err(err) = Self::_send_buffer_using_conn(data, &connection).await {
                     info!(
-                        "zzzzz error sending to {} id {} in new 0rtt connection {}, is_new_connection: {}",
+                        "zzzzz error sending to {} id {} in new 0rtt connection {}, is_new_connection: {} old-connection-id: {} new-connection-id: {}",
                         self.addr,
                         connection.connection.stable_id(),
                         err,
-                        is_new_connection
+                        is_new_connection,
+                        old_connection_id,
+                        new_connection_id,
                     );
                     return Err(err);
                 }
