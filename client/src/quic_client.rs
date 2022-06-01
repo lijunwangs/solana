@@ -268,7 +268,7 @@ impl TpuConnection for QuicTpuConnection {
         let _ = RUNTIME.spawn(async move {
             let send_buffer = client.send_buffer(wire_transaction, &stats, connection_stats);
             if let Err(e) = send_buffer.await {
-                warn!("Failed to send transaction async to {:?}", e);
+                warn!("Failed to send transaction async to {}, error: {:?} ", client.addr, e);
                 datapoint_warn!("send-wire-async", ("failure", 1, i64),);
             }
         });
