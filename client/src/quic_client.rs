@@ -410,7 +410,12 @@ impl QuicClient {
                     let conn = conn_guard.as_mut().unwrap();
                     let new_connection_id = conn.connection.connection.stable_id();
                     if new_connection_id == old_connection_id {
-                        let result = conn.make_connection_0rtt(self.addr, stats).await;
+                        let result = QuicNewConnection::make_connection(
+                            self.endpoint.clone(),
+                            self.addr,
+                            stats,
+                        )
+                        .await;
                         match result {
                             Ok(connection) => {
                                 // info!(
@@ -418,7 +423,8 @@ impl QuicClient {
                                 //     self.addr,
                                 //     connection.connection.stable_id()
                                 // );
-                                (connection, true)
+                                *conn_guard = Some(connection.clone());
+                                (connection.connection.clone(), true)
                             }
                             Err(error) => {
                                 // info!(
