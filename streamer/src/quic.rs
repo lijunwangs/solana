@@ -537,7 +537,8 @@ pub fn spawn_server(
                 }
 
                 if let Ok(Some(connection)) = timeout_connection {
-                    if let Ok(new_connection) = connection.await {
+                    let result = connection.await;
+                    if let Ok(new_connection) = result {
                         stats.total_connections.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
                         let quinn::NewConnection {
@@ -605,6 +606,7 @@ pub fn spawn_server(
                             stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
                         }
                     } else {
+                        info!("zzzzz could not establish connection with the remote: {:?}", result);
                         stats
                             .connection_setup_timeout
                             .fetch_add(1, Ordering::Relaxed);
