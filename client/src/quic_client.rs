@@ -365,6 +365,12 @@ impl QuicClient {
                             match conn {
                                 Ok(conn) => {
                                     *conn_guard = Some(conn.clone());
+                                    info!(
+                                        "Made connection to {} id {} try_count {}",
+                                        self.addr,
+                                        conn.connection.connection.stable_id(),
+                                        try_count
+                                    );
                                     conn.connection.clone()
                                 }
                                 Err(err) => {
@@ -390,6 +396,12 @@ impl QuicClient {
                         match conn {
                             Ok(conn) => {
                                 *conn_guard = Some(conn.clone());
+                                info!(
+                                    "Made connection to {} id {} try_count {}",
+                                    self.addr,
+                                    conn.connection.connection.stable_id(),
+                                    try_count
+                                );
                                 conn.connection.clone()
                             }
                             Err(err) => {
