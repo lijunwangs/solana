@@ -3,7 +3,9 @@ use {
     futures_util::stream::StreamExt,
     pem::Pem,
     pkcs8::{der::Document, AlgorithmIdentifier, ObjectIdentifier},
-    quinn::{Connection, Endpoint, EndpointConfig, IdleTimeout, IncomingUniStreams, ServerConfig, VarInt},
+    quinn::{
+        Connection, Endpoint, EndpointConfig, IdleTimeout, IncomingUniStreams, ServerConfig, VarInt,
+    },
     rcgen::{CertificateParams, DistinguishedName, DnType, SanType},
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -149,6 +151,7 @@ pub enum QuicServerError {
 
 // Return true if the server should drop the stream
 fn handle_chunk(
+    connection_id: usize,
     chunk: &Result<Option<quinn::Chunk>, quinn::ReadError>,
     maybe_batch: &mut Option<PacketBatch>,
     remote_addr: &SocketAddr,
@@ -218,7 +221,7 @@ fn handle_chunk(
             }
         }
         Err(e) => {
-            info!("Received stream error: {:?}", e);
+            info!("Received stream error: {:?} id: {}", e, connection_id);
             stats
                 .total_stream_read_errors
                 .fetch_add(1, Ordering::Relaxed);
@@ -446,6 +449,7 @@ fn handle_connection(
             stats.total_streams.load(Ordering::Relaxed),
             stats.total_connections.load(Ordering::Relaxed),
         );
+        let connection_id = connection.stable_id();
         while !stream_exit.load(Ordering::Relaxed) {
             match uni_streams.next().await {
                 Some(stream_result) => match stream_result {
@@ -455,6 +459,7 @@ fn handle_connection(
                         let mut maybe_batch = None;
                         while !stream_exit.load(Ordering::Relaxed) {
                             if handle_chunk(
+                                connection_id,
                                 &stream.read_chunk(PACKET_DATA_SIZE, false).await,
                                 &mut maybe_batch,
                                 &remote_addr,
@@ -470,7 +475,9 @@ fn handle_connection(
                     Err(e) => {
                         info!(
                             "stream error: {:?} for {}, breaking the connection {}",
-                            e, remote_addr, connection.stable_id()
+                            e,
+                            remote_addr,
+                            connection.stable_id()
                         );
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                         break;
@@ -479,7 +486,8 @@ fn handle_connection(
                 None => {
                     info!(
                         "Did not receive a stream from {}, breaking the connection {}",
-                        remote_addr, connection.stable_id()
+                        remote_addr,
+                        connection.stable_id()
                     );
                     stats.total_streams.fetch_sub(1, Ordering::Relaxed);
                     break;
@@ -606,7 +614,10 @@ pub fn spawn_server(
                             stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
                         }
                     } else {
-                        info!("zzzzz could not establish connection with the remote: {:?}", result);
+                        info!(
+                            "zzzzz could not establish connection with the remote: {:?}",
+                            result
+                        );
                         stats
                             .connection_setup_timeout
                             .fetch_add(1, Ordering::Relaxed);
