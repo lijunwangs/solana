@@ -84,7 +84,7 @@ impl QuicLazyEndpoint {
         }
     }
 
-    fn create_endpoint(&self) -> Endpoint {
+    fn create_endpoint() -> Endpoint {
         let (_, client_socket) = solana_net_utils::bind_in_range(
             IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             VALIDATOR_PORT_RANGE,
@@ -124,7 +124,7 @@ impl QuicLazyEndpoint {
                 match endpoint {
                     Some(endpoint) => endpoint.clone(),
                     None => {
-                        let connection = Arc::new(self.create_endpoint());
+                        let connection = Arc::new(Self::create_endpoint());
                         *lock = Some(connection.clone());
                         connection
                     }
@@ -142,7 +142,7 @@ impl QuicNewConnection {
         stats: &ClientStats,
     ) -> Result<Self, WriteError> {
         let mut make_connection_measure = Measure::start("make_connection_measure");
-        let endpoint = endpoint.get_endpoint().await;
+        let endpoint = QuicLazyEndpoint::create_endpoint();
 
         let connecting = endpoint.connect(addr, "connect").unwrap();
         stats.total_connections.fetch_add(1, Ordering::Relaxed);
@@ -163,7 +163,7 @@ impl QuicNewConnection {
         //     connection.connection.stable_id()
         // );
         Ok(Self {
-            endpoint,
+            endpoint: Arc::new(endpoint),
             connection: Arc::new(connection),
         })
     }
