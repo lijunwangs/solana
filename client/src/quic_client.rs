@@ -371,6 +371,8 @@ impl QuicClient {
                                         conn.connection.connection.stable_id(),
                                         try_count
                                     );
+                                    try_count += 1;
+
                                     conn.connection.clone()
                                 }
                                 Err(err) => {
@@ -402,6 +404,7 @@ impl QuicClient {
                                     conn.connection.connection.stable_id(),
                                     try_count
                                 );
+                                try_count += 1;
                                 conn.connection.clone()
                             }
                             Err(err) => {
@@ -462,7 +465,6 @@ impl QuicClient {
                     match err {
                         WriteError::ConnectionLost(_) => {
                             last_error = Some(err);
-                            try_count += 1;
                         }
                         _ => {
                             info!(
