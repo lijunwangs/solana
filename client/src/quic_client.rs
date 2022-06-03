@@ -351,9 +351,9 @@ impl QuicClient {
             let connection = {
                 let mut conn_guard = self.connection.lock().await;
 
-                let maybe_conn = conn_guard.clone();
+                let maybe_conn = conn_guard.as_mut();
                 match maybe_conn {
-                    Some(mut conn) => {
+                    Some(conn) => {
                         if conn.connection.connection.stable_id() == last_connection_id {
                             // this is the problematic connection we had used before, create a new one
                             let conn = conn.make_connection_0rtt(self.addr, stats)
@@ -367,7 +367,7 @@ impl QuicClient {
                                         try_count,
                                         last_connection_id
                                     );
-                                    try_count += 1;
+                                    try_count += 1;                                    
                                     conn
                                 }
                                 Err(err) => {
