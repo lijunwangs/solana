@@ -229,7 +229,7 @@ impl ConnectionCacheStats {
     }
 }
 
-pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 1;
+pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
 
 /// Models the pool of connections
 struct ConnectionPool {

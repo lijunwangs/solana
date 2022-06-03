@@ -366,10 +366,12 @@ impl QuicClient {
                                 Ok(conn) => {
                                     *conn_guard = Some(conn.clone());
                                     info!(
-                                        "Made connection to {} id {} try_count {}",
+                                        "Made retry connection to {} id {} try_count {} old_connection_id: {}, last error: {:?}",
                                         self.addr,
                                         conn.connection.connection.stable_id(),
-                                        try_count
+                                        try_count,
+                                        last_connection_id,
+                                        last_error
                                     );
                                     try_count += 1;
 
