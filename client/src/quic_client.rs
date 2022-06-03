@@ -356,18 +356,18 @@ impl QuicClient {
                     Some(conn) => {
                         if conn.connection.connection.stable_id() == last_connection_id {
                             // this is the problematic connection we had used before, create a new one
-                            let conn = conn.make_connection_0rtt(self.addr, stats)
-                            .await;
+                            let conn = conn.make_connection_0rtt(self.addr, stats).await;
                             match conn {
                                 Ok(conn) => {
                                     info!(
-                                        "Made 0rtt connection to {} id {} try_count {}, last_connection_id: {}",
+                                        "Made 0rtt connection to {} id {} try_count {}, last_connection_id: {}, last_error: {:?}",
                                         self.addr,
                                         conn.connection.stable_id(),
                                         try_count,
-                                        last_connection_id
+                                        last_connection_id,
+                                        last_error,
                                     );
-                                    try_count += 1;                                    
+                                    try_count += 1;
                                     conn
                                 }
                                 Err(err) => {
