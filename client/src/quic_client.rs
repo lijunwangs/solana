@@ -361,10 +361,11 @@ impl QuicClient {
                             match conn {
                                 Ok(conn) => {
                                     info!(
-                                        "Made connection to {} id {} try_count {}",
+                                        "Made 0rtt connection to {} id {} try_count {}, last_connection_id: {}",
                                         self.addr,
                                         conn.connection.stable_id(),
-                                        try_count
+                                        try_count,
+                                        last_connection_id
                                     );
                                     try_count += 1;
                                     conn
