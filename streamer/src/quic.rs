@@ -317,6 +317,7 @@ impl ConnectionTable {
     }
 
     fn remove_connection(&mut self, addr: &SocketAddr) {
+        info!("zzzzz Removing connection from address {}", addr);
         if let Entry::Occupied(mut e) = self.table.entry(addr.ip()) {
             let e_ref = e.get_mut();
             e_ref.retain(|connection| connection.port != addr.port());
