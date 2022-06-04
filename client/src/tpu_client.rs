@@ -121,7 +121,7 @@ impl TpuClient {
             .leader_tpu_sockets(self.fanout_slots)
         {
             let conn = get_connection(&tpu_address);
-            let result = conn.send_wire_transaction_async(wire_transaction.clone());
+            let result = conn.connection.send_wire_transaction_async(wire_transaction.clone());
             if let Err(err) = result {
                 last_error = Some(err);
             } else {

@@ -694,7 +694,7 @@ impl SendTransactionService {
         wire_transaction: &[u8],
     ) -> Result<(), TransportError> {
         let conn = connection_cache::get_connection(tpu_address);
-        conn.send_wire_transaction_async(wire_transaction.to_vec())
+        conn.connection.send_wire_transaction_async(wire_transaction.to_vec())
     }
 
     fn send_transactions_with_metrics(
@@ -703,7 +703,7 @@ impl SendTransactionService {
     ) -> Result<(), TransportError> {
         let wire_transactions = wire_transactions.iter().map(|t| t.to_vec()).collect();
         let conn = connection_cache::get_connection(tpu_address);
-        conn.send_wire_transaction_batch_async(wire_transactions)
+        conn.connection.send_wire_transaction_batch_async(wire_transactions)
     }
 
     fn send_transactions(

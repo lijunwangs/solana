@@ -218,7 +218,7 @@ pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
 /// Models the pool of connections
 struct ConnectionPool {
     /// The connections in the pool
-    connections: Vec<Arc<Connection>>,
+    connections: Vec<ArcConnection>,
 
     /// A simple reference count of connections being used.
     /// A connection can be used multiple times. The reference count will be dropped
@@ -234,7 +234,7 @@ struct ConnectionPool {
 impl ConnectionPool {
     /// Get a connection from the pool. It must have at least one connection in the pool.
     /// This randomly picks a connection in the pool and increment the reference count.
-    fn borrow_connection(&self) -> Arc<Connection> {
+    fn borrow_connection(&self) -> ArcConnection {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
         let connection = self.connections[n].clone();
@@ -244,7 +244,7 @@ impl ConnectionPool {
 
     /// Return the connection to the pool. The _connection is not used for now,
     /// which can be used to build more accurate reference counting on a connection instance.
-    fn return_connection(&self, _connection: &Arc<Connection>) {
+    fn return_connection(&self, _connection: &ArcConnection) {
         self.references.fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -290,7 +290,7 @@ impl ConnectionMap {
     pub fn decrement_connection_reference(
         &self,
         address: &SocketAddr,
-        connection: &Arc<Connection>,
+        connection: &ArcConnection,
     ) {
         if let Some(entry) = self.map.get(address) {
             entry.return_connection(connection);
@@ -313,7 +313,7 @@ pub fn set_connection_pool_size(connection_pool_size: usize) {
 }
 
 struct GetConnectionResult {
-    connection: Arc<Connection>,
+    connection: ArcConnection,
     cache_hit: bool,
     report_stats: bool,
     map_timing_ms: u64,
@@ -327,7 +327,7 @@ struct GetConnectionResult {
 fn create_connection(
     lock_timing_ms: &mut u64,
     addr: &SocketAddr,
-) -> (Arc<Connection>, bool, Arc<ConnectionCacheStats>, u64, u64) {
+) -> (ArcConnection, bool, Arc<ConnectionCacheStats>, u64, u64) {
     let mut get_connection_map_lock_measure = Measure::start("get_connection_map_lock_measure");
     let mut map = (*CONNECTION_MAP).write().unwrap();
     get_connection_map_lock_measure.stop();
@@ -353,7 +353,10 @@ fn create_connection(
                 UdpTpuConnection::new(*addr, map.stats.clone()).into()
             };
 
-            let connection = Arc::new(connection);
+            let connection = ArcConnection {
+                connection: Arc::new(connection)
+            };
+
             // evict a connection if the cache is reaching upper bounds
             let mut num_evictions = 0;
             let mut get_connection_cache_eviction_measure =
@@ -447,7 +450,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
 
 // TODO: see https://github.com/solana-labs/solana/issues/23661
 // remove lazy_static and optimize and refactor this
-pub fn get_connection(addr: &SocketAddr) -> Arc<Connection> {
+pub fn get_connection(addr: &SocketAddr) -> ArcConnection {
     let mut get_connection_measure = Measure::start("get_connection_measure");
     let GetConnectionResult {
         connection,
@@ -547,8 +550,8 @@ mod tests {
             let map = (*CONNECTION_MAP).read().unwrap();
             assert!(map.map.len() == MAX_CONNECTIONS);
             addrs.iter().for_each(|a| {
-                let conn = &map.map.get(a).expect("Address not found")[0];
-                assert!(a.ip() == ip(conn.clone()));
+                let conn = &map.map.get(a).expect("Address not found").connections[0];
+                assert!(a.ip() == conn.connection.tpu_addr().ip());
             });
         }
 
