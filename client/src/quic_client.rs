@@ -134,6 +134,12 @@ impl QuicLazyEndpoint {
     }
 }
 
+impl Default for QuicLazyEndpoint {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QuicNewConnection {
     /// Create a QuicNewConnection given the remote address 'addr'.
     async fn make_connection(
