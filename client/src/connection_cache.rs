@@ -229,7 +229,7 @@ impl ConnectionCacheStats {
     }
 }
 
-pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 1;
+pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
 
 /// Models the pool of connections
 struct ConnectionPool {
@@ -356,11 +356,6 @@ fn create_connection(
                     pool.endpoint.clone(),
                 )
             });
-
-    // info!(
-    //     "zzzzz to_create_connection {} for address {} pool size: {}",
-    //     to_create_connection, addr, map.connection_pool_size
-    // );
 
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_create_connection {

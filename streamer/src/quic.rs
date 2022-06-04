@@ -317,7 +317,7 @@ impl ConnectionTable {
     }
 
     fn remove_connection(&mut self, addr: &SocketAddr) {
-        info!("zzzzz Removing connection from address {}", addr);
+        info!("Removing connection from address {}", addr);
         if let Entry::Occupied(mut e) = self.table.entry(addr.ip()) {
             let e_ref = e.get_mut();
             e_ref.retain(|connection| connection.port != addr.port());
@@ -444,7 +444,7 @@ fn handle_connection(
 ) {
     tokio::spawn(async move {
         info!(
-            "zzzzz quic new connection {} id: {}, streams: {} connections: {}",
+            "Handle quic new connection from {} id: {}, streams: {} connections: {}",
             remote_addr,
             connection.stable_id(),
             stats.total_streams.load(Ordering::Relaxed),
@@ -558,11 +558,6 @@ pub fn spawn_server(
 
                         let remote_addr = connection.remote_address();
 
-                        info!(
-                            "zzzz Received connection from address {} id {}",
-                            remote_addr,
-                            connection.stable_id()
-                        );
                         let (mut connection_table_l, stake) = {
                             let staked_nodes = staked_nodes.read().unwrap();
                             if let Some(stake) = staked_nodes.get(&remote_addr.ip()) {
@@ -608,7 +603,7 @@ pub fn spawn_server(
                             );
                         } else {
                             info!(
-                                "zzzzzz failed to add connection from address {} id {}",
+                                "Failed to add connection from address {} id {}",
                                 remote_addr,
                                 connection.stable_id()
                             );
@@ -616,7 +611,7 @@ pub fn spawn_server(
                         }
                     } else {
                         info!(
-                            "zzzzz could not establish connection with the remote: {:?}",
+                            "Could not establish connection with the remote: {:?}",
                             result
                         );
                         stats

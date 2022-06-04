@@ -157,11 +157,6 @@ impl QuicNewConnection {
 
         let connection = connecting_result?;
 
-        // info!(
-        //     "zzzzz Made connection to {} id {}",
-        //     addr,
-        //     connection.connection.stable_id()
-        // );
         Ok(Self {
             endpoint,
             connection: Arc::new(connection),
@@ -360,7 +355,7 @@ impl QuicClient {
                             match conn {
                                 Ok(conn) => {
                                     info!(
-                                        "Made 0rtt connection to {} id {} try_count {}, last_connection_id: {}, last_error: {:?}",
+                                        "Made 0rtt connection to {} with id {} try_count {}, last_connection_id: {}, last_error: {:?}",
                                         self.addr,
                                         conn.connection.stable_id(),
                                         try_count,
@@ -372,7 +367,7 @@ impl QuicClient {
                                 }
                                 Err(err) => {
                                     info!(
-                                        "Cannot make connection to {}, error {:}",
+                                        "Cannot make 0rtt connection to {}, error {:}",
                                         self.addr, err
                                     );
                                     return Err(err);
@@ -442,43 +437,29 @@ impl QuicClient {
             last_connection_id = connection.connection.stable_id();
             match Self::_send_buffer_using_conn(data, &connection).await {
                 Ok(()) => {
-                    // info!(
-                    //     "Successfully sent data to  {} id {}",
-                    //     self.addr,
-                    //     connection.connection.stable_id()
-                    // );
                     return Ok(connection);
                 }
-                Err(err) => {
-                    // info!(
-                    //     "zzzzz error sending to {} id {} {} thread {:?}",
-                    //     self.addr,
-                    //     connection.connection.stable_id(),
-                    //     err,
-                    //     thread::current().id(),
-                    // );
-                    match err {
-                        WriteError::ConnectionLost(_) => {
-                            last_error = Some(err);
-                        }
-                        _ => {
-                            info!(
-                                "zzzzz error sending to {} id {} {:?} thread {:?}",
-                                self.addr,
-                                connection.connection.stable_id(),
-                                err,
-                                thread::current().id(),
-                            );
-                            return Err(err);
-                        }
+                Err(err) => match err {
+                    WriteError::ConnectionLost(_) => {
+                        last_error = Some(err);
                     }
-                }
+                    _ => {
+                        info!(
+                            "Error sending to {} with id {}, error {:?} thread: {:?}",
+                            self.addr,
+                            connection.connection.stable_id(),
+                            err,
+                            thread::current().id(),
+                        );
+                        return Err(err);
+                    }
+                },
             }
         }
 
         // if we come here, that means we have exhausted maximum retries, return the error
         info!(
-            "Ran into error sending transactions {:?}, exhausted retries to {}",
+            "Ran into an error sending transactions {:?}, exhausted retries to {}",
             last_error, self.addr
         );
         Err(last_error.unwrap())
