@@ -10,9 +10,7 @@ use {
     log::*,
     rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
-    solana_sdk::{
-        quic::QUIC_PORT_OFFSET, timing::AtomicInterval,
-    },
+    solana_sdk::{quic::QUIC_PORT_OFFSET, timing::AtomicInterval},
     std::{
         net::SocketAddr,
         sync::{
@@ -289,7 +287,11 @@ impl ConnectionMap {
         self.connection_pool_size = 1.max(connection_pool_size);
     }
 
-    pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &Arc<Connection>) {
+    pub fn decrement_connection_reference(
+        &self,
+        address: &SocketAddr,
+        connection: &Arc<Connection>,
+    ) {
         if let Some(entry) = self.map.get(address) {
             entry.return_connection(connection);
         }
@@ -346,11 +348,7 @@ fn create_connection(
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_create_connection {
             let connection: Connection = if map.use_quic {
-                QuicTpuConnection::new(
-                    endpoint,
-                    *addr,
-                    map.stats.clone(),
-                ).into()
+                QuicTpuConnection::new(endpoint, *addr, map.stats.clone()).into()
             } else {
                 UdpTpuConnection::new(*addr, map.stats.clone()).into()
             };

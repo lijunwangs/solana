@@ -19,8 +19,8 @@ use {
     std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
-        time::Duration,
         thread,
+        time::Duration,
     },
     tokio::sync::RwLock,
 };
@@ -115,7 +115,6 @@ impl Default for QuicLazyEndpoint {
     }
 }
 
-
 /// A wrapper over NewConnection with additional capability to create the endpoint as part
 /// of creating a new connection.
 #[derive(Clone)]
@@ -123,7 +122,6 @@ struct QuicNewConnection {
     endpoint: Arc<Endpoint>,
     connection: Arc<NewConnection>,
 }
-
 
 impl QuicNewConnection {
     /// Create a QuicNewConnection given the remote address 'addr'.
@@ -193,7 +191,6 @@ pub struct QuicClient {
     addr: SocketAddr,
     stats: Arc<ClientStats>,
 }
-
 
 impl QuicClient {
     pub fn new(endpoint: Arc<QuicLazyEndpoint>, addr: SocketAddr) -> Self {

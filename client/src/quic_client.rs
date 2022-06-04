@@ -4,7 +4,7 @@
 use {
     crate::{
         connection_cache::ConnectionCacheStats,
-        nonblocking::quic_client::{QuicLazyEndpoint, QuicClient},
+        nonblocking::quic_client::{QuicClient, QuicLazyEndpoint},
         tpu_connection::{ClientStats, TpuConnection},
     },
     lazy_static::lazy_static,
@@ -80,7 +80,8 @@ impl TpuConnection for QuicTpuConnection {
             if let Err(e) = send_buffer.await {
                 warn!(
                     "Failed to send transaction async to {}, error: {:?} ",
-                    client.tpu_addr(), e
+                    client.tpu_addr(),
+                    e
                 );
                 datapoint_warn!("send-wire-async", ("failure", 1, i64),);
                 connection_stats.add_client_stats(&stats, 1, false);
