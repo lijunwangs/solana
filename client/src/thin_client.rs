@@ -597,7 +597,8 @@ impl AsyncClient for ThinClient {
         transaction: VersionedTransaction,
     ) -> TransportResult<Signature> {
         let conn = get_connection(self.tpu_addr());
-        conn.connection.serialize_and_send_transaction(&transaction)?;
+        conn.connection
+            .serialize_and_send_transaction(&transaction)?;
         Ok(transaction.signatures[0])
     }
 
@@ -606,7 +607,8 @@ impl AsyncClient for ThinClient {
         batch: Vec<VersionedTransaction>,
     ) -> TransportResult<()> {
         let conn = get_connection(self.tpu_addr());
-        conn.connection.par_serialize_and_send_transaction_batch(&batch[..])?;
+        conn.connection
+            .par_serialize_and_send_transaction_batch(&batch[..])?;
         Ok(())
     }
 }

@@ -287,11 +287,7 @@ impl ConnectionMap {
         self.connection_pool_size = 1.max(connection_pool_size);
     }
 
-    pub fn decrement_connection_reference(
-        &self,
-        address: &SocketAddr,
-        connection: &ArcConnection,
-    ) {
+    pub fn decrement_connection_reference(&self, address: &SocketAddr, connection: &ArcConnection) {
         if let Some(entry) = self.map.get(address) {
             entry.return_connection(connection);
         }
@@ -354,7 +350,7 @@ fn create_connection(
             };
 
             let connection = ArcConnection {
-                connection: Arc::new(connection)
+                connection: Arc::new(connection),
             };
 
             // evict a connection if the cache is reaching upper bounds
@@ -409,6 +405,10 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
     let map = (*CONNECTION_MAP).read().unwrap();
     get_connection_map_lock_measure.stop();
 
+    let port_offset = if map.use_quic { QUIC_PORT_OFFSET } else { 0 };
+
+    let addr = SocketAddr::new(addr.ip(), addr.port() + port_offset);
+
     let mut lock_timing_ms = get_connection_map_lock_measure.as_ms();
 
     let report_stats = map
@@ -417,12 +417,12 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
 
     let mut get_connection_map_measure = Measure::start("get_connection_hit_measure");
     let (connection, cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
-        match map.map.get(addr) {
+        match map.map.get(&addr) {
             Some(pool) => {
                 if pool.need_new_connection(map.connection_pool_size) {
                     // create more connection and put it in the pool
                     drop(map);
-                    create_connection(&mut lock_timing_ms, addr)
+                    create_connection(&mut lock_timing_ms, &addr)
                 } else {
                     let connection = pool.borrow_connection();
                     (connection, true, map.stats.clone(), 0, 0)
@@ -431,7 +431,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
             None => {
                 // Upgrade to write access by dropping read lock and acquire write lock
                 drop(map);
-                create_connection(&mut lock_timing_ms, addr)
+                create_connection(&mut lock_timing_ms, &addr)
             }
         };
     get_connection_map_measure.stop();

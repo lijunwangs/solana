@@ -572,7 +572,8 @@ impl BankingStage {
                     .forwarded_transaction_count
                     .fetch_add(packet_vec_len, Ordering::Relaxed);
                 let conn = get_connection(&addr);
-                conn.connection.send_wire_transaction_batch_async(packet_vec)
+                conn.connection
+                    .send_wire_transaction_batch_async(packet_vec)
             };
 
             measure.stop();

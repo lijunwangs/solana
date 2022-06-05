@@ -9,7 +9,7 @@ use {
     },
     lazy_static::lazy_static,
     log::*,
-    solana_sdk::{quic::QUIC_PORT_OFFSET, transport::Result as TransportResult},
+    solana_sdk::transport::Result as TransportResult,
     std::{net::SocketAddr, sync::Arc},
     tokio::runtime::Runtime,
 };
@@ -36,7 +36,6 @@ impl QuicTpuConnection {
         tpu_addr: SocketAddr,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Self {
-        let tpu_addr = SocketAddr::new(tpu_addr.ip(), tpu_addr.port() + QUIC_PORT_OFFSET);
         let client = Arc::new(QuicClient::new(endpoint, tpu_addr));
 
         Self {
