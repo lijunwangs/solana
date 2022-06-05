@@ -47,12 +47,12 @@ impl rustls::client::ServerCertVerifier for SkipServerVerification {
     }
 }
 
-/// A lazy initialized Quic Endpoint
-pub struct QuicLazyEndpoint {
+/// A lazy-initialized Quic Endpoint
+pub struct QuicLazyInitializedEndpoint {
     endpoint: RwLock<Option<Arc<Endpoint>>>,
 }
 
-impl QuicLazyEndpoint {
+impl QuicLazyInitializedEndpoint {
     pub fn new() -> Self {
         Self {
             endpoint: RwLock::new(None),
@@ -109,7 +109,7 @@ impl QuicLazyEndpoint {
     }
 }
 
-impl Default for QuicLazyEndpoint {
+impl Default for QuicLazyInitializedEndpoint {
     fn default() -> Self {
         Self::new()
     }
@@ -126,7 +126,7 @@ struct QuicNewConnection {
 impl QuicNewConnection {
     /// Create a QuicNewConnection given the remote address 'addr'.
     async fn make_connection(
-        endpoint: Arc<QuicLazyEndpoint>,
+        endpoint: Arc<QuicLazyInitializedEndpoint>,
         addr: SocketAddr,
         stats: &ClientStats,
     ) -> Result<Self, WriteError> {
@@ -186,14 +186,14 @@ impl QuicNewConnection {
 }
 
 pub struct QuicClient {
-    endpoint: Arc<QuicLazyEndpoint>,
+    endpoint: Arc<QuicLazyInitializedEndpoint>,
     connection: Arc<Mutex<Option<QuicNewConnection>>>,
     addr: SocketAddr,
     stats: Arc<ClientStats>,
 }
 
 impl QuicClient {
-    pub fn new(endpoint: Arc<QuicLazyEndpoint>, addr: SocketAddr) -> Self {
+    pub fn new(endpoint: Arc<QuicLazyInitializedEndpoint>, addr: SocketAddr) -> Self {
         Self {
             endpoint,
             connection: Arc::new(Mutex::new(None)),

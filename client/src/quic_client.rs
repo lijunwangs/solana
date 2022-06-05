@@ -4,7 +4,7 @@
 use {
     crate::{
         connection_cache::ConnectionCacheStats,
-        nonblocking::quic_client::{QuicClient, QuicLazyEndpoint},
+        nonblocking::quic_client::{QuicClient, QuicLazyInitializedEndpoint},
         tpu_connection::{ClientStats, TpuConnection},
     },
     lazy_static::lazy_static,
@@ -32,7 +32,7 @@ impl QuicTpuConnection {
     }
 
     pub fn new(
-        endpoint: Arc<QuicLazyEndpoint>,
+        endpoint: Arc<QuicLazyInitializedEndpoint>,
         tpu_addr: SocketAddr,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Self {
