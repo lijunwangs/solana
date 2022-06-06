@@ -218,7 +218,7 @@ pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
 /// Models the pool of connections
 struct ConnectionPool {
     /// The connections in the pool
-    connections: Vec<ConnectionEntry>,
+    connections: Vec<ConnectionPoolEntry>,
 
     /// A simple reference count of connections being used.
     /// A connection can be used multiple times. The reference count will be dropped
@@ -234,7 +234,7 @@ struct ConnectionPool {
 impl ConnectionPool {
     /// Get a connection from the pool. It must have at least one connection in the pool.
     /// This randomly picks a connection in the pool and increment the reference count.
-    fn borrow_connection(&self) -> ConnectionEntry {
+    fn borrow_connection(&self) -> ConnectionPoolEntry {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
         let connection = self.connections[n].clone();
@@ -244,7 +244,7 @@ impl ConnectionPool {
 
     /// Return the connection to the pool. The _connection is not used for now,
     /// which can be used to build more accurate reference counting on a connection instance.
-    fn return_connection(&self, _connection: &ConnectionEntry) {
+    fn return_connection(&self, _connection: &ConnectionPoolEntry) {
         self.references.fetch_sub(1, Ordering::Relaxed);
     }
 
@@ -292,7 +292,7 @@ impl ConnectionMap {
     pub fn decrement_connection_reference(
         &self,
         address: &SocketAddr,
-        connection: &ConnectionEntry,
+        connection: &ConnectionPoolEntry,
     ) {
         if let Some(entry) = self.map.get(address) {
             entry.return_connection(connection);
@@ -304,18 +304,20 @@ lazy_static! {
     static ref CONNECTION_MAP: RwLock<ConnectionMap> = RwLock::new(ConnectionMap::new());
 }
 
+/// Configure whether to use quic for tpu
 pub fn set_use_quic(use_quic: bool) {
     let mut map = (*CONNECTION_MAP).write().unwrap();
     map.set_use_quic(use_quic);
 }
 
+/// Configure the connection pool size per address
 pub fn set_connection_pool_size(connection_pool_size: usize) {
     let mut map = (*CONNECTION_MAP).write().unwrap();
     map.set_connection_pool_size(connection_pool_size);
 }
 
 struct GetConnectionResult {
-    connection: ConnectionEntry,
+    connection: ConnectionPoolEntry,
     cache_hit: bool,
     report_stats: bool,
     map_timing_ms: u64,
@@ -326,7 +328,7 @@ struct GetConnectionResult {
 }
 
 struct CreateConnectionResult {
-    connection: ConnectionEntry,
+    connection: ConnectionPoolEntry,
     cache_hit: bool,
     connection_cache_stats: Arc<ConnectionCacheStats>,
     num_evictions: u64,
@@ -344,15 +346,15 @@ fn create_connection(lock_timing_ms: &mut u64, addr: &SocketAddr) -> CreateConne
     // Read again, as it is possible that between read lock dropped and the write lock acquired
     // another thread could have setup the connection.
 
-    let (to_create_connection, endpoint) =
-        map.map
-            .get(addr)
-            .map_or((true, Arc::new(QuicLazyInitializedEndpoint::new())), |pool| {
-                (
-                    pool.need_new_connection(map.connection_pool_size),
-                    pool.endpoint.clone(),
-                )
-            });
+    let (to_create_connection, endpoint) = map.map.get(addr).map_or(
+        (true, Arc::new(QuicLazyInitializedEndpoint::new())),
+        |pool| {
+            (
+                pool.need_new_connection(map.connection_pool_size),
+                pool.endpoint.clone(),
+            )
+        },
+    );
 
     let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
         if to_create_connection {
@@ -362,7 +364,7 @@ fn create_connection(lock_timing_ms: &mut u64, addr: &SocketAddr) -> CreateConne
                 UdpTpuConnection::new(*addr, map.stats.clone()).into()
             };
 
-            let connection = ConnectionEntry {
+            let connection = ConnectionPoolEntry {
                 connection: Arc::new(connection),
             };
 
@@ -474,7 +476,7 @@ fn get_or_add_connection(addr: &SocketAddr) -> GetConnectionResult {
 
 // TODO: see https://github.com/solana-labs/solana/issues/23661
 // remove lazy_static and optimize and refactor this
-pub fn get_connection(addr: &SocketAddr) -> ConnectionEntry {
+pub fn get_connection(addr: &SocketAddr) -> ConnectionPoolEntry {
     let mut get_connection_measure = Measure::start("get_connection_measure");
     let GetConnectionResult {
         connection,
