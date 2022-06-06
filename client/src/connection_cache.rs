@@ -220,32 +220,24 @@ struct ConnectionPool {
     /// The connections in the pool
     connections: Vec<Arc<Connection>>,
 
-    /// A simple reference count of connections being used.
-    /// A connection can be used multiple times. The reference count will be dropped
-    /// whe the connection object is dropped.
-    /// This helps to avoid creating new connections in case of the count of threads using
-    /// the pool is less than the pool size.
-    references: AtomicU64,
-
     /// Connections in this pool share the same endpoint
     endpoint: Arc<QuicLazyInitializedEndpoint>,
 }
 
 impl ConnectionPool {
     /// Get a connection from the pool. It must have at least one connection in the pool.
-    /// This randomly picks a connection in the pool and increment the reference count.
+    /// This randomly picks a connection in the pool.
     fn borrow_connection(&self) -> Arc<Connection> {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
         let connection = self.connections[n].clone();
-        self.references.fetch_add(1, Ordering::Relaxed);
         connection
     }
 
     /// Check if we need to create a new connection. If the count of the connections
-    /// is smaller than the pool size and we have outstanding users of the pool.
+    /// is smaller than the pool size.
     fn need_new_connection(&self, required_pool_size: usize) -> bool {
-        self.connections.len() < required_pool_size && self.references.load(Ordering::Relaxed) > 0
+        self.connections.len() < required_pool_size
     }
 }
 
@@ -369,7 +361,6 @@ fn create_connection(lock_timing_ms: &mut u64, addr: &SocketAddr) -> CreateConne
                 Entry::Vacant(entry) => {
                     entry.insert(ConnectionPool {
                         connections: vec![connection],
-                        references: AtomicU64::new(0),
                         endpoint: Arc::new(QuicLazyInitializedEndpoint::new()),
                     });
                 }
