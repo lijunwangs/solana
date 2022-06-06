@@ -210,7 +210,7 @@ impl ThinClient {
                 if num_confirmed == 0 {
                     let conn = get_connection(self.tpu_addr());
                     // Send the transaction if there has been no confirmation (e.g. the first time)
-                    conn.connection.send_wire_transaction(&wire_transaction)?;
+                    conn.send_wire_transaction(&wire_transaction)?;
                 }
 
                 if let Ok(confirmed_blocks) = self.poll_for_signature_confirmation(
@@ -597,8 +597,7 @@ impl AsyncClient for ThinClient {
         transaction: VersionedTransaction,
     ) -> TransportResult<Signature> {
         let conn = get_connection(self.tpu_addr());
-        conn.connection
-            .serialize_and_send_transaction(&transaction)?;
+        conn.serialize_and_send_transaction(&transaction)?;
         Ok(transaction.signatures[0])
     }
 
@@ -607,8 +606,7 @@ impl AsyncClient for ThinClient {
         batch: Vec<VersionedTransaction>,
     ) -> TransportResult<()> {
         let conn = get_connection(self.tpu_addr());
-        conn.connection
-            .par_serialize_and_send_transaction_batch(&batch[..])?;
+        conn.par_serialize_and_send_transaction_batch(&batch[..])?;
         Ok(())
     }
 }

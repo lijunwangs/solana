@@ -101,9 +101,7 @@ impl TpuClient {
         {
             let conn = get_connection(&tpu_address);
             // Fake async
-            let result = conn
-                .connection
-                .send_wire_transaction_async(wire_transaction.clone());
+            let result = conn.send_wire_transaction_async(wire_transaction.clone());
             if let Err(err) = result {
                 last_error = Some(err);
             } else {
