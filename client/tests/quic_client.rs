@@ -3,8 +3,9 @@ mod tests {
     use {
         crossbeam_channel::unbounded,
         solana_client::{
-            connection_cache::ConnectionCacheStats, nonblocking::quic_client::QuicLazyInitializedEndpoint,
-            quic_client::QuicTpuConnection, tpu_connection::TpuConnection,
+            connection_cache::ConnectionCacheStats,
+            nonblocking::quic_client::QuicLazyInitializedEndpoint, quic_client::QuicTpuConnection,
+            tpu_connection::TpuConnection,
         },
         solana_sdk::{packet::PACKET_DATA_SIZE, signature::Keypair},
         solana_streamer::quic::{spawn_server, StreamStats},
