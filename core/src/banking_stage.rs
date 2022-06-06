@@ -558,22 +558,21 @@ impl BankingStage {
 
             let mut measure = Measure::start("banking_stage-forward-us");
 
-            let res = if let ForwardOption::ForwardTpuVote = forward_option {
+            let conn = if let ForwardOption::ForwardTpuVote = forward_option {
                 // The vote must be forwarded using only UDP. Let's get the UDP connection.
                 banking_stage_stats
                     .forwarded_vote_count
                     .fetch_add(packet_vec_len, Ordering::Relaxed);
-                let conn = UdpTpuConnection::new_from_addr(addr);
-                conn.send_wire_transaction_batch_async(packet_vec)
+                Arc::new(UdpTpuConnection::new_from_addr(addr).into())
             } else {
                 // All other transactions can be forwarded using QUIC, get_connection() will use
                 // system wide setting to pick the correct connection object.
                 banking_stage_stats
                     .forwarded_transaction_count
                     .fetch_add(packet_vec_len, Ordering::Relaxed);
-                let conn = get_connection(&addr);
-                conn.send_wire_transaction_batch_async(packet_vec)
+                get_connection(&addr)
             };
+            let res = conn.send_wire_transaction_batch_async(packet_vec);
 
             measure.stop();
             inc_new_counter_info!(

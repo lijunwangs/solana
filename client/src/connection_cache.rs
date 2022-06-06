@@ -230,8 +230,7 @@ impl ConnectionPool {
     fn borrow_connection(&self) -> Arc<Connection> {
         let mut rng = thread_rng();
         let n = rng.gen_range(0, self.connections.len());
-        let connection = self.connections[n].clone();
-        connection
+        self.connections[n].clone()
     }
 
     /// Check if we need to create a new connection. If the count of the connections
