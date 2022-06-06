@@ -3,7 +3,7 @@ mod tests {
     use {
         crossbeam_channel::unbounded,
         solana_client::{
-            connection_cache::ConnectionCacheStats, nonblocking::quic_client::QuicLazyEndpoint,
+            connection_cache::ConnectionCacheStats, nonblocking::quic_client::QuicLazyInitializedEndpoint,
             quic_client::QuicTpuConnection, tpu_connection::TpuConnection,
         },
         solana_sdk::{packet::PACKET_DATA_SIZE, signature::Keypair},
@@ -48,7 +48,7 @@ mod tests {
         let tpu_addr = SocketAddr::new(addr, port);
         let connection_cache_stats = Arc::new(ConnectionCacheStats::default());
         let client = QuicTpuConnection::new(
-            Arc::new(QuicLazyEndpoint::default()),
+            Arc::new(QuicLazyInitializedEndpoint::default()),
             tpu_addr,
             connection_cache_stats,
         );
