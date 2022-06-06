@@ -221,11 +221,11 @@ impl QuicClient {
         stats: &ClientStats,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Result<Arc<NewConnection>, WriteError> {
-        let mut try_count = 0;
+        let mut connection_try_count = 0;
         let mut last_connection_id = 0;
         let mut last_error = None;
 
-        while try_count < 3 {
+        while connection_try_count < 2 {
             let connection = {
                 let mut conn_guard = self.connection.lock().await;
 
@@ -241,11 +241,11 @@ impl QuicClient {
                                         "Made 0rtt connection to {} with id {} try_count {}, last_connection_id: {}, last_error: {:?}",
                                         self.addr,
                                         conn.connection.stable_id(),
-                                        try_count,
+                                        connection_try_count,
                                         last_connection_id,
                                         last_error,
                                     );
-                                    try_count += 1;
+                                    connection_try_count += 1;
                                     conn
                                 }
                                 Err(err) => {
@@ -275,9 +275,9 @@ impl QuicClient {
                                     "Made connection to {} id {} try_count {}",
                                     self.addr,
                                     conn.connection.connection.stable_id(),
-                                    try_count
+                                    connection_try_count
                                 );
-                                try_count += 1;
+                                connection_try_count += 1;
                                 conn.connection.clone()
                             }
                             Err(err) => {
