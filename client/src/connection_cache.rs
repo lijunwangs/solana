@@ -5,7 +5,7 @@ use {
         tpu_connection::{ClientStats, Connection},
         udp_client::UdpTpuConnection,
     },
-    indexmap::map::IndexMap,
+    indexmap::map::{Entry, IndexMap},
     lazy_static::lazy_static,
     log::*,
     rand::{thread_rng, Rng},
@@ -22,7 +22,6 @@ use {
 
 // Should be non-zero
 static MAX_CONNECTIONS: usize = 1024;
-
 
 #[derive(Default)]
 pub struct ConnectionCacheStats {
