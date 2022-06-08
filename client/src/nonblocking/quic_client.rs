@@ -9,6 +9,7 @@ use {
     async_mutex::Mutex,
     futures::future::join_all,
     itertools::Itertools,
+    log::*,
     quinn::{
         ClientConfig, Endpoint, EndpointConfig, IdleTimeout, NewConnection, VarInt, WriteError,
     },
@@ -216,6 +217,7 @@ impl QuicClient {
                 let connection = {
                     let mut conn_guard = self.connection.lock().await;
                     let conn = conn_guard.as_mut().unwrap();
+                    info!("Making 0rtt connection to {}", self.addr);
                     conn.make_connection_0rtt(self.addr, stats).await?
                 };
                 Self::_send_buffer_using_conn(data, &connection).await?;
