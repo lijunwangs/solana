@@ -131,7 +131,7 @@ impl QuicNewConnection {
         stats: &ClientStats,
     ) -> Result<Self, WriteError> {
         let mut make_connection_measure = Measure::start("make_connection_measure");
-        let endpoint = endpoint.get_endpoint().await;
+        let endpoint = QuicLazyInitializedEndpoint::create_endpoint();
 
         let connecting = endpoint.connect(addr, "connect").unwrap();
         stats.total_connections.fetch_add(1, Ordering::Relaxed);
@@ -147,7 +147,7 @@ impl QuicNewConnection {
         let connection = connecting_result?;
 
         Ok(Self {
-            endpoint,
+            endpoint: Arc::new(endpoint),
             connection: Arc::new(connection),
         })
     }
