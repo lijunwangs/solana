@@ -223,15 +223,14 @@ pub struct ConnectionCache {
     last_stats: AtomicInterval,
     use_quic: bool,
     connection_pool_size: usize,
+    /// Connections in this pool share the same endpoint
+    endpoint: Option<Arc<QuicLazyInitializedEndpoint>>,
 }
 
 /// Models the pool of connections
 struct ConnectionPool {
     /// The connections in the pool
     connections: Vec<Arc<Connection>>,
-
-    /// Connections in this pool share the same endpoint
-    endpoint: Option<Arc<QuicLazyInitializedEndpoint>>,
 }
 
 impl ConnectionPool {
@@ -257,6 +256,7 @@ impl ConnectionCache {
         Self {
             use_quic,
             connection_pool_size,
+            endpoint: Self::create_endpoint(use_quic),
             ..Self::default()
         }
     }
@@ -265,8 +265,8 @@ impl ConnectionCache {
         self.use_quic
     }
 
-    fn create_endpoint(&self) -> Option<Arc<QuicLazyInitializedEndpoint>> {
-        if self.use_quic {
+    fn create_endpoint(use_quic: bool) -> Option<Arc<QuicLazyInitializedEndpoint>> {
+        if use_quic {
             Some(Arc::new(QuicLazyInitializedEndpoint::new()))
         } else {
             None
@@ -288,20 +288,15 @@ impl ConnectionCache {
         // Read again, as it is possible that between read lock dropped and the write lock acquired
         // another thread could have setup the connection.
 
-        let (to_create_connection, endpoint) =
-            map.get(addr)
-                .map_or((true, self.create_endpoint()), |pool| {
-                    (
-                        pool.need_new_connection(self.connection_pool_size),
-                        pool.endpoint.clone(),
-                    )
-                });
+        let to_create_connection = map.get(addr).map_or(true, |pool| {
+            pool.need_new_connection(self.connection_pool_size)
+        });
 
         let (cache_hit, connection_cache_stats, num_evictions, eviction_timing_ms) =
             if to_create_connection {
                 let connection: Connection = if self.use_quic {
                     QuicTpuConnection::new(
-                        endpoint.as_ref().unwrap().clone(),
+                        self.endpoint.as_ref().unwrap().clone(),
                         *addr,
                         self.stats.clone(),
                     )
@@ -332,7 +327,6 @@ impl ConnectionCache {
                     Entry::Vacant(entry) => {
                         entry.insert(ConnectionPool {
                             connections: vec![connection],
-                            endpoint,
                         });
                     }
                 }
@@ -475,6 +469,7 @@ impl Default for ConnectionCache {
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
             use_quic: DEFAULT_TPU_USE_QUIC,
+            endpoint: Self::create_endpoint(DEFAULT_TPU_USE_QUIC),
             connection_pool_size: DEFAULT_TPU_CONNECTION_POOL_SIZE,
         }
     }
