@@ -35,11 +35,14 @@ pub fn spawn_server(
     stats: Arc<StreamStats>,
 ) -> Result<JoinHandle<()>, QuicServerError> {
     let (config, _cert) = configure_server(keypair, gossip_host)?;
+    info!("zzzzz setup quic server at port {:?}", sock);
 
     let (_, incoming) = {
         Endpoint::new(EndpointConfig::default(), Some(config), sock)
             .map_err(|_e| QuicServerError::EndpointFailed)?
     };
+
+    info!("zzzzz setup quic server successfully");
 
     let handle = tokio::spawn(run_server(
         incoming,

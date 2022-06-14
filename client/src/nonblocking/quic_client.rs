@@ -81,6 +81,7 @@ impl QuicLazyInitializedEndpoint {
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(Duration::from_millis(QUIC_KEEP_ALIVE_MS)));
 
+        info!("zzzzz Setup quic endpoint {:?}", endpoint.local_addr());
         endpoint.set_default_client_config(config);
         endpoint
     }
