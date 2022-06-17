@@ -5,6 +5,7 @@ use {
     },
     crossbeam_channel::Sender,
     futures_util::stream::StreamExt,
+    log::*,
     quinn::{Endpoint, EndpointConfig, Incoming, IncomingUniStreams, NewConnection, VarInt},
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -110,6 +111,7 @@ pub async fn run_server(
                         let mut connection_table_l = staked_connection_table.lock().unwrap();
                         let num_pruned = connection_table_l.prune_oldest(max_staked_connections);
                         stats.num_evictions.fetch_add(num_pruned, Ordering::Relaxed);
+                        info!("Set up staked connection from {:?}", remote_addr);
                         connection.set_max_concurrent_uni_streams(
                             VarInt::from_u64(
                                 ((stake as f64 / total_stake as f64)
@@ -127,6 +129,7 @@ pub async fn run_server(
                         connection.set_max_concurrent_uni_streams(
                             VarInt::from_u64(QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS as u64).unwrap(),
                         );
+                        info!("Set up unstaked connection from {:?}", remote_addr);
                         (connection_table_l, 0)
                     }
                 };
