@@ -3463,13 +3463,13 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 [[package]]
 name = "quinn"
 version = "0.8.3"
-source = "git+https://github.com/lijunwangs/quinn.git?branch=0.8.x#1e388cd281869068c53187235f47eb5608fd5673"
+source = "git+https://github.com/lijunwangs/quinn.git?branch=connection_stability#6853b1d01be2ce6220ca6388aa7d9eb9d2491610"
 dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
  "fxhash",
- "quinn-proto 0.8.3 (git+https://github.com/lijunwangs/quinn.git?branch=0.8.x)",
+ "quinn-proto",
  "quinn-udp",
  "rustls 0.20.6",
  "thiserror",
@@ -3481,29 +3481,11 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a13a5c0a674c1ce7150c9df7bc4a1e46c2fbbe7c710f56c0dc78b1a810e779e"
+source = "git+https://github.com/lijunwangs/quinn.git?branch=connection_stability#6853b1d01be2ce6220ca6388aa7d9eb9d2491610"
 dependencies = [
  "bytes",
  "fxhash",
- "rand 0.8.5",
- "ring",
- "rustls 0.20.6",
- "rustls-pemfile 0.2.1",
- "slab",
- "thiserror",
- "tinyvec",
- "tracing",
- "webpki 0.22.0",
-]
-
-[[package]]
-name = "quinn-proto"
-version = "0.8.3"
-source = "git+https://github.com/lijunwangs/quinn.git?branch=0.8.x#1e388cd281869068c53187235f47eb5608fd5673"
-dependencies = [
- "bytes",
- "fxhash",
+ "log",
  "rand 0.8.5",
  "ring",
  "rustls 0.20.6",
@@ -3519,11 +3501,11 @@ dependencies = [
 [[package]]
 name = "quinn-udp"
 version = "0.1.2"
-source = "git+https://github.com/lijunwangs/quinn.git?branch=0.8.x#1e388cd281869068c53187235f47eb5608fd5673"
+source = "git+https://github.com/lijunwangs/quinn.git?branch=connection_stability#6853b1d01be2ce6220ca6388aa7d9eb9d2491610"
 dependencies = [
  "futures-util",
  "libc",
- "quinn-proto 0.8.3 (git+https://github.com/lijunwangs/quinn.git?branch=0.8.x)",
+ "quinn-proto",
  "socket2",
  "tokio",
  "tracing",
@@ -4857,7 +4839,7 @@ dependencies = [
  "lazy_static",
  "log",
  "quinn",
- "quinn-proto 0.8.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quinn-proto",
  "rand 0.7.3",
  "rand_chacha 0.2.2",
  "rayon",

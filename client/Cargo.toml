@@ -27,8 +27,8 @@ itertools = "0.10.2"
 jsonrpc-core = "18.0.0"
 lazy_static = "1.4.0"
 log = "0.4.17"
-quinn = {git = "https://github.com/lijunwangs/quinn.git", branch = "0.8.x"}
-quinn-proto = "0.8.3"
+quinn = {git = "https://github.com/lijunwangs/quinn.git", branch = "connection_stability"}
+quinn-proto = {git = "https://github.com/lijunwangs/quinn.git", branch = "connection_stability"}
 rand = "0.7.0"
 rand_chacha = "0.2.2"
 rayon = "1.5.3"
