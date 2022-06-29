@@ -7,7 +7,8 @@ use {
     futures_util::stream::StreamExt,
     percentage::Percentage,
     quinn::{
-        Connecting, Endpoint, EndpointConfig, Incoming, IncomingUniStreams, NewConnection, VarInt,
+        Connecting, Connection, Endpoint, EndpointConfig, Incoming, IncomingUniStreams,
+        NewConnection, VarInt,
     },
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -184,6 +185,7 @@ async fn setup_connection(
                 let stats = stats.clone();
                 let connection_table1 = connection_table.clone();
                 tokio::spawn(handle_connection(
+                    connection,
                     uni_streams,
                     packet_sender,
                     remote_addr,
@@ -197,6 +199,11 @@ async fn setup_connection(
                 stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
             }
         } else {
+            info!(
+                "zzzzz Closing connection for {:?} id: {}",
+                connection.remote_address(),
+                connection.stable_id()
+            );
             connection.close(0u32.into(), &[0u8]);
             stats
                 .connection_add_failed_unstaked_node
@@ -210,6 +217,7 @@ async fn setup_connection(
 }
 
 async fn handle_connection(
+    connection: Connection,
     mut uni_streams: IncomingUniStreams,
     packet_sender: Sender<PacketBatch>,
     remote_addr: SocketAddr,
@@ -219,9 +227,10 @@ async fn handle_connection(
     stats: Arc<StreamStats>,
     stake: u64,
 ) {
-    debug!(
-        "quic new connection {} streams: {} connections: {}",
+    info!(
+        "zzzzzz quic new connection {} id {}, streams: {} connections: {}",
         remote_addr,
+        connection.stable_id(),
         stats.total_streams.load(Ordering::Relaxed),
         stats.total_connections.load(Ordering::Relaxed),
     );
@@ -272,7 +281,7 @@ async fn handle_connection(
                         });
                     }
                     Err(e) => {
-                        debug!("stream error: {:?}", e);
+                        info!("zzzzzz stream error: {:?} {}", e, remote_addr);
                         break;
                     }
                 },
