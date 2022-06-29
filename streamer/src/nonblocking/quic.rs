@@ -200,9 +200,11 @@ async fn setup_connection(
             }
         } else {
             info!(
-                "zzzzz Closing connection for {:?} id: {}",
+                "zzzzz Closing connection for {:?} id: {} stake: {} max_unstaked_connections: {}",
                 connection.remote_address(),
-                connection.stable_id()
+                connection.stable_id(),
+                stake,
+                max_unstaked_connections,
             );
             connection.close(0u32.into(), &[0u8]);
             stats

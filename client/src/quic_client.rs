@@ -97,11 +97,12 @@ impl TpuConnection for QuicTpuConnection {
         let client = self.client.clone();
         let connection_stats = self.connection_stats.clone();
         let len = buffers.len();
+        let addr = self.client.tpu_addr().clone();
         //drop and detach the task
         let _ = RUNTIME.spawn(async move {
             let send_batch = client.send_batch(&buffers, &stats, connection_stats.clone());
             if let Err(e) = send_batch.await {
-                warn!("Failed to send transaction batch async to {:?}", e);
+                warn!("Failed to send transaction batch async to {:?} to {:?}", e, addr);
                 datapoint_warn!("send-wire-batch-async", ("failure", 1, i64),);
                 connection_stats.add_client_stats(&stats, len, false);
             } else {
