@@ -233,21 +233,28 @@ async fn setup_connection(
 
             if let Some((mut connection_table_l, stake)) = table_and_stake {
                 let table_type = connection_table_l.peer_type;
-                let max_uni_streams = match table_type {
-                    ConnectionPeerType::Unstaked => {
-                        VarInt::from_u64(QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS as u64)
-                    }
+                let (max_uni_streams, window_size) = match table_type {
+                    ConnectionPeerType::Unstaked => (
+                        VarInt::from_u64(QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS as u64),
+                        VarInt::from_u64(
+                            PACKET_DATA_SIZE as u64 * QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS as u64,
+                        ),
+                    ),
                     ConnectionPeerType::Staked => {
                         let staked_nodes = staked_nodes.read().unwrap();
-                        VarInt::from_u64(
-                            ((stake as f64 / staked_nodes.total_stake as f64)
-                                * QUIC_TOTAL_STAKED_CONCURRENT_STREAMS)
-                                as u64,
+                        let streams = ((stake as f64 / staked_nodes.total_stake as f64)
+                            * QUIC_TOTAL_STAKED_CONCURRENT_STREAMS)
+                            as u64;
+
+                        (
+                            VarInt::from_u64(streams),
+                            VarInt::from_u64(PACKET_DATA_SIZE as u64 * streams as u64),
                         )
                     }
                 };
 
                 if let Ok(max_uni_streams) = max_uni_streams {
+                    connection.set_receive_window(window_size.unwrap());
                     connection.set_max_concurrent_uni_streams(max_uni_streams);
                     if let Some((last_update, stream_exit)) = connection_table_l.try_add_connection(
                         ConnectionTableKey::new(remote_addr.ip(), remote_pubkey),
