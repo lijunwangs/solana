@@ -3556,11 +3556,11 @@ checksum = "a993555f31e5a609f617c12db6250dedcac1b0a85076912c436e6fc9b2c8e6a3"
 [[package]]
 name = "quinn"
 version = "0.8.0"
-source = "git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.5#de919ffc53844cc38e051f21f23077f25c461137"
+source = "git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.6#37b30a82406bb06a203df805a8da719ebe87fb37"
 dependencies = [
  "bytes",
  "quinn-proto 0.8.0",
- "quinn-udp 0.1.0 (git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.5)",
+ "quinn-udp 0.1.0 (git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.6)",
  "rustc-hash",
  "rustls 0.20.6",
  "thiserror",
@@ -3591,7 +3591,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.8.0"
-source = "git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.5#de919ffc53844cc38e051f21f23077f25c461137"
+source = "git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.6#37b30a82406bb06a203df805a8da719ebe87fb37"
 dependencies = [
  "bytes",
  "rand 0.8.5",
@@ -3644,7 +3644,7 @@ dependencies = [
 [[package]]
 name = "quinn-udp"
 version = "0.1.0"
-source = "git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.5#de919ffc53844cc38e051f21f23077f25c461137"
+source = "git+https://github.com/lijunwangs/quinn.git?branch=configure_receive_window_per_connection.6#37b30a82406bb06a203df805a8da719ebe87fb37"
 dependencies = [
  "libc",
  "quinn-proto 0.8.0",
