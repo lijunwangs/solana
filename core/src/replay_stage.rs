@@ -1,6 +1,4 @@
 //! The `replay_stage` replays transactions broadcast by the leader.
-#[macro_use]
-extern crate approx;
 
 use {
     crate::{
