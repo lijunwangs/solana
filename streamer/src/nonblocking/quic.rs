@@ -17,7 +17,11 @@ use {
     solana_sdk::{
         packet::{Packet, PACKET_DATA_SIZE},
         pubkey::Pubkey,
-        quic::{QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS, QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS},
+        quic::{
+            QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS, QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO,
+            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
+            QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
+        },
         signature::Keypair,
         timing,
     },
@@ -233,11 +237,11 @@ async fn setup_connection(
 
             if let Some((mut connection_table_l, stake)) = table_and_stake {
                 let table_type = connection_table_l.peer_type;
-                let (max_uni_streams, window_size) = match table_type {
+                let (max_uni_streams, receive_window) = match table_type {
                     ConnectionPeerType::Unstaked => (
                         VarInt::from_u64(QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS as u64),
                         VarInt::from_u64(
-                            PACKET_DATA_SIZE as u64 * QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS as u64,
+                            (PACKET_DATA_SIZE as f64 * QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO) as u64,
                         ),
                     ),
                     ConnectionPeerType::Staked => {
@@ -246,15 +250,28 @@ async fn setup_connection(
                             * QUIC_TOTAL_STAKED_CONCURRENT_STREAMS)
                             as u64;
 
+                        // Testing shows the maximum througput from a connection is achieved at receive_window =
+                        // PACKET_DATA_SIZE * 10. Beyond that, there is not much gain. We linearly map the
+                        // stake to the ratio range from QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO to
+                        // QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO. Where the linear algebra of finding the ratio 'r'
+                        // for stake 's' is,
+                        // r(s) = a * s + b. Given the max_stake, min_stake, max_ratio, min_ratio, we can find
+                        // a and b.
+                        let max_ratio = QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO;
+                        let min_ratio = QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO;
+                        let a: f64 = (max_ratio - min_ratio)
+                            / (staked_nodes.max_stake - staked_nodes.min_stake) as f64;
+                        let b: f64 = max_ratio - ((staked_nodes.max_stake as f64) * a);
+                        let ratio = (a as f64 * stake as f64) + b;
                         (
                             VarInt::from_u64(streams),
-                            VarInt::from_u64(PACKET_DATA_SIZE as u64 * streams as u64),
+                            VarInt::from_u64((PACKET_DATA_SIZE as f64 * ratio) as u64),
                         )
                     }
                 };
 
                 if let Ok(max_uni_streams) = max_uni_streams {
-                    connection.set_receive_window(window_size.unwrap());
+                    connection.set_receive_window(receive_window.unwrap());
                     connection.set_max_concurrent_uni_streams(max_uni_streams);
                     if let Some((last_update, stream_exit)) = connection_table_l.try_add_connection(
                         ConnectionTableKey::new(remote_addr.ip(), remote_pubkey),
