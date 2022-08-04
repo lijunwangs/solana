@@ -280,8 +280,8 @@ async fn setup_connection(
                 };
 
                 info!(
-                    "Connection parameter: max_uni_streams: {:?}, receive_window: {:?}",
-                    max_uni_streams, receive_window
+                    "Connection parameter: max_uni_streams: {:?}, receive_window: {:?} for peer {:?}",
+                    max_uni_streams, receive_window, remote_addr
                 );
                 if let Ok(max_uni_streams) = max_uni_streams {
                     connection.set_receive_window(receive_window.unwrap());
