@@ -160,6 +160,27 @@ fn get_connection_stake(
         })
 }
 
+/// Calculate the ratio for per connection receive window from a staked peer
+fn cacluate_receive_window_ratio_for_staked_node(staked_nodes: &StakedNodes, stake: u64) -> f64 {
+    // Testing shows the maximum througput from a connection is achieved at receive_window =
+    // PACKET_DATA_SIZE * 10. Beyond that, there is not much gain. We linearly map the
+    // stake to the ratio range from QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO to
+    // QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO. Where the linear algebra of finding the ratio 'r'
+    // for stake 's' is,
+    // r(s) = a * s + b. Given the max_stake, min_stake, max_ratio, min_ratio, we can find
+    // a and b.
+    let max_ratio = QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO;
+    let min_ratio = QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO;
+    if staked_nodes.max_stake > staked_nodes.min_stake {
+        let a = (max_ratio - min_ratio) / (staked_nodes.max_stake - staked_nodes.min_stake) as f64;
+        let b: f64 = max_ratio - ((staked_nodes.max_stake as f64) * a);
+        let ratio = (a as f64 * stake as f64) + b;
+        ratio
+    } else {
+        QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO
+    }
+}
+
 async fn setup_connection(
     connecting: Connecting,
     unstaked_connection_table: Arc<Mutex<ConnectionTable>>,
@@ -249,25 +270,8 @@ async fn setup_connection(
                         let streams = ((stake as f64 / staked_nodes.total_stake as f64)
                             * QUIC_TOTAL_STAKED_CONCURRENT_STREAMS)
                             as u64;
-
-                        // Testing shows the maximum througput from a connection is achieved at receive_window =
-                        // PACKET_DATA_SIZE * 10. Beyond that, there is not much gain. We linearly map the
-                        // stake to the ratio range from QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO to
-                        // QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO. Where the linear algebra of finding the ratio 'r'
-                        // for stake 's' is,
-                        // r(s) = a * s + b. Given the max_stake, min_stake, max_ratio, min_ratio, we can find
-                        // a and b.
-                        let max_ratio = QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO;
-                        let min_ratio = QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO;
-                        let ratio = if staked_nodes.max_stake > staked_nodes.min_stake {
-                            let a = (max_ratio - min_ratio)
-                                / (staked_nodes.max_stake - staked_nodes.min_stake) as f64;
-                            let b: f64 = max_ratio - ((staked_nodes.max_stake as f64) * a);
-                            let ratio = (a as f64 * stake as f64) + b;
-                            ratio
-                        } else {
-                            QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO
-                        };
+                        let ratio =
+                            cacluate_receive_window_ratio_for_staked_node(&staked_nodes, stake);
                         (
                             VarInt::from_u64(streams),
                             VarInt::from_u64((PACKET_DATA_SIZE as f64 * ratio) as u64),
@@ -275,6 +279,10 @@ async fn setup_connection(
                     }
                 };
 
+                info!(
+                    "Connection parameter: max_uni_streams: {:?}, receive_window: {:?}",
+                    max_uni_streams, receive_window
+                );
                 if let Ok(max_uni_streams) = max_uni_streams {
                     connection.set_receive_window(receive_window.unwrap());
                     connection.set_max_concurrent_uni_streams(max_uni_streams);
