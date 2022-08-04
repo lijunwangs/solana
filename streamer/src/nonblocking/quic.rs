@@ -320,6 +320,7 @@ async fn setup_connection(
                             stream_exit,
                             stats,
                             stake,
+                            table_type,
                         ));
                     } else {
                         stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
@@ -355,6 +356,7 @@ async fn handle_connection(
     stream_exit: Arc<AtomicBool>,
     stats: Arc<StreamStats>,
     stake: u64,
+    peer_type: ConnectionPeerType,
 ) {
     debug!(
         "quic new connection {} streams: {} connections: {}",
@@ -394,6 +396,7 @@ async fn handle_connection(
                                         &packet_sender,
                                         stats.clone(),
                                         stake,
+                                        peer_type,
                                     ) {
                                         last_update.store(timing::timestamp(), Ordering::Relaxed);
                                         break;
@@ -441,6 +444,7 @@ fn handle_chunk(
     packet_sender: &Sender<PacketBatch>,
     stats: Arc<StreamStats>,
     stake: u64,
+    peer_type: ConnectionPeerType,
 ) -> bool {
     match chunk {
         Ok(maybe_chunk) => {
@@ -478,6 +482,18 @@ fn handle_chunk(
                     batch[0].buffer_mut()[chunk.offset as usize..end].copy_from_slice(&chunk.bytes);
                     batch[0].meta.size = std::cmp::max(batch[0].meta.size, end);
                     stats.total_chunks_received.fetch_add(1, Ordering::Relaxed);
+                    match peer_type {
+                        ConnectionPeerType::Staked => {
+                            stats
+                                .total_staked_chunks_received
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                        ConnectionPeerType::Unstaked => {
+                            stats
+                                .total_unstaked_chunks_received
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
                 }
             } else {
                 trace!("chunk is none");
