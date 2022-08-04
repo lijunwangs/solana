@@ -259,10 +259,15 @@ async fn setup_connection(
                         // a and b.
                         let max_ratio = QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO;
                         let min_ratio = QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO;
-                        let a: f64 = (max_ratio - min_ratio)
-                            / (staked_nodes.max_stake - staked_nodes.min_stake) as f64;
-                        let b: f64 = max_ratio - ((staked_nodes.max_stake as f64) * a);
-                        let ratio = (a as f64 * stake as f64) + b;
+                        let ratio = if staked_nodes.max_stake > staked_nodes.min_stake {
+                            let a = (max_ratio - min_ratio)
+                                / (staked_nodes.max_stake - staked_nodes.min_stake) as f64;
+                            let b: f64 = max_ratio - ((staked_nodes.max_stake as f64) * a);
+                            let ratio = (a as f64 * stake as f64) + b;
+                            ratio
+                        } else {
+                            QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO
+                        };
                         (
                             VarInt::from_u64(streams),
                             VarInt::from_u64((PACKET_DATA_SIZE as f64 * ratio) as u64),
