@@ -1399,4 +1399,40 @@ pub mod test {
         }
         assert_eq!(table.total_size, 0);
     }
+
+    #[test]
+    fn test_cacluate_receive_window_ratio_for_staked_node() {
+        let mut staked_nodes = StakedNodes::default();
+        staked_nodes.max_stake = 10000;
+        staked_nodes.min_stake = 0;
+        let ratio =
+            cacluate_receive_window_ratio_for_staked_node(&staked_nodes, staked_nodes.min_stake);
+        let ratio = format!("{:.2}", ratio);
+        let min_ratio = format!("{:.2}", QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO);
+        assert_eq!(ratio, min_ratio);
+
+        let ratio =
+            cacluate_receive_window_ratio_for_staked_node(&staked_nodes, staked_nodes.max_stake);
+        let ratio = format!("{:.2}", ratio);
+        let max_ratio = format!("{:.2}", QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO);
+        assert_eq!(ratio, max_ratio);
+
+        let ratio = cacluate_receive_window_ratio_for_staked_node(
+            &staked_nodes,
+            staked_nodes.max_stake / 2,
+        );
+        let ratio = format!("{:.2}", ratio);
+        let average_ratio = format!(
+            "{:.2}",
+            (QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO + QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO) / 2.
+        );
+        assert_eq!(ratio, average_ratio);
+
+        staked_nodes.max_stake = 10000;
+        staked_nodes.min_stake = 10000;
+        let ratio =
+            cacluate_receive_window_ratio_for_staked_node(&staked_nodes, staked_nodes.max_stake);
+        let ratio = format!("{:.2}", ratio);
+        assert_eq!(ratio, max_ratio);
+    }
 }
