@@ -19,9 +19,10 @@ use {
         packet::{Packet, PACKET_DATA_SIZE},
         pubkey::Pubkey,
         quic::{
-            QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS, QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO,
-            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_CONCURRENT_STREAMS,
-            QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO, QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
+            QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS, QUIC_MAX_STAKED_CONCURRENT_STREAMS,
+            QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO, QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
+            QUIC_MIN_STAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
+            QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
         },
         signature::Keypair,
         timing,
@@ -195,6 +196,7 @@ pub fn compute_max_allowed_uni_streams(
                         * QUIC_TOTAL_STAKED_CONCURRENT_STREAMS as f64)
                         as usize)
                         .max(QUIC_MIN_STAKED_CONCURRENT_STREAMS)
+                        .min(QUIC_MAX_STAKED_CONCURRENT_STREAMS)
                 }
             }
             _ => QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
@@ -1610,7 +1612,7 @@ pub mod test {
         );
         assert_eq!(
             compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 1000, 10000),
-            (QUIC_TOTAL_STAKED_CONCURRENT_STREAMS / (10_f64)) as usize
+            QUIC_MAX_STAKED_CONCURRENT_STREAMS,
         );
         assert_eq!(
             compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 100, 10000),
