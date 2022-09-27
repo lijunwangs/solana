@@ -537,7 +537,7 @@ async fn handle_connection(
                                         break;
                                     }
                                 } else {
-                                    info!("Timeout in receiving on stream");
+                                    info!("Timeout in receiving on stream {}", remote_addr);
                                     stats
                                         .total_stream_read_timeouts
                                         .fetch_add(1, Ordering::Relaxed);
@@ -547,7 +547,7 @@ async fn handle_connection(
                         });
                     }
                     Err(e) => {
-                        info!("stream error: {:?}", e);
+                        info!("stream error: {:?}, remote {}", e, remote_addr);
                         break;
                     }
                 },
