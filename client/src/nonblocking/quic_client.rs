@@ -93,7 +93,6 @@ impl QuicLazyInitializedEndpoint {
     }
 
     fn create_endpoint(&self) -> Endpoint {
-        info!("Creating endpoint in address {}", self.bind_addr);
         let (_, client_socket) = solana_net_utils::bind_in_range(
             self.bind_addr,
             VALIDATOR_PORT_RANGE,
