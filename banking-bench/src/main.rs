@@ -30,6 +30,7 @@ use {
     },
     solana_streamer::socket::SocketAddrSpace,
     std::{
+        net::{IpAddr, Ipv4Addr},
         sync::{atomic::Ordering, Arc, RwLock},
         thread::sleep,
         time::{Duration, Instant},
@@ -342,8 +343,9 @@ fn main() {
         );
         let cluster_info = Arc::new(cluster_info);
         let tpu_use_quic = matches.is_present("tpu_use_quic");
+        let ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let connection_cache = match tpu_use_quic {
-            true => ConnectionCache::new(DEFAULT_TPU_CONNECTION_POOL_SIZE),
+            true => ConnectionCache::new(DEFAULT_TPU_CONNECTION_POOL_SIZE, ip_addr),
             false => ConnectionCache::with_udp(DEFAULT_TPU_CONNECTION_POOL_SIZE),
         };
         let banking_stage = BankingStage::new_num_threads(

@@ -24,7 +24,7 @@ use {
     },
     solana_streamer::socket::SocketAddrSpace,
     std::{
-        collections::HashMap, fs::File, io::prelude::*, net::SocketAddr, path::Path, process::exit,
+        collections::HashMap, fs::File, io::prelude::*, net::{IpAddr, Ipv4Addr, SocketAddr}, path::Path, process::exit,
         sync::Arc,
     },
 };
@@ -45,6 +45,7 @@ fn create_client(
     num_nodes: usize,
     target_node: Option<Pubkey>,
 ) -> Arc<dyn BenchTpsClient + Send + Sync> {
+    let ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
     match external_client_type {
         ExternalClientType::RpcClient => Arc::new(RpcClient::new_with_commitment(
             json_rpc_url.to_string(),
@@ -52,7 +53,7 @@ fn create_client(
         )),
         ExternalClientType::ThinClient => {
             let connection_cache = match use_quic {
-                true => Arc::new(ConnectionCache::new(tpu_connection_pool_size)),
+                true => Arc::new(ConnectionCache::new(tpu_connection_pool_size, ip_addr)),
                 false => Arc::new(ConnectionCache::with_udp(tpu_connection_pool_size)),
             };
 
@@ -108,7 +109,7 @@ fn create_client(
                 CommitmentConfig::confirmed(),
             ));
             let connection_cache = match use_quic {
-                true => ConnectionCache::new(tpu_connection_pool_size),
+                true => ConnectionCache::new(tpu_connection_pool_size, ip_addr),
                 false => ConnectionCache::with_udp(tpu_connection_pool_size),
             };
 
