@@ -493,7 +493,7 @@ async fn handle_connection(
     stake: u64,
     peer_type: ConnectionPeerType,
 ) {
-    debug!(
+    info!(
         "quic new connection {} streams: {} connections: {}",
         remote_addr,
         stats.total_streams.load(Ordering::Relaxed),
@@ -537,7 +537,7 @@ async fn handle_connection(
                                         break;
                                     }
                                 } else {
-                                    debug!("Timeout in receiving on stream");
+                                    info!("Timeout in receiving on stream");
                                     stats
                                         .total_stream_read_timeouts
                                         .fetch_add(1, Ordering::Relaxed);
@@ -547,7 +547,7 @@ async fn handle_connection(
                         });
                     }
                     Err(e) => {
-                        debug!("stream error: {:?}", e);
+                        info!("stream error: {:?}", e);
                         break;
                     }
                 },
