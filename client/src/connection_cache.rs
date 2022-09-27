@@ -236,7 +236,6 @@ pub struct ConnectionCache {
     use_quic: bool,
     maybe_staked_nodes: Option<Arc<RwLock<StakedNodes>>>,
     maybe_client_pubkey: Option<Pubkey>,
-    bind_addr: IpAddr,
 }
 
 /// Models the pool of connections
@@ -265,13 +264,12 @@ impl ConnectionPool {
 }
 
 impl ConnectionCache {
-    pub fn new(connection_pool_size: usize, bind_addr: IpAddr) -> Self {
+    pub fn new(connection_pool_size: usize) -> Self {
         // The minimum pool size is 1.
         let connection_pool_size = 1.max(connection_pool_size);
         Self {
             use_quic: true,
             connection_pool_size,
-            bind_addr,
             ..Self::default()
         }
     }
@@ -279,8 +277,9 @@ impl ConnectionCache {
     pub fn update_client_certificate(
         &mut self,
         keypair: &Keypair,
+        ipaddr: IpAddr,
     ) -> Result<(), Box<dyn Error>> {
-        let (certs, priv_key) = new_self_signed_tls_certificate_chain(keypair, self.bind_addr)?;
+        let (certs, priv_key) = new_self_signed_tls_certificate_chain(keypair, ipaddr)?;
         self.client_certificate = Arc::new(QuicClientCertificate {
             certificates: certs,
             key: priv_key,
@@ -314,7 +313,6 @@ impl ConnectionCache {
     fn create_endpoint(&self, force_use_udp: bool) -> Option<Arc<QuicLazyInitializedEndpoint>> {
         if self.use_quic() && !force_use_udp {
             Some(Arc::new(QuicLazyInitializedEndpoint::new(
-                self.bind_addr,
                 self.client_certificate.clone(),
             )))
         } else {
@@ -553,10 +551,9 @@ impl ConnectionCache {
 
 impl Default for ConnectionCache {
     fn default() -> Self {
-        let bind_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let (certs, priv_key) = new_self_signed_tls_certificate_chain(
             &Keypair::new(),
-            bind_addr,
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
         .expect("Failed to initialize QUIC client certificates");
         Self {
@@ -565,7 +562,7 @@ impl Default for ConnectionCache {
             last_stats: AtomicInterval::default(),
             connection_pool_size: DEFAULT_TPU_CONNECTION_POOL_SIZE,
             tpu_udp_socket: Arc::new(
-                solana_net_utils::bind_with_any_port(bind_addr)
+                solana_net_utils::bind_with_any_port(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
                     .expect("Unable to bind to UDP socket"),
             ),
             client_certificate: Arc::new(QuicClientCertificate {
@@ -575,7 +572,6 @@ impl Default for ConnectionCache {
             use_quic: DEFAULT_TPU_USE_QUIC,
             maybe_staked_nodes: None,
             maybe_client_pubkey: None,
-            bind_addr,
         }
     }
 }

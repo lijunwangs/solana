@@ -71,7 +71,7 @@ use {
     },
     solana_streamer::socket::SocketAddrSpace,
     std::{
-        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+        net::{SocketAddr, UdpSocket},
         process::exit,
         sync::Arc,
         thread,
@@ -254,9 +254,8 @@ fn create_sender_thread(
     tpu_use_quic: bool,
 ) -> thread::JoinHandle<()> {
     // ConnectionCache is used instead of client because it gives ~6% higher pps
-    let ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
     let connection_cache = match tpu_use_quic {
-        true => ConnectionCache::new(DEFAULT_TPU_CONNECTION_POOL_SIZE, ip_addr),
+        true => ConnectionCache::new(DEFAULT_TPU_CONNECTION_POOL_SIZE),
         false => ConnectionCache::with_udp(DEFAULT_TPU_CONNECTION_POOL_SIZE),
     };
     let connection = connection_cache.get_connection(target);
@@ -757,9 +756,8 @@ fn main() {
             exit(1);
         });
 
-        let ip_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let connection_cache = match cmd_params.tpu_use_quic {
-            true => ConnectionCache::new(DEFAULT_TPU_CONNECTION_POOL_SIZE, ip_addr),
+            true => ConnectionCache::new(DEFAULT_TPU_CONNECTION_POOL_SIZE),
             false => ConnectionCache::with_udp(DEFAULT_TPU_CONNECTION_POOL_SIZE),
         };
         let (client, num_clients) = get_multi_client(

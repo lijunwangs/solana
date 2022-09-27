@@ -55,7 +55,6 @@ use {
         collections::HashMap,
         io::{Error, ErrorKind, Result},
         iter,
-        net::{IpAddr, Ipv4Addr},
         ops::Deref,
         path::{Path, PathBuf},
         sync::{Arc, RwLock},
@@ -299,14 +298,13 @@ impl LocalCluster {
 
         validators.insert(leader_pubkey, cluster_leader);
 
-        let bind_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let mut cluster = Self {
             funding_keypair: mint_keypair,
             entry_point_info: leader_contact_info,
             validators,
             genesis_config,
             connection_cache: match config.tpu_use_quic {
-                true => Arc::new(ConnectionCache::new(config.tpu_connection_pool_size, bind_addr)),
+                true => Arc::new(ConnectionCache::new(config.tpu_connection_pool_size)),
                 false => Arc::new(ConnectionCache::with_udp(config.tpu_connection_pool_size)),
             },
         };

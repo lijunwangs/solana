@@ -68,7 +68,6 @@ pub struct QuicClientCertificate {
 
 /// A lazy-initialized Quic Endpoint
 pub struct QuicLazyInitializedEndpoint {
-    bind_addr: IpAddr,
     endpoint: RwLock<Option<Arc<Endpoint>>>,
     client_certificate: Arc<QuicClientCertificate>,
 }
@@ -84,9 +83,8 @@ pub enum QuicError {
 }
 
 impl QuicLazyInitializedEndpoint {
-    pub fn new(bind_addr: IpAddr, client_certificate: Arc<QuicClientCertificate>) -> Self {
+    pub fn new(client_certificate: Arc<QuicClientCertificate>) -> Self {
         Self {
-            bind_addr,
             endpoint: RwLock::new(None),
             client_certificate,
         }
@@ -94,7 +92,7 @@ impl QuicLazyInitializedEndpoint {
 
     fn create_endpoint(&self) -> Endpoint {
         let (_, client_socket) = solana_net_utils::bind_in_range(
-            self.bind_addr,
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
             VALIDATOR_PORT_RANGE,
         )
         .expect("QuicLazyInitializedEndpoint::create_endpoint bind_in_range");
@@ -150,13 +148,12 @@ impl QuicLazyInitializedEndpoint {
 
 impl Default for QuicLazyInitializedEndpoint {
     fn default() -> Self {
-        let bind_addr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
         let (certs, priv_key) = new_self_signed_tls_certificate_chain(
             &Keypair::new(),
-            bind_addr,
+            IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
         )
         .expect("Failed to create QUIC client certificate");
-        Self::new(bind_addr, Arc::new(QuicClientCertificate {            
+        Self::new(Arc::new(QuicClientCertificate {
             certificates: certs,
             key: priv_key,
         }))
