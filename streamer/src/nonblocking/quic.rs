@@ -541,6 +541,7 @@ async fn handle_connection(
                                     stats
                                         .total_stream_read_timeouts
                                         .fetch_add(1, Ordering::Relaxed);
+                                    break;
                                 }
                             }
                             stats.total_streams.fetch_sub(1, Ordering::Relaxed);
