@@ -519,7 +519,7 @@ async fn handle_connection(
                             let mut maybe_batch = None;
                             while !stream_exit.load(Ordering::Relaxed) {
                                 if let Ok(chunk) = tokio::time::timeout(
-                                    Duration::from_millis(WAIT_FOR_STREAM_TIMEOUT_MS),
+                                    Duration::from_millis(1000),
                                     stream.read_chunk(PACKET_DATA_SIZE, false),
                                 )
                                 .await
