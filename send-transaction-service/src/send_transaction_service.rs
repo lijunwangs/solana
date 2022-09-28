@@ -702,6 +702,7 @@ impl SendTransactionService {
         connection_cache: &Arc<ConnectionCache>,
     ) -> Result<(), TransportError> {
         let conn = connection_cache.get_connection(tpu_address);
+        info!("quic_client zzz sending transaction to {}", tpu_address);
         conn.send_wire_transaction_async(wire_transaction.to_vec())
     }
 
