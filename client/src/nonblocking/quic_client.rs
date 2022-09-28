@@ -399,7 +399,6 @@ impl QuicClient {
             last_connection_id = connection.connection.stable_id();
             match Self::_send_buffer_using_conn(data, &connection).await {
                 Ok(()) => {
-                    info!("Sent transaction to {}", self.addr);
                     return Ok(connection);
                 }
                 Err(err) => match err {
