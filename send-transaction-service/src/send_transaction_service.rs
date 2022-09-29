@@ -711,7 +711,11 @@ impl SendTransactionService {
         wire_transactions: &[&[u8]],
         connection_cache: &Arc<ConnectionCache>,
     ) -> Result<(), TransportError> {
-        info!("quic_client zzz batch sending transaction to {}, len {}", tpu_address, wire_transactions.len());
+        info!(
+            "quic_client zzz batch sending transaction to {}, len {}",
+            tpu_address,
+            wire_transactions.len()
+        );
         let wire_transactions = wire_transactions.iter().map(|t| t.to_vec()).collect();
         let conn = connection_cache.get_connection(tpu_address);
         conn.send_wire_transaction_batch_async(wire_transactions)

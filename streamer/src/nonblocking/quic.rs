@@ -57,6 +57,7 @@ pub fn spawn_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
+    server_id: Pubkey,
 ) -> Result<JoinHandle<()>, QuicServerError> {
     let (config, _cert) = configure_server(keypair, gossip_host)?;
 
@@ -74,6 +75,7 @@ pub fn spawn_server(
         max_staked_connections,
         max_unstaked_connections,
         stats,
+        server_id,
     ));
     Ok(handle)
 }
@@ -87,6 +89,7 @@ pub async fn run_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
+    server_id: Pubkey,
 ) {
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
@@ -120,6 +123,7 @@ pub async fn run_server(
                 max_staked_connections,
                 max_unstaked_connections,
                 stats.clone(),
+                server_id.clone(),
             ));
             sleep(Duration::from_micros(WAIT_BETWEEN_NEW_CONNECTIONS_US)).await;
         }
@@ -145,23 +149,25 @@ fn get_connection_stake(
     connection: &Connection,
     staked_nodes: Arc<RwLock<StakedNodes>>,
 ) -> Option<(Pubkey, u64, u64, u64, u64)> {
+    get_peer_pubkey(connection).and_then(|pubkey| {
+        debug!("Peer public key is {:?}", pubkey);
+
+        let staked_nodes = staked_nodes.read().unwrap();
+        let total_stake = staked_nodes.total_stake;
+        let max_stake = staked_nodes.max_stake;
+        let min_stake = staked_nodes.min_stake;
+        staked_nodes
+            .pubkey_stake_map
+            .get(&pubkey)
+            .map(|stake| (pubkey, *stake, total_stake, max_stake, min_stake))
+    })
+}
+
+fn get_peer_pubkey(connection: &Connection) -> Option<Pubkey> {
     connection
         .peer_identity()
         .and_then(|der_cert_any| der_cert_any.downcast::<Vec<rustls::Certificate>>().ok())
-        .and_then(|der_certs| {
-            get_pubkey_from_tls_certificate(&der_certs).and_then(|pubkey| {
-                debug!("Peer public key is {:?}", pubkey);
-
-                let staked_nodes = staked_nodes.read().unwrap();
-                let total_stake = staked_nodes.total_stake;
-                let max_stake = staked_nodes.max_stake;
-                let min_stake = staked_nodes.min_stake;
-                staked_nodes
-                    .pubkey_stake_map
-                    .get(&pubkey)
-                    .map(|stake| (pubkey, *stake, total_stake, max_stake, min_stake))
-            })
-        })
+        .and_then(|der_certs| get_pubkey_from_tls_certificate(&der_certs))
 }
 
 pub fn compute_max_allowed_uni_streams(
@@ -208,13 +214,14 @@ struct NewConnectionHandlerParams {
 
 impl NewConnectionHandlerParams {
     fn new_unstaked(
+        remote_pubkey: Option<Pubkey>,
         packet_sender: Sender<PacketBatch>,
         max_connections_per_peer: usize,
         stats: Arc<StreamStats>,
     ) -> NewConnectionHandlerParams {
         NewConnectionHandlerParams {
             packet_sender,
-            remote_pubkey: None,
+            remote_pubkey,
             stake: 0,
             total_stake: 0,
             max_connections_per_peer,
@@ -230,6 +237,7 @@ fn handle_and_cache_new_connection(
     mut connection_table_l: MutexGuard<ConnectionTable>,
     connection_table: Arc<Mutex<ConnectionTable>>,
     params: &NewConnectionHandlerParams,
+    server_id: &Pubkey,
 ) -> Result<(), ConnectionHandlerError> {
     let NewConnection {
         connection,
@@ -245,6 +253,8 @@ fn handle_and_cache_new_connection(
     {
         connection.set_max_concurrent_uni_streams(max_uni_streams);
         let receive_window = compute_recieve_window(
+            &params.remote_pubkey,
+            server_id,
             params.max_stake,
             params.min_stake,
             connection_table_l.peer_type,
@@ -252,7 +262,7 @@ fn handle_and_cache_new_connection(
         );
 
         if let Ok(receive_window) = receive_window {
-            connection.set_receive_window(VarInt::from_u64((PACKET_DATA_SIZE * 64) as u64).unwrap());
+            connection.set_receive_window(receive_window);
         }
 
         let remote_addr = connection.remote_address();
@@ -312,6 +322,7 @@ fn prune_unstaked_connections_and_add_new_connection(
     connection_table: Arc<Mutex<ConnectionTable>>,
     max_connections: usize,
     params: &NewConnectionHandlerParams,
+    server_id: &Pubkey,
 ) -> Result<(), ConnectionHandlerError> {
     let stats = params.stats.clone();
     if max_connections > 0 {
@@ -321,6 +332,7 @@ fn prune_unstaked_connections_and_add_new_connection(
             connection_table_l,
             connection_table,
             params,
+            server_id,
         )
     } else {
         new_connection.connection.close(0u32.into(), &[0u8]);
@@ -355,6 +367,8 @@ fn compute_receive_window_ratio_for_staked_node(max_stake: u64, min_stake: u64, 
 }
 
 fn compute_recieve_window(
+    remote_pubkey: &Option<Pubkey>,
+    server_id: &Pubkey,
     max_stake: u64,
     min_stake: u64,
     peer_type: ConnectionPeerType,
@@ -362,6 +376,13 @@ fn compute_recieve_window(
 ) -> Result<VarInt, VarIntBoundsExceeded> {
     match peer_type {
         ConnectionPeerType::Unstaked => {
+            if let Some(remote_pubkey) = remote_pubkey {
+                if remote_pubkey == server_id {
+                    return VarInt::from_u64(
+                        (PACKET_DATA_SIZE as u64 * QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO) as u64,
+                    );
+                }
+            }
             VarInt::from_u64((PACKET_DATA_SIZE as u64 * QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO) as u64)
         }
         ConnectionPeerType::Staked => {
@@ -382,6 +403,7 @@ async fn setup_connection(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
+    server_id: Pubkey,
 ) {
     if let Ok(connecting_result) = timeout(
         Duration::from_millis(QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS),
@@ -396,6 +418,7 @@ async fn setup_connection(
             let params = get_connection_stake(&new_connection.connection, staked_nodes.clone())
                 .map_or(
                     NewConnectionHandlerParams::new_unstaked(
+                        get_peer_pubkey(&new_connection.connection),
                         packet_sender.clone(),
                         max_connections_per_peer,
                         stats.clone(),
@@ -427,6 +450,7 @@ async fn setup_connection(
                         connection_table_l,
                         staked_connection_table.clone(),
                         &params,
+                        &server_id,
                     ) {
                         stats
                             .connection_added_from_staked_peer
@@ -442,6 +466,7 @@ async fn setup_connection(
                         unstaked_connection_table.clone(),
                         max_unstaked_connections,
                         &params,
+                        &server_id,
                     ) {
                         stats
                             .connection_added_from_staked_peer
@@ -461,6 +486,7 @@ async fn setup_connection(
                 unstaked_connection_table.clone(),
                 max_unstaked_connections,
                 &params,
+                &server_id,
             ) {
                 stats
                     .connection_added_from_unstaked_peer
