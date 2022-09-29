@@ -123,7 +123,7 @@ pub async fn run_server(
                 max_staked_connections,
                 max_unstaked_connections,
                 stats.clone(),
-                server_id.clone(),
+                server_id,
             ));
             sleep(Duration::from_micros(WAIT_BETWEEN_NEW_CONNECTIONS_US)).await;
         }
