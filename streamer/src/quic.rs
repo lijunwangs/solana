@@ -10,6 +10,7 @@ use {
     solana_perf::packet::PacketBatch,
     solana_sdk::{
         packet::PACKET_DATA_SIZE,
+        pubkey::Pubkey,
         quic::{QUIC_MAX_TIMEOUT_MS, QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS},
         signature::Keypair,
     },
@@ -307,6 +308,7 @@ pub fn spawn_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
+    server_id: Pubkey,
 ) -> Result<thread::JoinHandle<()>, QuicServerError> {
     let runtime = rt();
     let task = {
@@ -322,6 +324,7 @@ pub fn spawn_server(
             max_staked_connections,
             max_unstaked_connections,
             stats,
+            server_id,
         )
     }?;
     let handle = thread::Builder::new()
