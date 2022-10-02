@@ -267,7 +267,7 @@ fn handle_and_cache_new_connection(
 
         let remote_addr = connection.remote_address();
 
-        debug!(
+        info!(
             "Peer type: {:?}, stake {}, total stake {}, max streams {} receive_window {:?} from peer {}",
             connection_table_l.peer_type,
             params.stake,
