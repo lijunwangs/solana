@@ -34,7 +34,7 @@ use {
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
         thread,
-        time::Duration,
+        time::{Duration, Instant},
     },
     thiserror::Error,
     tokio::{sync::RwLock, time::timeout},
@@ -292,16 +292,30 @@ impl QuicClient {
         data: &[u8],
         connection: &NewConnection,
     ) -> Result<(), QuicError> {
+        let start = Instant::now();
+
         let mut send_stream = connection.connection.open_uni().await?;
 
         let result = send_stream.write_all(data).await;
         if result.is_err() {
-            info!("Error writing buffer to {} stream {} error {:?}", connection.connection.remote_address(), send_stream.id(), result);
+            info!(
+                "Error writing buffer to {} stream {} error {:?} elapse {:?}",
+                connection.connection.remote_address(),
+                send_stream.id(),
+                result,
+                start.elapsed()
+            );
             result?;
         }
         let result = send_stream.finish().await;
         if result.is_err() {
-            info!("Error finishing buffer to {} stream {} error {:?}", connection.connection.remote_address(), send_stream.id(), result);
+            info!(
+                "Error finishing buffer to {} stream {} error {:?} elapse {:?}",
+                connection.connection.remote_address(),
+                send_stream.id(),
+                result,
+                start.elapsed()
+            );
             result?;
         }
 
