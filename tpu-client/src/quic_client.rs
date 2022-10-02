@@ -22,6 +22,7 @@ use {
 lazy_static! {
     static ref RUNTIME: Runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)
+        .thread_name("quic-client")
         .enable_all()
         .build()
         .unwrap();
