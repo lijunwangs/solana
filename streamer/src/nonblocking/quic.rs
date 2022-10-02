@@ -545,7 +545,8 @@ async fn handle_connection(
                             let mut maybe_batch = None;
                             while !stream_exit.load(Ordering::Relaxed) {
                                 if let Ok(chunk) = tokio::time::timeout(
-                                    Duration::from_millis(WAIT_FOR_STREAM_TIMEOUT_MS),
+                                    //Duration::from_millis(WAIT_FOR_STREAM_TIMEOUT_MS),
+                                    Duration::from_millis(10000),
                                     stream.read_chunk(PACKET_DATA_SIZE, false),
                                 )
                                 .await
@@ -567,6 +568,7 @@ async fn handle_connection(
                                     stats
                                         .total_stream_read_timeouts
                                         .fetch_add(1, Ordering::Relaxed);
+                                    break;
                                 }
                             }
                             stats.total_streams.fetch_sub(1, Ordering::Relaxed);
