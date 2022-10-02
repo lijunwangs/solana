@@ -563,7 +563,7 @@ async fn handle_connection(
                                         break;
                                     }
                                 } else {
-                                    debug!("Timeout in receiving on stream");
+                                    info!("Timeout in receiving on stream {}", stream.id());
                                     stats
                                         .total_stream_read_timeouts
                                         .fetch_add(1, Ordering::Relaxed);
