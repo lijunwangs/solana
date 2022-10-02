@@ -21,7 +21,7 @@ use {
 
 lazy_static! {
     static ref RUNTIME: Runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(4)
+        .worker_threads(256)
         .thread_name("quic-client")
         .enable_all()
         .build()
@@ -72,8 +72,8 @@ impl TpuConnection for QuicTpuConnection {
 
     fn send_wire_transaction_async(&self, wire_transaction: Vec<u8>) -> TransportResult<()> {
         let inner = self.inner.clone();
-        //drop and detach the task
         let _ = RUNTIME.spawn(async move { inner.send_wire_transaction(wire_transaction).await });
+        //drop and detach the task
         Ok(())
     }
 
