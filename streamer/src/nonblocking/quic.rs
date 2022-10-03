@@ -261,10 +261,11 @@ fn handle_and_cache_new_connection(
             params.stake,
         );
 
-        if let Ok(receive_window) = receive_window {
-            connection.set_receive_window(receive_window);
-        }
-
+        // if let Ok(receive_window) = receive_window {
+        //     connection.set_receive_window(receive_window);
+        // }
+        
+        connection.set_receive_window(VarInt::from_u64((PACKET_DATA_SIZE as u64 * 128) as u64).unwrap());
         let remote_addr = connection.remote_address();
 
         info!(
