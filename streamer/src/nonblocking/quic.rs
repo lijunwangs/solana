@@ -335,7 +335,7 @@ fn prune_unstaked_connections_and_add_new_connection(
             server_id,
         )
     } else {
-        new_connection.connection.close(0u32.into(), &[0u8]);
+        new_connection.connection.close(2u32.into(), &[2u8]);
         Err(ConnectionHandlerError::ConnectionAddError)
     }
 }
@@ -736,7 +736,7 @@ impl ConnectionEntry {
 impl Drop for ConnectionEntry {
     fn drop(&mut self) {
         if let Some(conn) = self.connection.take() {
-            conn.close(0u32.into(), &[0u8]);
+            conn.close(1u32.into(), &[1u8]);
         }
         self.exit.store(true, Ordering::Relaxed);
     }
