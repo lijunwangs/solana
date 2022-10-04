@@ -50,7 +50,7 @@ impl WarmQuicCacheService {
                                 .lookup_contact_info(&leader_pubkey, |leader| leader.tpu)
                             {
                                 let conn = connection_cache.get_connection(&addr);
-                                info!("Warming up quic connection to {}", addr);
+                                info!("Warming up quic_client connection to {}", addr);
                                 if let Err(err) = conn.send_wire_transaction([0u8]) {
                                     warn!(
                                         "Failed to warmup QUIC connection to the leader {:?}, Error {:?}",
