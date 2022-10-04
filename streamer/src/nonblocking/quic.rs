@@ -264,7 +264,7 @@ fn handle_and_cache_new_connection(
         if let Ok(receive_window) = receive_window {
             connection.set_receive_window(receive_window);
         }
-        
+
         //connection.set_receive_window(VarInt::from_u64((PACKET_DATA_SIZE as u64 * 128) as u64).unwrap());
         let remote_addr = connection.remote_address();
 
@@ -336,6 +336,11 @@ fn prune_unstaked_connections_and_add_new_connection(
             server_id,
         )
     } else {
+        if let Some(remote_key) = &params.remote_pubkey {
+            if server_id == remote_key {
+                return Ok(());
+            }
+        }
         new_connection.connection.close(2u32.into(), &[2u8]);
         Err(ConnectionHandlerError::ConnectionAddError)
     }
