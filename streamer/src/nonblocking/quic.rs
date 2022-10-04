@@ -305,6 +305,7 @@ fn handle_and_cache_new_connection(
             ));
             Ok(())
         } else {
+            error!("Failed to add connection {:?}", remote_addr);
             params
                 .stats
                 .connection_add_failed
