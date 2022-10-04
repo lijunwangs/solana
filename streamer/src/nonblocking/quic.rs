@@ -150,9 +150,11 @@ fn get_connection_stake(
     staked_nodes: Arc<RwLock<StakedNodes>>,
 ) -> Option<(Pubkey, u64, u64, u64, u64)> {
     get_peer_pubkey(connection).and_then(|pubkey| {
-        debug!("Peer public key is {:?}", pubkey);
-
         let staked_nodes = staked_nodes.read().unwrap();
+        {
+            info!("Peer public key is {:?} address {:?} stakes: {:?} ", pubkey, connection.remote_address(), staked_nodes.pubkey_stake_map);
+        }
+
         let total_stake = staked_nodes.total_stake;
         let max_stake = staked_nodes.max_stake;
         let min_stake = staked_nodes.min_stake;
