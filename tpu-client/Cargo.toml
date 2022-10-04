@@ -21,8 +21,8 @@ indicatif = { version = "0.17.1", optional = true }
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.17"
-quinn = {git = "https://github.com/lijunwangs/quinn.git", rev = "43c6caf4f329b6b33e437d092c3d6dc63c6fddaa"}
-quinn-proto = {git = "https://github.com/lijunwangs/quinn.git", rev = "43c6caf4f329b6b33e437d092c3d6dc63c6fddaa"}
+quinn = {git = "https://github.com/lijunwangs/quinn.git", rev = "37c7507f4139f98c0eee19c8d57cd5eec97130c5"}
+quinn-proto = {git = "https://github.com/lijunwangs/quinn.git", rev = "37c7507f4139f98c0eee19c8d57cd5eec97130c5"}
 #quinn = "0.8.4"
 #quinn-proto = "0.8.4"
 quinn-udp = "0.1.3"

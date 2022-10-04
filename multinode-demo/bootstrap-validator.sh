@@ -176,6 +176,7 @@ trap 'kill_node_and_exit' INT TERM ERR
 
 while true; do
   echo "$program ${args[*]}"
+  export RUST_LOG="info"
   $program "${args[@]}" &
   pid=$!
   echo "pid: $pid"
