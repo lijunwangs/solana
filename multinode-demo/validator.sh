@@ -347,6 +347,7 @@ setup_validator_accounts "$node_sol"
 while true; do
   echo "$PS4$program ${args[*]}"
   export RUST_LOG="info"
+  export RUST_BACKTRACE=1
   $program "${args[@]}" &
   pid=$!
   echo "pid: $pid"
