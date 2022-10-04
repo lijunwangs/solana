@@ -269,13 +269,14 @@ fn handle_and_cache_new_connection(
         let remote_addr = connection.remote_address();
 
         info!(
-            "Peer type: {:?}, stake {}, total stake {}, max streams {} receive_window {:?} from peer {}",
+            "Peer type: {:?}, stake {}, total stake {}, max streams {} receive_window {:?} from peer {} id {}",
             connection_table_l.peer_type,
             params.stake,
             params.total_stake,
             max_uni_streams.into_inner(),
             receive_window,
             remote_addr,
+            connection.stable_id(),
         );
 
         if let Some((last_update, stream_exit)) = connection_table_l.try_add_connection(

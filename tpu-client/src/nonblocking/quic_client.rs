@@ -296,24 +296,28 @@ impl QuicClient {
 
         let mut send_stream = connection.connection.open_uni().await?;
 
+        let before_elapsed = start.elapsed();
         let result = send_stream.write_all(data).await;
         if result.is_err() {
             info!(
-                "Error writing buffer to {} stream {} error {:?} elapse {:?}",
+                "Error writing buffer to {} stream {} error {:?} elapse {:?} {:?}",
                 connection.connection.remote_address(),
                 send_stream.id(),
                 result,
+                before_elapsed,
                 start.elapsed()
             );
             result?;
         }
+        let before_finish = start.elapsed();
         let result = send_stream.finish().await;
         if result.is_err() {
             info!(
-                "Error finishing buffer to {} stream {} error {:?} elapse {:?}",
+                "Error finishing buffer to {} stream {} error {:?} elapse {:?} {:?}",
                 connection.connection.remote_address(),
                 send_stream.id(),
                 result,
+                before_finish,
                 start.elapsed()
             );
             result?;
