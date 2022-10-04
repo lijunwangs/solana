@@ -313,6 +313,8 @@ fn handle_and_cache_new_connection(
             .stats
             .connection_add_failed_invalid_stream_count
             .fetch_add(1, Ordering::Relaxed);
+
+        connection.close(3u32.into(), &[3u8]);
         Err(ConnectionHandlerError::MaxStreamError)
     }
 }
@@ -524,7 +526,7 @@ async fn handle_connection(
     stake: u64,
     peer_type: ConnectionPeerType,
 ) {
-    debug!(
+    info!(
         "quic new connection {} streams: {} connections: {}",
         remote_addr,
         stats.total_streams.load(Ordering::Relaxed),
@@ -581,11 +583,12 @@ async fn handle_connection(
                         });
                     }
                     Err(e) => {
-                        debug!("stream error: {:?}", e);
+                        info!("stream error: {:?} {:?}", e, remote_addr);
                         break;
                     }
                 },
                 None => {
+                    info!("No streams: {:?}", remote_addr);
                     break;
                 }
             }
@@ -878,6 +881,9 @@ impl ConnectionTable {
             self.total_size += 1;
             Some((last_update, exit))
         } else {
+            if let Some(connection) = connection {
+                connection.close(4u32.into(), &[4u8]);
+            }
             None
         }
     }
