@@ -41,7 +41,7 @@ use {
 };
 
 const QUIC_TOTAL_STAKED_CONCURRENT_STREAMS: f64 = 100_000f64;
-const WAIT_FOR_STREAM_TIMEOUT_MS: u64 = 100;
+const WAIT_FOR_STREAM_TIMEOUT_MS: u64 = 1000;
 
 pub const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 
