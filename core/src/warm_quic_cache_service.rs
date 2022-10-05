@@ -53,8 +53,19 @@ impl WarmQuicCacheService {
                                 info!("Warming up quic_client connection to {}", addr);
                                 if let Err(err) = conn.send_wire_transaction([0u8]) {
                                     warn!(
-                                        "Failed to warmup QUIC connection to the leader {:?}, Error {:?}",
-                                        leader_pubkey, err
+                                        "Failed to warmup QUIC connection to the leader's tpu address {:?}, address {} Error {:?}",
+                                        leader_pubkey, addr, err
+                                    );
+                                }
+                            }
+                            if let Some(addr) = cluster_info
+                                .lookup_contact_info(&leader_pubkey, |leader| leader.tpu_forwards)
+                            {
+                                let conn = connection_cache.get_connection(&addr);
+                                if let Err(err) = conn.send_wire_transaction([0u8]) {
+                                    warn!(
+                                        "Failed to warmup QUIC connection to the leader TPU forward {:?}, address {} Error {:?}",
+                                        leader_pubkey, addr, err
                                     );
                                 }
                             }
