@@ -628,6 +628,7 @@ impl BankingStage {
                     .forwarded_transaction_count
                     .fetch_add(packet_vec_len, Ordering::Relaxed);
                 let conn = connection_cache.get_connection(&addr);
+                info!("Forwarding to the new leader: via quic_client {}", addr);
                 conn.send_wire_transaction_batch_async(packet_vec)
             };
 
