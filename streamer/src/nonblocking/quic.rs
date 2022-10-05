@@ -338,7 +338,7 @@ fn prune_unstaked_connections_and_add_new_connection(
 ) -> Result<(), ConnectionHandlerError> {
     let stats = params.stats.clone();
     if max_connections > 0
-        && params
+        || params
             .remote_pubkey
             .as_ref()
             .map_or(false, |remote_key| remote_key == server_id)
