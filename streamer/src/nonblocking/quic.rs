@@ -152,7 +152,12 @@ fn get_connection_stake(
     get_peer_pubkey(connection).and_then(|pubkey| {
         let staked_nodes = staked_nodes.read().unwrap();
         {
-            info!("Peer public key is {:?} address {:?} stakes: {:?} ", pubkey, connection.remote_address(), staked_nodes.pubkey_stake_map);
+            info!(
+                "Peer public key is {:?} address {:?} stakes: {:?} ",
+                pubkey,
+                connection.remote_address(),
+                staked_nodes.pubkey_stake_map
+            );
         }
 
         let total_stake = staked_nodes.total_stake;
@@ -332,7 +337,12 @@ fn prune_unstaked_connections_and_add_new_connection(
     server_id: &Pubkey,
 ) -> Result<(), ConnectionHandlerError> {
     let stats = params.stats.clone();
-    if max_connections > 0 {
+    if max_connections > 0
+        && params
+            .remote_pubkey
+            .as_ref()
+            .map_or(false, |remote_key| remote_key == server_id)
+    {
         prune_unstaked_connection_table(&mut connection_table_l, max_connections, stats);
         handle_and_cache_new_connection(
             new_connection,
@@ -342,11 +352,6 @@ fn prune_unstaked_connections_and_add_new_connection(
             server_id,
         )
     } else {
-        if let Some(remote_key) = &params.remote_pubkey {
-            if server_id == remote_key {
-                return Ok(());
-            }
-        }
         new_connection.connection.close(2u32.into(), &[2u8]);
         Err(ConnectionHandlerError::ConnectionAddError)
     }
