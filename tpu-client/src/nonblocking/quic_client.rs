@@ -300,7 +300,7 @@ impl QuicClient {
         let result = send_stream.write_all(data).await;
         if result.is_err() {
             info!(
-                "Error writing buffer to {} stream {} error {:?} elapse {:?} {:?}",
+                "Error writing buffer to {} stream {} error {:?} before elapse {:?}  total_elapse {:?}",
                 connection.connection.remote_address(),
                 send_stream.id(),
                 result,
