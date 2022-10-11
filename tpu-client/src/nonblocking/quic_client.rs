@@ -307,6 +307,7 @@ impl QuicClient {
                 before_elapsed,
                 start.elapsed()
             );
+            let _rslt = send_stream.reset(0u32.into());
             result?;
         }
         let before_finish = start.elapsed();
@@ -320,6 +321,7 @@ impl QuicClient {
                 before_finish,
                 start.elapsed()
             );
+            let _rslt = send_stream.reset(0u32.into());
             result?;
         }
 
