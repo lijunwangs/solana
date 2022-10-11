@@ -258,7 +258,7 @@ fn handle_and_cache_new_connection(
         params.total_stake,
     ) as u64)
     {
-        connection.set_max_concurrent_uni_streams(max_uni_streams);
+        connection.set_max_concurrent_uni_streams(max_uni_streams.clone());
         let receive_window = compute_recieve_window(
             &params.remote_pubkey,
             server_id,
@@ -268,11 +268,14 @@ fn handle_and_cache_new_connection(
             params.stake,
         );
 
-        if let Ok(receive_window) = receive_window {
-            connection.set_receive_window(receive_window);
-        }
+        // if let Ok(receive_window) = receive_window {
+        //     connection.set_receive_window(receive_window);
+        // }
 
         //connection.set_receive_window(VarInt::from_u64((PACKET_DATA_SIZE as u64 * 128) as u64).unwrap());
+
+        connection.set_receive_window(VarInt::from_u64((PACKET_DATA_SIZE as u64 * max_uni_streams.into_inner()) as u64).unwrap());
+
         let remote_addr = connection.remote_address();
 
         info!(

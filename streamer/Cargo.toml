@@ -22,8 +22,8 @@ pem = "1.1.0"
 percentage = "0.1.0"
 pkcs8 = { version = "0.8.0", features = ["alloc"] }
 
-quinn = {git = "https://github.com/lijunwangs/quinn.git", rev = "3b4287587a622ccd8c1a7a86f96069816002574c"}
-quinn-proto = {git = "https://github.com/lijunwangs/quinn.git", rev = "3b4287587a622ccd8c1a7a86f96069816002574c"}
+quinn = {git = "https://github.com/lijunwangs/quinn.git", rev = "37c19743cc881cf71369946d572849d5d2ffc3fd"}
+quinn-proto = {git = "https://github.com/lijunwangs/quinn.git", rev = "37c19743cc881cf71369946d572849d5d2ffc3fd"}
 
 #quinn = "0.8.4"
 #quinn-proto = "0.8.4"
