@@ -399,13 +399,13 @@ fn compute_recieve_window(
 ) -> Result<VarInt, VarIntBoundsExceeded> {
     match peer_type {
         ConnectionPeerType::Unstaked => {
-            if let Some(remote_pubkey) = remote_pubkey {
-                if remote_pubkey == server_id {
-                    return VarInt::from_u64(
-                        (PACKET_DATA_SIZE as u64 * QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO) as u64,
-                    );
-                }
-            }
+            // if let Some(remote_pubkey) = remote_pubkey {
+            //     if remote_pubkey == server_id {
+            //         return VarInt::from_u64(
+            //             (PACKET_DATA_SIZE as u64 * QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO) as u64,
+            //         );
+            //     }
+            // }
             VarInt::from_u64((PACKET_DATA_SIZE as u64 * QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO) as u64)
         }
         ConnectionPeerType::Staked => {
@@ -577,10 +577,17 @@ async fn handle_connection(
                                     if let Ok(chunk) = &chunk {
                                         if let Some(chunk) = chunk {
                                             info!(
-                                                "Handle chunk {}@{} for stream {}",
+                                                "Handle chunk {}@{} for stream {} from {}",
                                                 chunk.bytes.len(),
                                                 chunk.offset,
-                                                stream.id()
+                                                stream.id(),
+                                                remote_addr,
+                                            );
+                                        } else {
+                                            info!(
+                                                "Handle chunk done for stream {} from {}",
+                                                stream.id(),
+                                                remote_addr,
                                             );
                                         }
                                     }
