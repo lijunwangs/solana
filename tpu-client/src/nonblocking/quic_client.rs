@@ -296,7 +296,7 @@ impl QuicClient {
 
         let mut send_stream = connection.connection.open_uni().await?;
 
-        info!(
+        debug!(
             "Opened stream {} against {}",
             send_stream.id(),
             connection.connection.remote_address()
