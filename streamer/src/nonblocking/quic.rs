@@ -558,7 +558,7 @@ async fn handle_connection(
             match stream {
                 Some(stream_result) => match stream_result {
                     Ok(mut stream) => {
-                        info!("Received new stream {} from {}", stream.id(), remote_addr);
+                        debug!("Received new stream {} from {}", stream.id(), remote_addr);
                         stats.total_streams.fetch_add(1, Ordering::Relaxed);
                         stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
                         let stream_exit = stream_exit.clone();
