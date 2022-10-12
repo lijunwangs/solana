@@ -296,6 +296,12 @@ impl QuicClient {
 
         let mut send_stream = connection.connection.open_uni().await?;
 
+        info!(
+            "Opened stream {} against {}",
+            send_stream.id(),
+            connection.connection.remote_address()
+        );
+
         let before_elapsed = start.elapsed();
         let result = send_stream.write_all(data).await;
         if result.is_err() {
