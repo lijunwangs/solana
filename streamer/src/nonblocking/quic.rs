@@ -268,16 +268,16 @@ fn handle_and_cache_new_connection(
             params.stake,
         );
 
-        // if let Ok(receive_window) = receive_window {
-        //     connection.set_receive_window(receive_window);
-        // }
+        if let Ok(receive_window) = receive_window {
+            connection.set_receive_window(receive_window);
+        }
 
         //connection.set_receive_window(VarInt::from_u64((PACKET_DATA_SIZE as u64 * 128) as u64).unwrap());
 
-        connection.set_receive_window(
-            VarInt::from_u64((PACKET_DATA_SIZE as u64 * max_uni_streams.into_inner()) as u64)
-                .unwrap(),
-        );
+        // connection.set_receive_window(
+        //     VarInt::from_u64((PACKET_DATA_SIZE as u64 * max_uni_streams.into_inner()) as u64)
+        //         .unwrap(),
+        // );
 
         let remote_addr = connection.remote_address();
 
@@ -574,6 +574,16 @@ async fn handle_connection(
                                 )
                                 .await
                                 {
+                                    if let Ok(chunk) = &chunk {
+                                        if let Some(chunk) = chunk {
+                                            info!(
+                                                "Handle chunk {}@{} for stream {}",
+                                                chunk.bytes.len(),
+                                                chunk.offset,
+                                                stream.id()
+                                            );
+                                        }
+                                    }
                                     if handle_chunk(
                                         &chunk,
                                         &mut maybe_batch,
