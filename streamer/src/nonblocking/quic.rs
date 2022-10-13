@@ -577,7 +577,7 @@ async fn handle_connection(
                                 {
                                     if let Ok(chunk) = &chunk {
                                         if let Some(chunk) = chunk {
-                                            info!(
+                                            debug!(
                                                 "Handle chunk {}@{} for stream {} from {}",
                                                 chunk.bytes.len(),
                                                 chunk.offset,
@@ -585,7 +585,7 @@ async fn handle_connection(
                                                 remote_addr,
                                             );
                                         } else {
-                                            info!(
+                                            debug!(
                                                 "Handle chunk done for stream {} from {}",
                                                 stream.id(),
                                                 remote_addr,
