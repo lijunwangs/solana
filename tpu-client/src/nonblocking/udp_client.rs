@@ -2,12 +2,9 @@
 //! an interface for sending transactions
 
 use {
-    crate::nonblocking::tpu_connection::{SendTransactionCallbackOption, TpuConnection},
-    async_trait::async_trait,
-    core::iter::repeat,
-    solana_sdk::transport::Result as TransportResult,
-    solana_streamer::nonblocking::sendmmsg::batch_send,
-    std::net::SocketAddr,
+    crate::nonblocking::tpu_connection::TpuConnection, async_trait::async_trait,
+    core::iter::repeat, solana_sdk::transport::Result as TransportResult,
+    solana_streamer::nonblocking::sendmmsg::batch_send, std::net::SocketAddr,
     tokio::net::UdpSocket,
 };
 
@@ -33,11 +30,7 @@ impl TpuConnection for UdpTpuConnection {
         &self.addr
     }
 
-    async fn send_wire_transaction<T>(
-        &self,
-        wire_transaction: T,
-        _callback: &mut SendTransactionCallbackOption,
-    ) -> TransportResult<()>
+    async fn send_wire_transaction<T>(&self, wire_transaction: T) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {
@@ -47,11 +40,7 @@ impl TpuConnection for UdpTpuConnection {
         Ok(())
     }
 
-    async fn send_wire_transaction_batch<T>(
-        &self,
-        buffers: &[T],
-        _callback: &mut SendTransactionCallbackOption,
-    ) -> TransportResult<()>
+    async fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {
