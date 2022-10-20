@@ -196,6 +196,9 @@ async fn setup_connection(
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
 ) {
+
+    let remote_address = connecting.remote_address();
+    info!("Setting up connection from {}", connecting.remote_address());
     if let Ok(connecting_result) = timeout(
         Duration::from_millis(QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS),
         connecting,
@@ -212,6 +215,7 @@ async fn setup_connection(
             } = new_connection;
 
             let remote_addr = connection.remote_address();
+            info!("Got connection request from {}", remote_addr);
             let mut remote_pubkey = None;
 
             let table_and_stake = {
@@ -270,7 +274,7 @@ async fn setup_connection(
                         compute_max_allowed_uni_streams(table_type, stake, total_stake) as u64,
                     );
 
-                debug!(
+                info!(
                     "Peer type: {:?}, stake {}, total stake {}, max streams {}",
                     table_type,
                     stake,
@@ -316,23 +320,28 @@ async fn setup_connection(
                             stake,
                         ));
                     } else {
+                        info!("Failed to add connection for {}", remote_addr);
                         stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
                     }
                 } else {
+                    info!("Invalid stream count for {}", remote_addr);
                     stats
                         .connection_add_failed_invalid_stream_count
                         .fetch_add(1, Ordering::Relaxed);
                 }
             } else {
+                info!("connection_add_failed_unstaked_node for {}", remote_addr);
                 connection.close(0u32.into(), &[0u8]);
                 stats
                     .connection_add_failed_unstaked_node
                     .fetch_add(1, Ordering::Relaxed);
             }
         } else {
+            info!("stats.connection_setup_error.fetch_add {:?} {}", connecting_result, remote_address);
             stats.connection_setup_error.fetch_add(1, Ordering::Relaxed);
         }
     } else {
+        info!("connection_setup_timeout");
         stats
             .connection_setup_timeout
             .fetch_add(1, Ordering::Relaxed);
@@ -350,7 +359,7 @@ async fn handle_connection(
     stats: Arc<StreamStats>,
     stake: u64,
 ) {
-    debug!(
+    info!(
         "quic new connection {} streams: {} connections: {}",
         remote_addr,
         stats.total_streams.load(Ordering::Relaxed),

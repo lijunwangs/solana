@@ -142,7 +142,7 @@ args+=(
   --full-rpc-api
 )
 default_arg --gossip-port 8001
-default_arg --log -
+#default_arg --log -
 
 
 pid=
