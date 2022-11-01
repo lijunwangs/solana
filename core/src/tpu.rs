@@ -169,7 +169,6 @@ impl Tpu {
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
             stats.clone(),
-            cluster_info.my_contact_info().id.clone(),
         )
         .unwrap();
 
@@ -184,7 +183,6 @@ impl Tpu {
             MAX_STAKED_CONNECTIONS.saturating_add(MAX_UNSTAKED_CONNECTIONS),
             0, // Prevent unstaked nodes from forwarding transactions
             stats,
-            cluster_info.my_contact_info().id.clone(),
         )
         .unwrap();
 

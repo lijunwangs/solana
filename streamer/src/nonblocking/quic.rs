@@ -24,7 +24,7 @@ use {
             QUIC_MIN_STAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
             QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
         },
-        signature::Keypair,
+        signature::{Keypair, Signer},
         timing,
     },
     std::{
@@ -70,8 +70,9 @@ pub fn spawn_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
-    server_id: Pubkey,
 ) -> Result<JoinHandle<()>, QuicServerError> {
+    let server_id = keypair.pubkey();
+
     let (config, _cert) = configure_server(keypair, gossip_host)?;
 
     let (_, incoming) = {
