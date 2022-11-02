@@ -211,6 +211,21 @@ pub fn compute_max_allowed_uni_streams(
     }
 }
 
+fn compute_max_allowed_uni_streams_for_peer(
+    peer_pubkey: &Option<Pubkey>,
+    server_id: &Pubkey,
+    peer_type: ConnectionPeerType,
+    peer_stake: u64,
+    total_stake: u64,
+) -> usize {
+    if let Some(peer_pubkey) = peer_pubkey {
+        if peer_pubkey == server_id {
+            return QUIC_MAX_STAKED_CONCURRENT_STREAMS;
+        }
+    }
+    compute_max_allowed_uni_streams(peer_type, peer_stake, total_stake)
+}
+
 enum ConnectionHandlerError {
     ConnectionAddError,
     MaxStreamError,
@@ -260,7 +275,9 @@ fn handle_and_cache_new_connection(
         ..
     } = new_connection;
 
-    if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
+    if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams_for_peer(
+        &params.remote_pubkey,
+        server_id,
         connection_table_l.peer_type,
         params.stake,
         params.total_stake,
