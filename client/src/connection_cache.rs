@@ -94,6 +94,18 @@ impl ConnectionCache {
         }
     }
 
+    /// Create a connection cache with a specific quic client endpoint.
+    pub fn new_with_endpoint(connection_pool_size: usize, client_endpoint: Endpoint) -> Self {
+        // The minimum pool size is 1.
+        let connection_pool_size = 1.max(connection_pool_size);
+        Self {
+            use_quic: true,
+            connection_pool_size,
+            client_endpoint: Some(client_endpoint),
+            ..Self::default()
+        }
+    }
+
     pub fn update_client_certificate(
         &mut self,
         keypair: &Keypair,
@@ -686,6 +698,56 @@ mod tests {
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port2);
         let conn = connection_cache.get_connection(&addr);
         assert_eq!(conn.server_addr().port(), port2 + QUIC_PORT_OFFSET);
+
+        response_recv_exit.store(true, Ordering::Relaxed);
+        response_recv_thread.join().unwrap();
+    }
+
+    #[test]
+    fn test_connection_with_specified_client_endpoint() {
+        let port = u16::MAX - QUIC_PORT_OFFSET + 1;
+        assert!(port.checked_add(QUIC_PORT_OFFSET).is_none());
+
+        // Start a response receiver:
+        let (
+            response_recv_socket,
+            response_recv_exit,
+            keypair2,
+            response_recv_ip,
+            response_recv_stats,
+        ) = server_args();
+        let (sender2, _receiver2) = unbounded();
+
+        let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
+
+        let (response_recv_endpoint, response_recv_thread) = solana_streamer::quic::spawn_server(
+            response_recv_socket,
+            &keypair2,
+            response_recv_ip,
+            sender2,
+            response_recv_exit.clone(),
+            1,
+            staked_nodes,
+            10,
+            10,
+            response_recv_stats,
+            1000,
+        )
+        .unwrap();
+
+        let connection_cache = ConnectionCache::new_with_endpoint(1, response_recv_endpoint);
+
+        // server port 1:
+        let port1 = 9001;
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port1);
+        let conn = connection_cache.get_connection(&addr);
+        assert_eq!(conn.tpu_addr().port(), port1 + QUIC_PORT_OFFSET);
+
+        // server port 2:
+        let port2 = 9002;
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port2);
+        let conn = connection_cache.get_connection(&addr);
+        assert_eq!(conn.tpu_addr().port(), port2 + QUIC_PORT_OFFSET);
 
         response_recv_exit.store(true, Ordering::Relaxed);
         response_recv_thread.join().unwrap();
