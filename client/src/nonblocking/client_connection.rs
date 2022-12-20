@@ -1,12 +1,10 @@
 //! Trait defining async send functions, to be used for UDP or QUIC sending
 
 use {
-    async_trait::async_trait,
-    enum_dispatch::enum_dispatch,
+    async_trait::async_trait, enum_dispatch::enum_dispatch,
     solana_quic_client::nonblocking::quic_client::QuicClientConnection,
-    solana_sdk::{transport::Result as TransportResult},
-    solana_udp_client::nonblocking::udp_client::UdpClientConnection,
-    std::net::SocketAddr,
+    solana_sdk::transport::Result as TransportResult,
+    solana_udp_client::nonblocking::udp_client::UdpClientConnection, std::net::SocketAddr,
 };
 
 // Due to the existence of `crate::connection_cache::Connection`, if this is named

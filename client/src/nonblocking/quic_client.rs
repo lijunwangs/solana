@@ -2,7 +2,7 @@
 //! and provides an interface for sending transactions which is restricted by the
 //! server's flow control.
 pub use solana_quic_client::nonblocking::quic_client::{
-    QuicClient, QuicClientCertificate, QuicError, QuicLazyInitializedEndpoint, QuicClientConnection,
+    QuicClient, QuicClientCertificate, QuicClientConnection, QuicError, QuicLazyInitializedEndpoint,
 };
 use {
     crate::nonblocking::client_connection::ClientConnection,

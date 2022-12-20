@@ -3,7 +3,8 @@
 
 use {
     crate::nonblocking::quic_client::{
-        QuicClient, QuicLazyInitializedEndpoint, QuicClientConnection as NonblockingQuicTpuConnection,
+        QuicClient, QuicClientConnection as NonblockingQuicTpuConnection,
+        QuicLazyInitializedEndpoint,
     },
     lazy_static::lazy_static,
     log::*,

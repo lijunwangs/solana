@@ -9,8 +9,8 @@ extern crate solana_metrics;
 use {
     crate::{
         nonblocking::quic_client::{
-            QuicClient, QuicClientCertificate, QuicLazyInitializedEndpoint,
-            QuicClientConnection as NonblockingQuicTpuConnection,
+            QuicClient, QuicClientCertificate,
+            QuicClientConnection as NonblockingQuicTpuConnection, QuicLazyInitializedEndpoint,
         },
         quic_client::QuicClientConnection as BlockingQuicTpuConnection,
     },

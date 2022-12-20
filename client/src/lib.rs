@@ -1,11 +1,11 @@
 #![allow(clippy::integer_arithmetic)]
 
+pub mod client_connection;
 pub mod connection_cache;
 pub mod nonblocking;
 pub mod quic_client;
 pub mod thin_client;
 pub mod tpu_client;
-pub mod client_connection;
 pub mod transaction_executor;
 pub mod udp_client;
 

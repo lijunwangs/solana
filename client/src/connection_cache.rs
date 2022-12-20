@@ -3,7 +3,8 @@ pub use solana_tpu_client::tpu_connection_cache::{
 };
 use {
     crate::{
-        nonblocking::client_connection::NonblockingConnection, client_connection::BlockingConnection,
+        client_connection::BlockingConnection,
+        nonblocking::client_connection::NonblockingConnection,
     },
     indexmap::map::{Entry, IndexMap},
     quinn::Endpoint,
@@ -435,7 +436,9 @@ impl BaseClientConnection {
         addr: SocketAddr,
         stats: Arc<ConnectionCacheStats>,
     ) -> NonblockingConnection {
-        use crate::nonblocking::{quic_client::QuicClientConnection, udp_client::UdpClientConnection};
+        use crate::nonblocking::{
+            quic_client::QuicClientConnection, udp_client::UdpClientConnection,
+        };
         match self {
             BaseClientConnection::Udp(udp_socket) => {
                 UdpClientConnection::new_from_addr(udp_socket.try_clone().unwrap(), addr).into()
@@ -470,8 +473,8 @@ struct CreateConnectionResult {
 mod tests {
     use {
         crate::{
-            connection_cache::{ConnectionCache, MAX_CONNECTIONS},
             client_connection::ClientConnection,
+            connection_cache::{ConnectionCache, MAX_CONNECTIONS},
         },
         crossbeam_channel::unbounded,
         rand::{Rng, SeedableRng},
