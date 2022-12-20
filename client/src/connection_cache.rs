@@ -565,7 +565,7 @@ mod tests {
 
                 let conn = &map.get(addr).expect("Address not found").connections[0];
                 let conn = conn.new_blocking_connection(*addr, connection_cache.stats.clone());
-                assert!(addr.ip() == conn.tpu_addr().ip());
+                assert!(addr.ip() == conn.server_addr().ip());
             });
         }
 
@@ -649,8 +649,8 @@ mod tests {
         // We (intentionally) don't have an interface that allows us to distinguish between
         // UDP and Quic connections, so check instead that the port is valid (non-zero)
         // and is the same as the input port (falling back on UDP)
-        assert!(conn.tpu_addr().port() != 0);
-        assert!(conn.tpu_addr().port() == port);
+        assert!(conn.server_addr().port() != 0);
+        assert!(conn.server_addr().port() == port);
     }
 
     #[test]
@@ -691,13 +691,13 @@ mod tests {
         let port1 = 9001;
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port1);
         let conn = connection_cache.get_connection(&addr);
-        assert_eq!(conn.tpu_addr().port(), port1 + QUIC_PORT_OFFSET);
+        assert_eq!(conn.server_addr().port(), port1 + QUIC_PORT_OFFSET);
 
         // server port 2:
         let port2 = 9002;
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port2);
         let conn = connection_cache.get_connection(&addr);
-        assert_eq!(conn.tpu_addr().port(), port2 + QUIC_PORT_OFFSET);
+        assert_eq!(conn.server_addr().port(), port2 + QUIC_PORT_OFFSET);
 
         response_recv_exit.store(true, Ordering::Relaxed);
         response_recv_thread.join().unwrap();
