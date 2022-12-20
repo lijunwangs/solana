@@ -3,12 +3,12 @@
 
 pub use solana_udp_client::udp_client::UdpClientConnection;
 use {
-    crate::tpu_connection::TpuConnection, core::iter::repeat,
+    crate::tpu_connection::ClientConnection, core::iter::repeat,
     solana_sdk::transport::Result as TransportResult, solana_streamer::sendmmsg::batch_send,
     std::net::SocketAddr,
 };
 
-impl TpuConnection for UdpClientConnection {
+impl ClientConnection for UdpClientConnection {
     fn server_addr(&self) -> &SocketAddr {
         &self.addr
     }

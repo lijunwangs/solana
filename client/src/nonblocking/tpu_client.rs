@@ -2,7 +2,7 @@ pub use solana_tpu_client::nonblocking::tpu_client::{LeaderTpuService, TpuSender
 use {
     crate::{
         connection_cache::ConnectionCache,
-        nonblocking::tpu_connection::TpuConnection,
+        nonblocking::tpu_connection::ClientConnection,
         tpu_client::{TpuClientConfig, MAX_FANOUT_SLOTS},
     },
     bincode::serialize,

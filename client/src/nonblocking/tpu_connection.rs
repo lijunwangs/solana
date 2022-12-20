@@ -20,7 +20,7 @@ pub enum NonblockingConnection {
 
 #[async_trait]
 #[enum_dispatch(NonblockingConnection)]
-pub trait TpuConnection {
+pub trait ClientConnection {
     fn server_addr(&self) -> &SocketAddr;
 
     async fn send_data<T>(&self, data: T) -> TransportResult<()>

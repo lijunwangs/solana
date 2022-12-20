@@ -5,7 +5,7 @@ pub use solana_quic_client::nonblocking::quic_client::{
     QuicClient, QuicClientCertificate, QuicError, QuicLazyInitializedEndpoint, QuicClientConnection,
 };
 use {
-    crate::nonblocking::tpu_connection::TpuConnection,
+    crate::nonblocking::tpu_connection::ClientConnection,
     async_trait::async_trait,
     log::*,
     solana_sdk::transport::Result as TransportResult,
@@ -14,7 +14,7 @@ use {
 };
 
 #[async_trait]
-impl TpuConnection for QuicClientConnection {
+impl ClientConnection for QuicClientConnection {
     fn server_addr(&self) -> &SocketAddr {
         self.client.tpu_addr()
     }

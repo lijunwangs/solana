@@ -4,15 +4,15 @@
 pub use solana_quic_client::quic_client::QuicClientConnection;
 use {
     crate::{
-        nonblocking::tpu_connection::TpuConnection as NonblockingTpuConnection,
-        tpu_connection::TpuConnection,
+        nonblocking::tpu_connection::ClientConnection as NonblockingTpuConnection,
+        tpu_connection::ClientConnection,
     },
     solana_quic_client::quic_client::temporary_pub::*,
     solana_sdk::transport::Result as TransportResult,
     std::net::SocketAddr,
 };
 
-impl TpuConnection for QuicClientConnection {
+impl ClientConnection for QuicClientConnection {
     fn server_addr(&self) -> &SocketAddr {
         self.inner.server_addr()
     }

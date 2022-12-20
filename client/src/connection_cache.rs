@@ -471,7 +471,7 @@ mod tests {
     use {
         crate::{
             connection_cache::{ConnectionCache, MAX_CONNECTIONS},
-            tpu_connection::TpuConnection,
+            tpu_connection::ClientConnection,
         },
         crossbeam_channel::unbounded,
         rand::{Rng, SeedableRng},

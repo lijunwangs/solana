@@ -28,7 +28,7 @@ use {
     },
     histogram::Histogram,
     itertools::Itertools,
-    solana_client::{connection_cache::ConnectionCache, tpu_connection::TpuConnection},
+    solana_client::{connection_cache::ConnectionCache, tpu_connection::ClientConnection},
     solana_entry::entry::hash_transactions,
     solana_gossip::{cluster_info::ClusterInfo, contact_info::ContactInfo},
     solana_ledger::{

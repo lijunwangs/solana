@@ -4,7 +4,7 @@
 //! unstable and may change in future releases.
 
 use {
-    crate::{connection_cache::ConnectionCache, tpu_connection::TpuConnection},
+    crate::{connection_cache::ConnectionCache, tpu_connection::ClientConnection},
     log::*,
     rayon::iter::{IntoParallelIterator, ParallelIterator},
     solana_rpc_client::rpc_client::RpcClient,
