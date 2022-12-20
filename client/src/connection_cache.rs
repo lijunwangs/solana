@@ -37,7 +37,7 @@ pub struct ConnectionCache {
     stats: Arc<ConnectionCacheStats>,
     last_stats: AtomicInterval,
     connection_pool_size: usize,
-    tpu_udp_socket: Arc<UdpSocket>,
+    client_udp_socket: Arc<UdpSocket>,
     client_certificate: Arc<QuicClientCertificate>,
     use_quic: bool,
     maybe_staked_nodes: Option<Arc<RwLock<StakedNodes>>>,
@@ -198,7 +198,7 @@ impl ConnectionCache {
 
         let (cache_hit, num_evictions, eviction_timing_ms) = if to_create_connection {
             let connection = if !self.use_quic() || force_use_udp {
-                BaseClientConnection::Udp(self.tpu_udp_socket.clone())
+                BaseClientConnection::Udp(self.client_udp_socket.clone())
             } else {
                 BaseClientConnection::Quic(Arc::new(QuicClient::new(
                     endpoint.as_ref().unwrap().clone(),
@@ -394,7 +394,7 @@ impl Default for ConnectionCache {
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
             connection_pool_size: DEFAULT_TPU_CONNECTION_POOL_SIZE,
-            tpu_udp_socket: Arc::new(
+            client_udp_socket: Arc::new(
                 solana_net_utils::bind_with_any_port(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
                     .expect("Unable to bind to UDP socket"),
             ),
