@@ -6,6 +6,7 @@
 use {
     crate::{connection_cache::ConnectionCache, tpu_connection::TpuConnection},
     log::*,
+    rayon::iter::{IntoParallelIterator, ParallelIterator},
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{config::RpcProgramAccountsConfig, response::Response},
     solana_sdk::{
@@ -531,7 +532,9 @@ impl AsyncClient for ThinClient {
         transaction: VersionedTransaction,
     ) -> TransportResult<Signature> {
         let conn = self.connection_cache.get_connection(self.tpu_addr());
-        conn.serialize_and_send_transaction(&transaction)?;
+        let wire_transaction =
+             bincode::serialize(&transaction).expect("serialize Transaction in send_batch");        
+        conn.send_data(&wire_transaction)?;
         Ok(transaction.signatures[0])
     }
 
@@ -540,7 +543,11 @@ impl AsyncClient for ThinClient {
         batch: Vec<VersionedTransaction>,
     ) -> TransportResult<()> {
         let conn = self.connection_cache.get_connection(self.tpu_addr());
-        conn.par_serialize_and_send_transaction_batch(&batch[..])?;
+        let buffers = batch
+            .into_par_iter()
+            .map(|tx| bincode::serialize(&tx).expect("serialize Transaction in send_batch"))
+            .collect::<Vec<_>>();        
+        conn.send_data_batch(&buffers)?;
         Ok(())
     }
 }
