@@ -3,7 +3,7 @@ pub use solana_tpu_client::tpu_connection_cache::{
 };
 use {
     crate::{
-        nonblocking::tpu_connection::NonblockingConnection, tpu_connection::BlockingConnection,
+        nonblocking::client_connection::NonblockingConnection, client_connection::BlockingConnection,
     },
     indexmap::map::{Entry, IndexMap},
     quinn::Endpoint,
@@ -471,7 +471,7 @@ mod tests {
     use {
         crate::{
             connection_cache::{ConnectionCache, MAX_CONNECTIONS},
-            tpu_connection::ClientConnection,
+            client_connection::ClientConnection,
         },
         crossbeam_channel::unbounded,
         rand::{Rng, SeedableRng},

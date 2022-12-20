@@ -346,8 +346,8 @@ mod tests {
     use {
         super::*,
         crate::{
-            nonblocking::tpu_connection::TpuConnection as NonblockingTpuConnection,
-            tpu_connection::TpuConnection as BlockingTpuConnection,
+            nonblocking::client_connection::TpuConnection as NonblockingTpuConnection,
+            client_connection::TpuConnection as BlockingTpuConnection,
         },
         async_trait::async_trait,
         rand::{Rng, SeedableRng},

@@ -4,8 +4,8 @@
 pub use solana_quic_client::quic_client::QuicClientConnection;
 use {
     crate::{
-        nonblocking::tpu_connection::ClientConnection as NonblockingTpuConnection,
-        tpu_connection::ClientConnection,
+        nonblocking::client_connection::ClientConnection as NonblockingTpuConnection,
+        client_connection::ClientConnection,
     },
     solana_quic_client::quic_client::temporary_pub::*,
     solana_sdk::transport::Result as TransportResult,

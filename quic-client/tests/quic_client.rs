@@ -68,7 +68,7 @@ mod tests {
     fn test_quic_client_multiple_writes() {
         use {
             solana_quic_client::quic_client::QuicClientConnection,
-            solana_tpu_client::tpu_connection::TpuConnection,
+            solana_tpu_client::client_connection::TpuConnection,
         };
         solana_logger::setup();
         let (sender, receiver) = unbounded();
@@ -115,7 +115,7 @@ mod tests {
     async fn test_nonblocking_quic_client_multiple_writes() {
         use {
             solana_quic_client::nonblocking::quic_client::QuicClientConnection,
-            solana_tpu_client::nonblocking::tpu_connection::TpuConnection,
+            solana_tpu_client::nonblocking::client_connection::TpuConnection,
         };
         solana_logger::setup();
         let (sender, receiver) = unbounded();
@@ -169,7 +169,7 @@ mod tests {
         /// same quic Endpoint, and the same UDP socket.
         use {
             solana_quic_client::quic_client::QuicClientConnection,
-            solana_tpu_client::tpu_connection::TpuConnection,
+            solana_tpu_client::client_connection::TpuConnection,
         };
         solana_logger::setup();
 

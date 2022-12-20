@@ -3,7 +3,7 @@
 
 use {
     rand::{thread_rng, Rng},
-    solana_client::{connection_cache::ConnectionCache, tpu_connection::ClientConnection},
+    solana_client::{connection_cache::ConnectionCache, client_connection::ClientConnection},
     solana_gossip::cluster_info::ClusterInfo,
     solana_poh::poh_recorder::PohRecorder,
     std::{

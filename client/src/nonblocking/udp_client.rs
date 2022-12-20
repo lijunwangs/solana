@@ -3,7 +3,7 @@
 
 pub use solana_udp_client::nonblocking::udp_client::UdpClientConnection;
 use {
-    crate::nonblocking::tpu_connection::ClientConnection, async_trait::async_trait,
+    crate::nonblocking::client_connection::ClientConnection, async_trait::async_trait,
     core::iter::repeat, solana_sdk::transport::Result as TransportResult,
     solana_streamer::nonblocking::sendmmsg::batch_send, std::net::SocketAddr,
 };

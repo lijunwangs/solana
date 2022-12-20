@@ -1,6 +1,6 @@
 pub mod quic_client;
 pub mod tpu_client;
-pub mod tpu_connection;
+pub mod client_connection;
 pub mod udp_client;
 
 pub mod blockhash_query {

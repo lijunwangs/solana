@@ -5,7 +5,7 @@ pub use solana_quic_client::nonblocking::quic_client::{
     QuicClient, QuicClientCertificate, QuicError, QuicLazyInitializedEndpoint, QuicClientConnection,
 };
 use {
-    crate::nonblocking::tpu_connection::ClientConnection,
+    crate::nonblocking::client_connection::ClientConnection,
     async_trait::async_trait,
     log::*,
     solana_sdk::transport::Result as TransportResult,
