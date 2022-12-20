@@ -4,7 +4,7 @@ use {
     async_trait::async_trait,
     enum_dispatch::enum_dispatch,
     solana_quic_client::nonblocking::quic_client::QuicClientConnection,
-    solana_sdk::{transaction::VersionedTransaction, transport::Result as TransportResult},
+    solana_sdk::{transport::Result as TransportResult},
     solana_udp_client::nonblocking::udp_client::UdpClientConnection,
     std::net::SocketAddr,
 };
@@ -22,15 +22,6 @@ pub enum NonblockingConnection {
 #[enum_dispatch(NonblockingConnection)]
 pub trait TpuConnection {
     fn tpu_addr(&self) -> &SocketAddr;
-
-    async fn serialize_and_send_transaction(
-        &self,
-        transaction: &VersionedTransaction,
-    ) -> TransportResult<()> {
-        let wire_transaction =
-            bincode::serialize(transaction).expect("serialize Transaction in send_batch");
-        self.send_data(&wire_transaction).await
-    }
 
     async fn send_data<T>(&self, data: T) -> TransportResult<()>
     where
