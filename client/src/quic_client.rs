@@ -13,8 +13,8 @@ use {
 };
 
 impl TpuConnection for QuicClientConnection {
-    fn tpu_addr(&self) -> &SocketAddr {
-        self.inner.tpu_addr()
+    fn server_addr(&self) -> &SocketAddr {
+        self.inner.server_addr()
     }
 
     fn send_data_batch<T>(&self, buffers: &[T]) -> TransportResult<()>

@@ -15,7 +15,7 @@ pub enum BlockingConnection {
 
 #[enum_dispatch(BlockingConnection)]
 pub trait TpuConnection {
-    fn tpu_addr(&self) -> &SocketAddr;
+    fn server_addr(&self) -> &SocketAddr;
 
     fn send_data<T>(&self, data: T) -> TransportResult<()>
     where

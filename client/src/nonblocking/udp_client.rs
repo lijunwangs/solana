@@ -10,7 +10,7 @@ use {
 
 #[async_trait]
 impl TpuConnection for UdpClientConnection {
-    fn tpu_addr(&self) -> &SocketAddr {
+    fn server_addr(&self) -> &SocketAddr {
         &self.addr
     }
 
@@ -28,7 +28,7 @@ impl TpuConnection for UdpClientConnection {
     where
         T: AsRef<[u8]> + Send + Sync,
     {
-        let pkts: Vec<_> = buffers.iter().zip(repeat(self.tpu_addr())).collect();
+        let pkts: Vec<_> = buffers.iter().zip(repeat(self.server_addr())).collect();
         batch_send(&self.socket, &pkts).await?;
         Ok(())
     }

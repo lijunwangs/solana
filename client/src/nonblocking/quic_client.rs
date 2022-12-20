@@ -15,7 +15,7 @@ use {
 
 #[async_trait]
 impl TpuConnection for QuicClientConnection {
-    fn tpu_addr(&self) -> &SocketAddr {
+    fn server_addr(&self) -> &SocketAddr {
         self.client.tpu_addr()
     }
 
@@ -46,7 +46,7 @@ impl TpuConnection for QuicClientConnection {
         if let Err(e) = send_buffer.await {
             warn!(
                 "Failed to send transaction async to {}, error: {:?} ",
-                self.tpu_addr(),
+                self.server_addr(),
                 e
             );
             datapoint_warn!("send-wire-async", ("failure", 1, i64),);
