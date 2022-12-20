@@ -10,9 +10,9 @@ use {
     crate::{
         nonblocking::quic_client::{
             QuicClient, QuicClientCertificate, QuicLazyInitializedEndpoint,
-            QuicTpuConnection as NonblockingQuicTpuConnection,
+            QuicClientConnection as NonblockingQuicTpuConnection,
         },
-        quic_client::QuicTpuConnection as BlockingQuicTpuConnection,
+        quic_client::QuicClientConnection as BlockingQuicTpuConnection,
     },
     solana_sdk::{pubkey::Pubkey, quic::QUIC_PORT_OFFSET, signature::Keypair},
     solana_streamer::{

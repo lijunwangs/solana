@@ -8,12 +8,12 @@ use {
     tokio::net::UdpSocket,
 };
 
-pub struct UdpTpuConnection {
+pub struct UdpClientConnection {
     pub socket: UdpSocket,
     pub addr: SocketAddr,
 }
 
-impl UdpTpuConnection {
+impl UdpClientConnection {
     pub fn new_from_addr(socket: std::net::UdpSocket, tpu_addr: SocketAddr) -> Self {
         socket.set_nonblocking(true).unwrap();
         let socket = UdpSocket::from_std(socket).unwrap();
@@ -25,7 +25,7 @@ impl UdpTpuConnection {
 }
 
 #[async_trait]
-impl TpuConnection for UdpTpuConnection {
+impl TpuConnection for UdpClientConnection {
     fn tpu_addr(&self) -> &SocketAddr {
         &self.addr
     }
@@ -60,7 +60,7 @@ mod tests {
         tokio::net::UdpSocket,
     };
 
-    async fn check_send_one(connection: &UdpTpuConnection, reader: &UdpSocket) {
+    async fn check_send_one(connection: &UdpClientConnection, reader: &UdpSocket) {
         let packet = vec![111u8; PACKET_DATA_SIZE];
         connection.send_wire_transaction(&packet).await.unwrap();
         let mut packets = vec![Packet::default(); 32];
@@ -68,7 +68,7 @@ mod tests {
         assert_eq!(1, recv);
     }
 
-    async fn check_send_batch(connection: &UdpTpuConnection, reader: &UdpSocket) {
+    async fn check_send_batch(connection: &UdpClientConnection, reader: &UdpSocket) {
         let packets: Vec<_> = (0..32).map(|_| vec![0u8; PACKET_DATA_SIZE]).collect();
         connection
             .send_wire_transaction_batch(&packets)
@@ -85,7 +85,7 @@ mod tests {
         let addr = addr_str.parse().unwrap();
         let socket =
             solana_net_utils::bind_with_any_port(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0))).unwrap();
-        let connection = UdpTpuConnection::new_from_addr(socket, addr);
+        let connection = UdpClientConnection::new_from_addr(socket, addr);
         let reader = UdpSocket::bind(addr_str).await.expect("bind");
         check_send_one(&connection, &reader).await;
         check_send_batch(&connection, &reader).await;

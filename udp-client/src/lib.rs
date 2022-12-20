@@ -5,8 +5,8 @@ pub mod udp_client;
 
 use {
     crate::{
-        nonblocking::udp_client::UdpTpuConnection as NonblockingUdpTpuConnection,
-        udp_client::UdpTpuConnection as BlockingUdpTpuConnection,
+        nonblocking::udp_client::UdpClientConnection as NonblockingUdpTpuConnection,
+        udp_client::UdpClientConnection as BlockingUdpTpuConnection,
     },
     solana_tpu_client::{
         connection_cache_stats::ConnectionCacheStats,

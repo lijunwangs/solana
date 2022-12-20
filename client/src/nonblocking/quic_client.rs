@@ -2,7 +2,7 @@
 //! and provides an interface for sending transactions which is restricted by the
 //! server's flow control.
 pub use solana_quic_client::nonblocking::quic_client::{
-    QuicClient, QuicClientCertificate, QuicError, QuicLazyInitializedEndpoint, QuicTpuConnection,
+    QuicClient, QuicClientCertificate, QuicError, QuicLazyInitializedEndpoint, QuicClientConnection,
 };
 use {
     crate::nonblocking::tpu_connection::TpuConnection,
@@ -14,7 +14,7 @@ use {
 };
 
 #[async_trait]
-impl TpuConnection for QuicTpuConnection {
+impl TpuConnection for QuicClientConnection {
     fn tpu_addr(&self) -> &SocketAddr {
         self.client.tpu_addr()
     }

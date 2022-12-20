@@ -2,16 +2,16 @@ pub use solana_tpu_client::tpu_connection::ClientStats;
 use {
     enum_dispatch::enum_dispatch,
     rayon::iter::{IntoParallelIterator, ParallelIterator},
-    solana_quic_client::quic_client::QuicTpuConnection,
+    solana_quic_client::quic_client::QuicClientConnection,
     solana_sdk::{transaction::VersionedTransaction, transport::Result as TransportResult},
-    solana_udp_client::udp_client::UdpTpuConnection,
+    solana_udp_client::udp_client::UdpClientConnection,
     std::net::SocketAddr,
 };
 
 #[enum_dispatch]
 pub enum BlockingConnection {
-    UdpTpuConnection,
-    QuicTpuConnection,
+    UdpClientConnection,
+    QuicClientConnection,
 }
 
 #[enum_dispatch(BlockingConnection)]

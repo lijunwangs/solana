@@ -3,7 +3,7 @@
 
 use {
     crate::nonblocking::quic_client::{
-        QuicClient, QuicLazyInitializedEndpoint, QuicTpuConnection as NonblockingQuicTpuConnection,
+        QuicClient, QuicLazyInitializedEndpoint, QuicClientConnection as NonblockingQuicTpuConnection,
     },
     lazy_static::lazy_static,
     log::*,
@@ -128,10 +128,10 @@ pub mod temporary_pub {
 }
 use temporary_pub::*;
 
-pub struct QuicTpuConnection {
+pub struct QuicClientConnection {
     pub inner: Arc<NonblockingQuicTpuConnection>,
 }
-impl QuicTpuConnection {
+impl QuicClientConnection {
     pub fn new(
         endpoint: Arc<QuicLazyInitializedEndpoint>,
         tpu_addr: SocketAddr,
@@ -157,7 +157,7 @@ impl QuicTpuConnection {
     }
 }
 
-impl TpuConnection for QuicTpuConnection {
+impl TpuConnection for QuicClientConnection {
     fn tpu_addr(&self) -> &SocketAddr {
         self.inner.tpu_addr()
     }

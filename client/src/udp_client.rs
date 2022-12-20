@@ -1,14 +1,14 @@
 //! Simple TPU client that communicates with the given UDP port with UDP and provides
 //! an interface for sending transactions
 
-pub use solana_udp_client::udp_client::UdpTpuConnection;
+pub use solana_udp_client::udp_client::UdpClientConnection;
 use {
     crate::tpu_connection::TpuConnection, core::iter::repeat,
     solana_sdk::transport::Result as TransportResult, solana_streamer::sendmmsg::batch_send,
     std::net::SocketAddr,
 };
 
-impl TpuConnection for UdpTpuConnection {
+impl TpuConnection for UdpClientConnection {
     fn tpu_addr(&self) -> &SocketAddr {
         &self.addr
     }

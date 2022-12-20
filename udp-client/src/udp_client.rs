@@ -14,12 +14,12 @@ use {
     },
 };
 
-pub struct UdpTpuConnection {
+pub struct UdpClientConnection {
     pub socket: Arc<UdpSocket>,
     pub addr: SocketAddr,
 }
 
-impl UdpTpuConnection {
+impl UdpClientConnection {
     pub fn new_from_addr(local_socket: Arc<UdpSocket>, tpu_addr: SocketAddr) -> Self {
         Self {
             socket: local_socket,
@@ -36,7 +36,7 @@ impl UdpTpuConnection {
     }
 }
 
-impl TpuConnection for UdpTpuConnection {
+impl TpuConnection for UdpClientConnection {
     fn tpu_addr(&self) -> &SocketAddr {
         &self.addr
     }

@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn test_quic_client_multiple_writes() {
         use {
-            solana_quic_client::quic_client::QuicTpuConnection,
+            solana_quic_client::quic_client::QuicClientConnection,
             solana_tpu_client::tpu_connection::TpuConnection,
         };
         solana_logger::setup();
@@ -93,7 +93,7 @@ mod tests {
         let port = s.local_addr().unwrap().port();
         let tpu_addr = SocketAddr::new(addr, port);
         let connection_cache_stats = Arc::new(ConnectionCacheStats::default());
-        let client = QuicTpuConnection::new(
+        let client = QuicClientConnection::new(
             Arc::new(QuicLazyInitializedEndpoint::default()),
             tpu_addr,
             connection_cache_stats,
@@ -114,7 +114,7 @@ mod tests {
     #[tokio::test]
     async fn test_nonblocking_quic_client_multiple_writes() {
         use {
-            solana_quic_client::nonblocking::quic_client::QuicTpuConnection,
+            solana_quic_client::nonblocking::quic_client::QuicClientConnection,
             solana_tpu_client::nonblocking::tpu_connection::TpuConnection,
         };
         solana_logger::setup();
@@ -140,7 +140,7 @@ mod tests {
         let port = s.local_addr().unwrap().port();
         let tpu_addr = SocketAddr::new(addr, port);
         let connection_cache_stats = Arc::new(ConnectionCacheStats::default());
-        let client = QuicTpuConnection::new(
+        let client = QuicClientConnection::new(
             Arc::new(QuicLazyInitializedEndpoint::default()),
             tpu_addr,
             connection_cache_stats,
@@ -168,7 +168,7 @@ mod tests {
         /// In this we demonstrate that the request sender and the response receiver use the
         /// same quic Endpoint, and the same UDP socket.
         use {
-            solana_quic_client::quic_client::QuicTpuConnection,
+            solana_quic_client::quic_client::QuicClientConnection,
             solana_tpu_client::tpu_connection::TpuConnection,
         };
         solana_logger::setup();
@@ -241,7 +241,7 @@ mod tests {
         let endpoint =
             QuicLazyInitializedEndpoint::new(client_certificate, Some(response_recv_endpoint));
         let request_sender =
-            QuicTpuConnection::new(Arc::new(endpoint), tpu_addr, connection_cache_stats);
+            QuicClientConnection::new(Arc::new(endpoint), tpu_addr, connection_cache_stats);
         // Send a full size packet with single byte writes as a request.
         let num_bytes = PACKET_DATA_SIZE;
         let num_expected_packets: usize = 3000;
@@ -268,7 +268,7 @@ mod tests {
         let endpoint2 = QuicLazyInitializedEndpoint::new(client_certificate2, None);
         let connection_cache_stats2 = Arc::new(ConnectionCacheStats::default());
         let response_sender =
-            QuicTpuConnection::new(Arc::new(endpoint2), server_addr, connection_cache_stats2);
+            QuicClientConnection::new(Arc::new(endpoint2), server_addr, connection_cache_stats2);
 
         // Send a full size packet with single byte writes.
         let num_bytes = PACKET_DATA_SIZE;

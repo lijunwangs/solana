@@ -419,13 +419,13 @@ impl BaseClientConnection {
         addr: SocketAddr,
         stats: Arc<ConnectionCacheStats>,
     ) -> BlockingConnection {
-        use crate::{quic_client::QuicTpuConnection, udp_client::UdpTpuConnection};
+        use crate::{quic_client::QuicClientConnection, udp_client::UdpClientConnection};
         match self {
             BaseClientConnection::Udp(udp_socket) => {
-                UdpTpuConnection::new_from_addr(udp_socket.clone(), addr).into()
+                UdpClientConnection::new_from_addr(udp_socket.clone(), addr).into()
             }
             BaseClientConnection::Quic(quic_client) => {
-                QuicTpuConnection::new_with_client(quic_client.clone(), stats).into()
+                QuicClientConnection::new_with_client(quic_client.clone(), stats).into()
             }
         }
     }
@@ -435,13 +435,13 @@ impl BaseClientConnection {
         addr: SocketAddr,
         stats: Arc<ConnectionCacheStats>,
     ) -> NonblockingConnection {
-        use crate::nonblocking::{quic_client::QuicTpuConnection, udp_client::UdpTpuConnection};
+        use crate::nonblocking::{quic_client::QuicClientConnection, udp_client::UdpClientConnection};
         match self {
             BaseClientConnection::Udp(udp_socket) => {
-                UdpTpuConnection::new_from_addr(udp_socket.try_clone().unwrap(), addr).into()
+                UdpClientConnection::new_from_addr(udp_socket.try_clone().unwrap(), addr).into()
             }
             BaseClientConnection::Quic(quic_client) => {
-                QuicTpuConnection::new_with_client(quic_client.clone(), stats).into()
+                QuicClientConnection::new_with_client(quic_client.clone(), stats).into()
             }
         }
     }

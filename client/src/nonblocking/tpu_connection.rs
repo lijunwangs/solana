@@ -3,9 +3,9 @@
 use {
     async_trait::async_trait,
     enum_dispatch::enum_dispatch,
-    solana_quic_client::nonblocking::quic_client::QuicTpuConnection,
+    solana_quic_client::nonblocking::quic_client::QuicClientConnection,
     solana_sdk::{transaction::VersionedTransaction, transport::Result as TransportResult},
-    solana_udp_client::nonblocking::udp_client::UdpTpuConnection,
+    solana_udp_client::nonblocking::udp_client::UdpClientConnection,
     std::net::SocketAddr,
 };
 
@@ -14,8 +14,8 @@ use {
 // trying to convert later.
 #[enum_dispatch]
 pub enum NonblockingConnection {
-    QuicTpuConnection,
-    UdpTpuConnection,
+    QuicClientConnection,
+    UdpClientConnection,
 }
 
 #[async_trait]

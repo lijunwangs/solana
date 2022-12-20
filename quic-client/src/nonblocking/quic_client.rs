@@ -527,12 +527,12 @@ impl QuicClient {
     }
 }
 
-pub struct QuicTpuConnection {
+pub struct QuicClientConnection {
     pub client: Arc<QuicClient>,
     pub connection_stats: Arc<ConnectionCacheStats>,
 }
 
-impl QuicTpuConnection {
+impl QuicClientConnection {
     pub fn base_stats(&self) -> Arc<ClientStats> {
         self.client.stats()
     }
@@ -566,7 +566,7 @@ impl QuicTpuConnection {
 }
 
 #[async_trait]
-impl TpuConnection for QuicTpuConnection {
+impl TpuConnection for QuicClientConnection {
     fn tpu_addr(&self) -> &SocketAddr {
         self.client.tpu_addr()
     }
