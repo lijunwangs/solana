@@ -29,14 +29,14 @@ pub trait TpuConnection {
     ) -> TransportResult<()> {
         let wire_transaction =
             bincode::serialize(transaction).expect("serialize Transaction in send_batch");
-        self.send_wire_transaction(&wire_transaction).await
+        self.send_data(&wire_transaction).await
     }
 
-    async fn send_wire_transaction<T>(&self, wire_transaction: T) -> TransportResult<()>
+    async fn send_data<T>(&self, data: T) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync;
 
-    async fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
+    async fn send_data_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync;
 }

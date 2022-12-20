@@ -14,7 +14,7 @@ impl TpuConnection for UdpTpuConnection {
         &self.addr
     }
 
-    async fn send_wire_transaction<T>(&self, wire_transaction: T) -> TransportResult<()>
+    async fn send_data<T>(&self, wire_transaction: T) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {
@@ -24,7 +24,7 @@ impl TpuConnection for UdpTpuConnection {
         Ok(())
     }
 
-    async fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
+    async fn send_data_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {

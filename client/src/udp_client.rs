@@ -13,12 +13,12 @@ impl TpuConnection for UdpTpuConnection {
         &self.addr
     }
 
-    fn send_wire_transaction_async(&self, wire_transaction: Vec<u8>) -> TransportResult<()> {
+    fn send_data_async(&self, wire_transaction: Vec<u8>) -> TransportResult<()> {
         self.socket.send_to(wire_transaction.as_ref(), self.addr)?;
         Ok(())
     }
 
-    fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
+    fn send_data_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {
@@ -27,7 +27,7 @@ impl TpuConnection for UdpTpuConnection {
         Ok(())
     }
 
-    fn send_wire_transaction_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
+    fn send_data_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
         let pkts: Vec<_> = buffers.into_iter().zip(repeat(self.tpu_addr())).collect();
         batch_send(&self.socket, &pkts)?;
         Ok(())

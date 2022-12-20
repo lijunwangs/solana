@@ -17,15 +17,15 @@ impl TpuConnection for QuicTpuConnection {
         self.inner.tpu_addr()
     }
 
-    fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
+    fn send_data_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {
-        RUNTIME.block_on(self.inner.send_wire_transaction_batch(buffers))?;
+        RUNTIME.block_on(self.inner.send_data_batch(buffers))?;
         Ok(())
     }
 
-    fn send_wire_transaction_async(&self, wire_transaction: Vec<u8>) -> TransportResult<()> {
+    fn send_data_async(&self, wire_transaction: Vec<u8>) -> TransportResult<()> {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
 
@@ -34,7 +34,7 @@ impl TpuConnection for QuicTpuConnection {
         Ok(())
     }
 
-    fn send_wire_transaction_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
+    fn send_data_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
         let _handle =
