@@ -6600,8 +6600,21 @@ impl Bank {
         )
     }
 
+    /// Return the accumulated executed transaction count
     pub fn transaction_count(&self) -> u64 {
         self.transaction_count.load(Relaxed)
+    }
+
+    /// Return the transaction count executed only in this bank
+    pub fn executed_transaction_count(&self) -> u64 {
+        let mut executed_transaction_count =
+            self.transaction_count() - self.parent().map_or(0, |parent| parent.transaction_count());
+        if !self.bank_tranaction_count_fix_enabled() {
+            // When the feature bank_tranaction_count_fix is enabled, transaction_count() excludes
+            // the transactions which were executed but landed in error, we add it here.
+            executed_transaction_count += self.transaction_error_count();
+        }
+        executed_transaction_count
     }
 
     pub fn transaction_error_count(&self) -> u64 {
