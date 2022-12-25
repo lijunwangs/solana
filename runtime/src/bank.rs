@@ -10624,6 +10624,8 @@ pub(crate) mod tests {
             ))
         );
         assert_eq!(bank.transaction_count(), 1);
+        assert_eq!(bank.executed_transaction_count(), 2);
+        assert_eq!(bank.transaction_error_count(), 1);
 
         let mint_pubkey = mint_keypair.pubkey();
         assert_eq!(bank.get_balance(&mint_pubkey), mint_amount - amount);
