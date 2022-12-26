@@ -1,5 +1,6 @@
 use {
     crate::{accounts_db::AccountsDb, append_vec::StoredAccountMeta},
+    log::*,
     solana_measure::measure::Measure,
     solana_metrics::*,
     solana_sdk::{account::AccountSharedData, clock::Slot, pubkey::Pubkey, signature::Signature},
@@ -96,7 +97,11 @@ impl AccountsDb {
             accounts.for_each(|account| {
                 account_len += 1;
                 if let Some(previous_write_version) = previous_write_version {
-                    assert!(previous_write_version < account.meta.write_version_obsolete);
+                    if previous_write_version >= account.meta.write_version_obsolete {
+                        error!("Wrong write version previous {} current {} for account {}",
+                            previous_write_version, account.meta.write_version_obsolete, account.pubkey());
+                    }
+                    // assert!(previous_write_version < account.meta.write_version_obsolete);
                 }
                 previous_write_version = Some(account.meta.write_version_obsolete);
                 if notified_accounts.contains(&account.meta.pubkey) {
