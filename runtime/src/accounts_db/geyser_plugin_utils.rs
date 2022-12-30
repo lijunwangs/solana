@@ -91,19 +91,22 @@ impl AccountsDb {
         let mut accounts_to_stream: HashMap<Pubkey, StoredAccountMeta> = HashMap::default();
         let mut measure_filter = Measure::start("accountsdb-plugin-filtering-accounts");
         let mut previous_write_version = None;
-        for (_, storage_entry) in slot_stores.iter() {
+        let mut previous_appendvec_id = None;
+        for (appendvec_id, storage_entry) in slot_stores.iter() {
             let accounts = storage_entry.accounts.account_iter();
             let mut account_len = 0;
             accounts.for_each(|account| {
                 account_len += 1;
                 if let Some(previous_write_version) = previous_write_version {
                     if previous_write_version >= account.meta.write_version_obsolete {
-                        error!("Wrong write version previous {} current {} for account {}",
-                            previous_write_version, account.meta.write_version_obsolete, account.pubkey());
+                        error!("Wrong write version previous {} current {} for account {} appendvec_id: {} previous appendvec_id: {:?}",
+                            previous_write_version, account.meta.write_version_obsolete, account.pubkey(),
+                            appendvec_id, previous_appendvec_id);
                     }
                     // assert!(previous_write_version < account.meta.write_version_obsolete);
                 }
                 previous_write_version = Some(account.meta.write_version_obsolete);
+                previous_appendvec_id = Some(appendvec_id);
                 if notified_accounts.contains(&account.meta.pubkey) {
                     notify_stats.skipped_accounts += 1;
                     return;
