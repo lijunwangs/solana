@@ -1,6 +1,3 @@
-pub use solana_tpu_client::tpu_connection_cache::{
-    DEFAULT_TPU_CONNECTION_POOL_SIZE, DEFAULT_TPU_ENABLE_UDP, DEFAULT_TPU_USE_QUIC,
-};
 use {
     crate::{
         client_connection::BlockingConnection,
@@ -31,6 +28,9 @@ use {
         sync::{atomic::Ordering, Arc, RwLock},
     },
 };
+
+pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
+pub const DEFAULT_CONNECTION_CACHE_USE_QUIC: bool = true;
 
 pub struct ConnectionCache {
     map: RwLock<IndexMap<SocketAddr, ConnectionPool>>,
@@ -381,7 +381,7 @@ impl Default for ConnectionCache {
             map: RwLock::new(IndexMap::with_capacity(MAX_CONNECTIONS)),
             stats: Arc::new(ConnectionCacheStats::default()),
             last_stats: AtomicInterval::default(),
-            connection_pool_size: DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            connection_pool_size: DEFAULT_CONNECTION_POOL_SIZE,
             client_udp_socket: Arc::new(
                 solana_net_utils::bind_with_any_port(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))
                     .expect("Unable to bind to UDP socket"),
@@ -390,7 +390,7 @@ impl Default for ConnectionCache {
                 certificates: certs,
                 key: priv_key,
             }),
-            use_quic: DEFAULT_TPU_USE_QUIC,
+            use_quic: DEFAULT_CONNECTION_CACHE_USE_QUIC,
             maybe_staked_nodes: None,
             maybe_client_pubkey: None,
             client_endpoint: None,
