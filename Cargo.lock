@@ -5103,6 +5103,7 @@ dependencies = [
  "solana-measure",
  "solana-metrics",
  "solana-net-utils",
+ "solana-perf",
  "solana-pubsub-client",
  "solana-quic-client",
  "solana-rpc-client",

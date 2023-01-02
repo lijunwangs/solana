@@ -3,6 +3,7 @@ mod tests {
     use {
         crossbeam_channel::{unbounded, Receiver},
         log::*,
+        solana_client::client_connection::ClientConnection,
         solana_perf::packet::PacketBatch,
         solana_quic_client::nonblocking::quic_client::{
             QuicClientCertificate, QuicLazyInitializedEndpoint,
@@ -66,10 +67,7 @@ mod tests {
 
     #[test]
     fn test_quic_client_multiple_writes() {
-        use {
-            solana_quic_client::quic_client::QuicClientConnection,
-            solana_tpu_client::tpu_connection::TpuConnection,
-        };
+        use solana_quic_client::quic_client::QuicClientConnection;
         solana_logger::setup();
         let (sender, receiver) = unbounded();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
@@ -104,7 +102,7 @@ mod tests {
         let num_expected_packets: usize = 3000;
         let packets = vec![vec![0u8; PACKET_DATA_SIZE]; num_expected_packets];
 
-        assert!(client.send_wire_transaction_batch_async(packets).is_ok());
+        assert!(client.send_data_batch_async(packets).is_ok());
 
         check_packets(receiver, num_bytes, num_expected_packets);
         exit.store(true, Ordering::Relaxed);
@@ -113,10 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_nonblocking_quic_client_multiple_writes() {
-        use {
-            solana_quic_client::nonblocking::quic_client::QuicClientConnection,
-            solana_tpu_client::nonblocking::tpu_connection::TpuConnection,
-        };
+        use solana_quic_client::nonblocking::quic_client::QuicClientConnection;
         solana_logger::setup();
         let (sender, receiver) = unbounded();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
@@ -151,7 +146,7 @@ mod tests {
         let num_expected_packets: usize = 3000;
         let packets = vec![vec![0u8; PACKET_DATA_SIZE]; num_expected_packets];
 
-        assert!(client.send_wire_transaction_batch(&packets).await.is_ok());
+        assert!(client.send_data_batch(&packets).await.is_ok());
 
         check_packets(receiver, num_bytes, num_expected_packets);
         exit.store(true, Ordering::Relaxed);
@@ -167,10 +162,7 @@ mod tests {
         /// The response sender -- responsible for sending responses to the response receiver.
         /// In this we demonstrate that the request sender and the response receiver use the
         /// same quic Endpoint, and the same UDP socket.
-        use {
-            solana_quic_client::quic_client::QuicClientConnection,
-            solana_tpu_client::tpu_connection::TpuConnection,
-        };
+        use solana_quic_client::quic_client::QuicClientConnection;
         solana_logger::setup();
 
         // Request Receiver
@@ -247,9 +239,7 @@ mod tests {
         let num_expected_packets: usize = 3000;
         let packets = vec![vec![0u8; PACKET_DATA_SIZE]; num_expected_packets];
 
-        assert!(request_sender
-            .send_wire_transaction_batch_async(packets)
-            .is_ok());
+        assert!(request_sender.send_data_batch_async(packets).is_ok());
         check_packets(receiver, num_bytes, num_expected_packets);
         info!("Received requests!");
 
@@ -275,9 +265,7 @@ mod tests {
         let num_expected_packets: usize = 3000;
         let packets = vec![vec![0u8; PACKET_DATA_SIZE]; num_expected_packets];
 
-        assert!(response_sender
-            .send_wire_transaction_batch_async(packets)
-            .is_ok());
+        assert!(response_sender.send_data_batch_async(packets).is_ok());
         check_packets(receiver2, num_bytes, num_expected_packets);
         info!("Received responses!");
 

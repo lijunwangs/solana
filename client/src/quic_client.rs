@@ -29,16 +29,14 @@ impl ClientConnection for QuicClientConnection {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
 
-        let _handle = RUNTIME
-            .spawn(async move { send_wire_transaction_async(inner, wire_transaction).await });
+        let _handle = RUNTIME.spawn(async move { send_data_async(inner, wire_transaction).await });
         Ok(())
     }
 
     fn send_data_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
-        let _handle =
-            RUNTIME.spawn(async move { send_wire_transaction_batch_async(inner, buffers).await });
+        let _handle = RUNTIME.spawn(async move { send_data_batch_async(inner, buffers).await });
         Ok(())
     }
 }

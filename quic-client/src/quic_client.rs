@@ -10,9 +10,7 @@ use {
     log::*,
     solana_sdk::transport::{Result as TransportResult, TransportError},
     solana_tpu_client::{
-        connection_cache_stats::ConnectionCacheStats,
-        nonblocking::tpu_connection::TpuConnection as NonblockingTpuConnection,
-        tpu_connection::{ClientStats, TpuConnection},
+        connection_cache_stats::ConnectionCacheStats, tpu_connection::ClientStats,
     },
     std::{
         net::SocketAddr,
@@ -79,20 +77,20 @@ pub mod temporary_pub {
             .unwrap();
     }
 
-    pub async fn send_wire_transaction_async(
+    pub async fn send_data_async(
         connection: Arc<NonblockingQuicTpuConnection>,
         wire_transaction: Vec<u8>,
     ) -> TransportResult<()> {
         let result = timeout(
             Duration::from_millis(SEND_TRANSACTION_TIMEOUT_MS),
-            connection.send_wire_transaction(wire_transaction),
+            connection.send_data(wire_transaction),
         )
         .await;
         ASYNC_TASK_SEMAPHORE.release();
         handle_send_result(result, connection)
     }
 
-    pub async fn send_wire_transaction_batch_async(
+    pub async fn send_data_batch_async(
         connection: Arc<NonblockingQuicTpuConnection>,
         buffers: Vec<Vec<u8>>,
     ) -> TransportResult<()> {
@@ -100,7 +98,7 @@ pub mod temporary_pub {
 
         let result = timeout(
             Duration::from_millis(time_out),
-            connection.send_wire_transaction_batch(&buffers),
+            connection.send_data_batch(&buffers),
         )
         .await;
         ASYNC_TASK_SEMAPHORE.release();
@@ -127,7 +125,6 @@ pub mod temporary_pub {
         }
     }
 }
-use temporary_pub::*;
 
 pub struct QuicClientConnection {
     pub inner: Arc<NonblockingQuicTpuConnection>,
@@ -155,36 +152,5 @@ impl QuicClientConnection {
             connection_stats,
         ));
         Self { inner }
-    }
-}
-
-impl TpuConnection for QuicClientConnection {
-    fn tpu_addr(&self) -> &SocketAddr {
-        self.inner.tpu_addr()
-    }
-
-    fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
-    where
-        T: AsRef<[u8]> + Send + Sync,
-    {
-        RUNTIME.block_on(self.inner.send_wire_transaction_batch(buffers))?;
-        Ok(())
-    }
-
-    fn send_wire_transaction_async(&self, wire_transaction: Vec<u8>) -> TransportResult<()> {
-        let _lock = ASYNC_TASK_SEMAPHORE.acquire();
-        let inner = self.inner.clone();
-
-        let _handle = RUNTIME
-            .spawn(async move { send_wire_transaction_async(inner, wire_transaction).await });
-        Ok(())
-    }
-
-    fn send_wire_transaction_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
-        let _lock = ASYNC_TASK_SEMAPHORE.acquire();
-        let inner = self.inner.clone();
-        let _handle =
-            RUNTIME.spawn(async move { send_wire_transaction_batch_async(inner, buffers).await });
-        Ok(())
     }
 }

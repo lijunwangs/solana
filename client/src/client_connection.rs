@@ -1,4 +1,3 @@
-pub use solana_tpu_client::tpu_connection::ClientStats;
 use {
     enum_dispatch::enum_dispatch, solana_quic_client::quic_client::QuicClientConnection,
     solana_sdk::transport::Result as TransportResult,

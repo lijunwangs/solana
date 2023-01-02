@@ -3,7 +3,6 @@
 //! server's flow control.
 use {
     async_mutex::Mutex,
-    async_trait::async_trait,
     futures::future::join_all,
     itertools::Itertools,
     log::*,
@@ -27,8 +26,7 @@ use {
         tls_certificates::new_self_signed_tls_certificate_chain,
     },
     solana_tpu_client::{
-        connection_cache_stats::ConnectionCacheStats, nonblocking::tpu_connection::TpuConnection,
-        tpu_connection::ClientStats,
+        connection_cache_stats::ConnectionCacheStats, tpu_connection::ClientStats,
     },
     std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
@@ -563,15 +561,12 @@ impl QuicClientConnection {
             connection_stats,
         }
     }
-}
 
-#[async_trait]
-impl TpuConnection for QuicClientConnection {
-    fn tpu_addr(&self) -> &SocketAddr {
+    pub fn tpu_addr(&self) -> &SocketAddr {
         self.client.tpu_addr()
     }
 
-    async fn send_wire_transaction_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
+    pub async fn send_data_batch<T>(&self, buffers: &[T]) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {
@@ -587,7 +582,7 @@ impl TpuConnection for QuicClientConnection {
         Ok(())
     }
 
-    async fn send_wire_transaction<T>(&self, wire_transaction: T) -> TransportResult<()>
+    pub async fn send_data<T>(&self, wire_transaction: T) -> TransportResult<()>
     where
         T: AsRef<[u8]> + Send + Sync,
     {

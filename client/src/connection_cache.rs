@@ -18,9 +18,8 @@ use {
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate_chain,
     },
-    solana_tpu_client::{
-        connection_cache_stats::{ConnectionCacheStats, CONNECTION_STAT_SUBMISSION_INTERVAL},
-        tpu_connection_cache::MAX_CONNECTIONS,
+    solana_tpu_client::connection_cache_stats::{
+        ConnectionCacheStats, CONNECTION_STAT_SUBMISSION_INTERVAL,
     },
     std::{
         error::Error,
@@ -31,6 +30,7 @@ use {
 
 pub const DEFAULT_CONNECTION_POOL_SIZE: usize = 4;
 pub const DEFAULT_CONNECTION_CACHE_USE_QUIC: bool = true;
+pub const MAX_CONNECTIONS: usize = 1024;
 
 pub struct ConnectionCache {
     map: RwLock<IndexMap<SocketAddr, ConnectionPool>>,
