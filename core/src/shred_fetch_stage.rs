@@ -3,6 +3,7 @@
 use {
     crate::{cluster_nodes::check_feature_activation, serve_repair::ServeRepair},
     crossbeam_channel::{unbounded, Sender},
+    quinn::Endpoint,
     solana_gossip::cluster_info::ClusterInfo,
     solana_ledger::shred::{should_discard_shred, ShredFetchStats},
     solana_perf::packet::{PacketBatch, PacketBatchRecycler, PacketFlags},
@@ -229,6 +230,12 @@ impl ShredFetchStage {
             thread_hdl.join()?;
         }
         Ok(())
+    }
+
+    /// Obtain the quic based repair endpoint which receives
+    /// the repair responses
+    pub(crate) fn get_quic_repair_endpoint(&self) -> Option<Endpoint> {
+        None
     }
 }
 
