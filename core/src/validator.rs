@@ -1100,7 +1100,7 @@ impl Validator {
 
     // Used for notifying many nodes in parallel to exit
     pub fn exit(&mut self) {
-        info!("PARTITION_TEST exit validator {}", self.cluster_info.id());
+        info!("PARTITION_TEST zzzzz exit validator {}", self.cluster_info.id());
         self.validator_exit.write().unwrap().exit();
 
         // drop all signals in blockstore
