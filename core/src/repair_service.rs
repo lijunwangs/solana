@@ -788,7 +788,9 @@ impl RepairService {
     }
 
     pub fn join(self) -> thread::Result<()> {
+        info!("zzzzz waiting for {}", "t_repair");
         self.t_repair.join()?;
+        info!("zzzzz waiting for {}", "ancestor_hashes_service");
         self.ancestor_hashes_service.join()
     }
 }

@@ -469,8 +469,11 @@ impl WindowService {
     }
 
     pub(crate) fn join(self) -> thread::Result<()> {
+        info!("zzzzz waiting for {}", "t_insert");
         self.t_insert.join()?;
+        info!("zzzzz waiting for {}", "t_check_duplicate");
         self.t_check_duplicate.join()?;
+        info!("zzzzz waiting for {}", "repair_service");
         self.repair_service.join()
     }
 }
