@@ -107,6 +107,7 @@ fn test_fork_choice_refresh_old_votes() {
                               context: &mut PartitionContext| {
         // Kill validator with alive_stake_3, second in `partitions` slice
         let smallest_validator_key = &validator_keys[3];
+        info!("PARTITION_TEST killing validator {}", smallest_validator_key);
         let info = cluster.exit_node(smallest_validator_key);
         context.alive_stake3_info = Some(info);
         context.smallest_validator_key = *smallest_validator_key;
