@@ -340,21 +340,33 @@ impl Tvu {
     }
 
     pub fn join(self) -> thread::Result<()> {
+        info!("zzzzz waiting for {}", "retransmit_stage");
         self.retransmit_stage.join()?;
+        info!("zzzzz waiting for {}", "window_service");
         self.window_service.join()?;
+        info!("zzzzz waiting for {}", "cluster_slots_service");
         self.cluster_slots_service.join()?;
+        info!("zzzzz waiting for {}", "fetch_stage");
         self.fetch_stage.join()?;
+        info!("zzzzz waiting for {}", "shred_sigverify");
         self.shred_sigverify.join()?;
         if self.ledger_cleanup_service.is_some() {
+            info!("zzzzz waiting for {}", "ledger_cleanup_service");
             self.ledger_cleanup_service.unwrap().join()?;
         }
+        info!("zzzzz waiting for {}", "replay_stage");
         self.replay_stage.join()?;
+        info!("zzzzz waiting for {}", "cost_update_service");
         self.cost_update_service.join()?;
+        info!("zzzzz waiting for {}", "");
         self.voting_service.join()?;
         if let Some(warmup_service) = self.warm_quic_cache_service {
+            info!("zzzzz waiting for {}", "warmup_service");
             warmup_service.join()?;
         }
+        info!("zzzzz waiting for {}", "drop_bank_service");
         self.drop_bank_service.join()?;
+        info!("zzzzz waiting for {}", "duplicate_shred_listener");
         self.duplicate_shred_listener.join()?;
         Ok(())
     }
