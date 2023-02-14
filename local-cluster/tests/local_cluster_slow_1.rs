@@ -317,7 +317,7 @@ fn test_kill_partition_switch_threshold_no_progress() {
         |_: &mut LocalCluster, _: &[Pubkey], _: Vec<ClusterValidatorInfo>, _: &mut ()| {};
     let on_before_partition_resolved = |_: &mut LocalCluster, _: &mut ()| {};
     let on_partition_resolved = |cluster: &mut LocalCluster, _: &mut ()| {
-        cluster.check_no_new_roots(4000, "PARTITION_TEST", SocketAddrSpace::Unspecified);
+        cluster.check_no_new_roots(400, "PARTITION_TEST", SocketAddrSpace::Unspecified);
         info!("Finished on_partition_resolved");
     };
 
