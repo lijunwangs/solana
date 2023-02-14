@@ -678,6 +678,7 @@ mod tests {
 
     #[test]
     fn pubkey_fromstr() {
+        println!("zzzzzzzz default pubkey is {}", Pubkey::default());
         let pubkey = Pubkey::new_unique();
         let mut pubkey_base58_str = bs58::encode(pubkey.0).into_string();
 

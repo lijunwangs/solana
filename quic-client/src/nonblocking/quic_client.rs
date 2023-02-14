@@ -416,10 +416,14 @@ impl QuicClient {
             last_connection_id = connection.stable_id();
             match Self::_send_buffer_using_conn(data, &connection).await {
                 Ok(()) => {
+                    info!("Successfully sent data to {} on connection {}", self.addr, connection.stable_id());
                     return Ok(connection);
                 }
                 Err(err) => match err {
                     QuicError::ConnectionError(_) => {
+                        last_error = Some(err);
+                    }
+                    QuicError::WriteError(_) => {
                         last_error = Some(err);
                     }
                     _ => {

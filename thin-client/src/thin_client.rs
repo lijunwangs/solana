@@ -251,6 +251,7 @@ where
             let blockhash = self.get_latest_blockhash()?;
             transaction.sign(keypairs, blockhash);
         }
+        info!("retry_transfer failed in {} retries", tries);
         Err(io::Error::new(
             io::ErrorKind::Other,
             format!("retry_transfer failed in {tries} retries"),
