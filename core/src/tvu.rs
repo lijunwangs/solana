@@ -261,12 +261,13 @@ impl Tvu {
         );
 
         let warm_quic_cache_service = if connection_cache.use_quic() {
-            Some(WarmQuicCacheService::new(
-                connection_cache.clone(),
-                cluster_info.clone(),
-                poh_recorder.clone(),
-                exit.clone(),
-            ))
+            // Some(WarmQuicCacheService::new(
+            //     connection_cache.clone(),
+            //     cluster_info.clone(),
+            //     poh_recorder.clone(),
+            //     exit.clone(),
+            // ))
+            None
         } else {
             None
         };
