@@ -227,10 +227,10 @@ where
                 if num_confirmed == 0 {
                     let conn = self.connection_cache.get_connection(self.tpu_addr());
                     // Send the transaction if there has been no confirmation (e.g. the first time)
-                    info!("Sending transaction to {}", self.tpu_addr());
+                    info!("Sending transaction to {} {}", self.tpu_addr(), conn.server_addr());
                     #[allow(clippy::needless_borrow)]                    
                     let result = conn.send_data(&wire_transaction);
-                    info!("Sending transaction to {} result: {:?}", self.tpu_addr(), result);
+                    info!("Sending transaction to {} {} result: {:?}", self.tpu_addr(), conn.server_addr(), result);
                     result?
                 }
 

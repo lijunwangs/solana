@@ -177,7 +177,10 @@ impl ClientConnection for QuicClientConnection {
     }
 
     fn send_data(&self, buffer: &[u8]) -> TransportResult<()> {
-        RUNTIME.block_on(self.inner.send_data(buffer))?;
+        info!("Sending sync data to {} via quic", self.server_addr());
+        let result = RUNTIME.block_on(self.inner.send_data(buffer));
+        info!("Sending sync data to {} via quic result {:?}", self.server_addr(), result);
+        result?;
         Ok(())
     }
 }
