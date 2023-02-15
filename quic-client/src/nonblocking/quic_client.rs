@@ -450,7 +450,6 @@ impl QuicClient {
             last_error, self.addr
         );
 
-        panic!("Error sending data to {:?}", self.addr);
         // If we get here but last_error is None, then we have a logic error
         // in this function, so panic here with an expect to help debugging
         Err(last_error.expect("QuicClient::_send_buffer last_error.expect"))
@@ -465,9 +464,14 @@ impl QuicClient {
     where
         T: AsRef<[u8]>,
     {
-        self._send_buffer(data.as_ref(), stats, connection_stats)
+        let result = self
+            ._send_buffer(data.as_ref(), stats, connection_stats)
             .await
-            .map_err(Into::<ClientErrorKind>::into)?;
+            .map_err(Into::<ClientErrorKind>::into);
+        if result.is_err() {
+            panic!("Error sending data to {}", self.addr);
+        }
+        result?;
         Ok(())
     }
 
