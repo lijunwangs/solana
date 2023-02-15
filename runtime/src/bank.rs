@@ -4839,6 +4839,10 @@ impl Bank {
             "commit_transactions() working on a bank that is already frozen or is undergoing freezing!"
         );
 
+        for tx in sanitized_txs {
+            info!("Committing transaction {}", tx.signature());
+        }
+
         let CommitTransactionCounts {
             committed_transactions_count,
             committed_non_vote_transactions_count,

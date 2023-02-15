@@ -138,9 +138,10 @@ pub async fn run_server(
             ));
             sleep(Duration::from_micros(WAIT_BETWEEN_NEW_CONNECTIONS_US)).await;
         } else {
-            debug!("accept(): Timed out waiting for connection");
+            info!("accept(): Timed out waiting for connection");
         }
     }
+    info!("Finished server {:?}", incoming.local_addr());
 }
 
 fn prune_unstaked_connection_table(
