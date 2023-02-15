@@ -3,6 +3,7 @@
 
 use {
     core::iter::repeat,
+    log::*,
     solana_connection_cache::client_connection::ClientConnection,
     solana_sdk::transport::Result as TransportResult,
     solana_streamer::sendmmsg::batch_send,
@@ -53,6 +54,7 @@ impl ClientConnection for UdpClientConnection {
 
     fn send_data(&self, buffer: &[u8]) -> TransportResult<()> {
         self.socket.send_to(buffer, self.addr)?;
+        info!("Successfully sent data via udp to {}", self.addr);
         Ok(())
     }
 }

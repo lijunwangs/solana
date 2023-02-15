@@ -6913,6 +6913,7 @@ name = "solana-udp-client"
 version = "1.16.0"
 dependencies = [
  "async-trait",
+ "log",
  "solana-connection-cache",
  "solana-net-utils",
  "solana-sdk 1.16.0",
