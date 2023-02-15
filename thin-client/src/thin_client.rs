@@ -250,7 +250,7 @@ where
                     );
                 }
             }
-            info!("{} tries failed transfer to {}", x, self.tpu_addr());
+            info!("{} tries failed transfer to {} {}", x, self.tpu_addr(), transaction.signatures[0]);
             let blockhash = self.get_latest_blockhash()?;
             transaction.sign(keypairs, blockhash);
         }
