@@ -587,6 +587,13 @@ impl RepairService {
                 continue;
             }
             if let Some(slot_meta) = blockstore.meta(slot).unwrap() {
+                if slot_meta.first_shred_timestamp > now_timestamp {
+                    info!(
+                        "slot {} first_shred_timestamp {} > now_timestmap {}, break",
+                        slot, slot_meta.first_shred_timestamp, now_timestamp
+                    );
+                    break;
+                }
                 let new_repairs = Self::generate_repairs_for_slot(
                     blockstore,
                     slot,
