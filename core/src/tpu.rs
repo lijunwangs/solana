@@ -46,7 +46,7 @@ use {
 pub const DEFAULT_TPU_COALESCE_MS: u64 = 5;
 
 // allow multiple connections for NAT and any open/close overlap
-pub const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
+pub const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 32;
 
 pub struct TpuSockets {
     pub transactions: Vec<UdpSocket>,
