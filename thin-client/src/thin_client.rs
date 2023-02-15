@@ -227,10 +227,19 @@ where
                 if num_confirmed == 0 {
                     let conn = self.connection_cache.get_connection(self.tpu_addr());
                     // Send the transaction if there has been no confirmation (e.g. the first time)
-                    info!("Sending transaction to {} {}", self.tpu_addr(), conn.server_addr());
-                    #[allow(clippy::needless_borrow)]                    
+                    info!(
+                        "Sending transaction to {} {}",
+                        self.tpu_addr(),
+                        conn.server_addr()
+                    );
+                    #[allow(clippy::needless_borrow)]
                     let result = conn.send_data(&wire_transaction);
-                    info!("Sending transaction to {} {} result: {:?}", self.tpu_addr(), conn.server_addr(), result);
+                    info!(
+                        "Sending transaction to {} {} result: {:?}",
+                        self.tpu_addr(),
+                        conn.server_addr(),
+                        result
+                    );
                     result?
                 }
 
@@ -250,7 +259,12 @@ where
                     );
                 }
             }
-            info!("{} tries failed transfer to {} {}", x, self.tpu_addr(), transaction.signatures[0]);
+            info!(
+                "{} tries failed transfer to {} {}",
+                x,
+                self.tpu_addr(),
+                transaction.signatures[0]
+            );
             let blockhash = self.get_latest_blockhash()?;
             transaction.sign(keypairs, blockhash);
         }

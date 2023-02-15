@@ -101,7 +101,7 @@ pub async fn run_server(
     stats: Arc<StreamStats>,
     wait_for_chunk_timeout_ms: u64,
 ) {
-    debug!("spawn quic server");
+    debug!("spawn quic server {:?}", incoming.local_addr());
     let mut last_datapoint = Instant::now();
     let unstaked_connection_table: Arc<Mutex<ConnectionTable>> = Arc::new(Mutex::new(
         ConnectionTable::new(ConnectionPeerType::Unstaked),
@@ -123,7 +123,11 @@ pub async fn run_server(
         }
 
         if let Ok(Some(connection)) = timeout_connection {
-            info!("Got a connection {:?}", connection.remote_address());
+            info!(
+                "Got a connection {:?} at server {:?}",
+                connection.remote_address(),
+                incoming.local_addr()
+            );
             tokio::spawn(setup_connection(
                 connection,
                 unstaked_connection_table.clone(),
@@ -138,7 +142,10 @@ pub async fn run_server(
             ));
             sleep(Duration::from_micros(WAIT_BETWEEN_NEW_CONNECTIONS_US)).await;
         } else {
-            info!("accept(): Timed out waiting for connection");
+            info!(
+                "accept(): Timed out waiting for connection at server {:?}",
+                incoming.local_addr()
+            );
         }
     }
     info!("Finished server {:?}", incoming.local_addr());
@@ -902,6 +909,11 @@ impl ConnectionTable {
             Some((last_update, exit))
         } else {
             if let Some(connection) = connection {
+                info!(
+                    "Too many connection from {:?} length: {}",
+                    connection.remote_address(),
+                    connection_entry.len()
+                );
                 connection.close(
                     CONNECTION_CLOSE_CODE_TOO_MANY.into(),
                     CONNECTION_CLOSE_REASON_TOO_MANY,
