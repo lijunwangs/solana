@@ -333,7 +333,10 @@ pub fn run_cluster_partition<C>(
     let mut cluster = LocalCluster::new(&mut config, SocketAddrSpace::Unspecified);
 
     info!("PARTITION_TEST spend_and_verify_all_nodes(), ensure all nodes are caught up");
-    info!("PARTITION_TEST spend_and_verify_all_nodes(), connection-cache use_quic {}", cluster.connection_cache.use_quic());
+    info!(
+        "PARTITION_TEST spend_and_verify_all_nodes(), connection-cache use_quic {}",
+        cluster.connection_cache.use_quic()
+    );
 
     cluster_tests::spend_and_verify_all_nodes(
         &cluster.entry_point_info,

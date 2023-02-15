@@ -1816,6 +1816,15 @@ impl Blockstore {
         }
 
         let mut missing_indexes = vec![];
+
+        info!(
+            "find_missing_indexes now_timesmap {} first_timestamp: {} now >= first? {}",
+            now_timestamp,
+            first_timestamp,
+            now_timestamp >= first_timestamp
+        );
+
+        assert!(now_timestamp >= first_timestamp);
         let ticks_since_first_insert =
             DEFAULT_TICKS_PER_SECOND * (now_timestamp - first_timestamp) / 1000;
 
