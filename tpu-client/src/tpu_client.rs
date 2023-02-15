@@ -19,8 +19,8 @@ use {
     tokio::time::Duration,
 };
 
-pub const DEFAULT_TPU_ENABLE_UDP: bool = false;
-pub const DEFAULT_TPU_USE_QUIC: bool = true;
+pub const DEFAULT_TPU_ENABLE_UDP: bool = true;
+pub const DEFAULT_TPU_USE_QUIC: bool = false;
 pub const DEFAULT_TPU_CONNECTION_POOL_SIZE: usize = 4;
 
 pub type Result<T> = std::result::Result<T, TpuSenderError>;
