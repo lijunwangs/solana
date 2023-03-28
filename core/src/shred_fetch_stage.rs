@@ -1,7 +1,6 @@
 //! The `shred_fetch_stage` pulls shreds from UDP sockets and sends it to a channel.
 
 use {
-<<<<<<< HEAD
     crate::{cluster_nodes::check_feature_activation, repair_service::RepairTransportConfig, 
         serve_repair::ServeRepair, tvu::RepairQuicConfig},
     crossbeam_channel::{unbounded, Sender},
