@@ -789,9 +789,7 @@ impl AncestorHashesService {
             }
 
             let ancestor_request_status = AncestorRequestStatus::new(
-                sampled_validators
-                    .into_iter()
-                    .map(|(_pk, socket_addr)| {
+                sampled_validators.into_iter().map(|(_pk, socket_addr)| {
                     // When using quic, the socket_addr was auto incremented by the QUIC_PORT_OFFSET when we do get_connection
                     // However the returned packet address is the one with the offset already done. To ensure they are matched
                     // We need to do the increment as well when creating DeadSlotAncestorRequestStatus.
@@ -803,7 +801,6 @@ impl AncestorHashesService {
                     };
                     socket_addr
                 }),
-
                 duplicate_slot,
             );
             assert!(!ancestor_hashes_request_statuses.contains_key(&duplicate_slot));
@@ -842,8 +839,8 @@ fn spawn_ancestor_hashes_quic_server(
                 solana_streamer::quic::MAX_STAKED_CONNECTIONS,
                 MAX_UNSTAKED_CONNECTIONS,
                 stats,
-                repair_quic_config.wait_for_chunk_timeout_ms,
-                repair_quic_config.repair_packet_coalesce_timeout_ms,
+                repair_quic_config.wait_for_chunk_timeout,
+                repair_quic_config.repair_packet_coalesce_timeout,
             )
             .unwrap();
 
