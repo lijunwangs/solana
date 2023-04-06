@@ -1,6 +1,8 @@
 //! The `tvu` module implements the Transaction Validation Unit, a multi-stage transaction
 //! validation pipeline in software.
 
+use std::sync::atomic::Ordering;
+
 use {
     crate::{
         banking_trace::BankingTracer,
@@ -73,6 +75,7 @@ pub struct Tvu {
     warm_quic_cache_service: Option<WarmQuicCacheService>,
     drop_bank_service: DropBankService,
     duplicate_shred_listener: DuplicateShredListener,
+    shred_stage_exit: Arc<AtomicBool>,
 }
 
 pub struct TvuSockets {
@@ -160,6 +163,8 @@ impl Tvu {
         banking_tracer: Arc<BankingTracer>,
         repair_quic_config: Option<RepairQuicConfig>,
     ) -> Result<Self, String> {
+
+        let shred_stage_exit = Arc::<AtomicBool>::default();
         let TvuSockets {
             repair: repair_socket,
             fetch: fetch_sockets,
@@ -185,7 +190,7 @@ impl Tvu {
             bank_forks.clone(),
             cluster_info.clone(),
             turbine_disabled,
-            exit,
+            &shred_stage_exit,
         );
 
         let (verified_sender, verified_receiver) = unbounded();
@@ -364,6 +369,7 @@ impl Tvu {
             warm_quic_cache_service,
             drop_bank_service,
             duplicate_shred_listener,
+            shred_stage_exit
         })
     }
 
@@ -371,6 +377,7 @@ impl Tvu {
         self.retransmit_stage.join()?;
         self.cluster_slots_service.join()?;
         self.window_service.join()?;
+        self.shred_stage_exit.store(true, Ordering::Relaxed);
         self.fetch_stage.join()?;
         self.shred_sigverify.join()?;
         if self.ledger_cleanup_service.is_some() {
