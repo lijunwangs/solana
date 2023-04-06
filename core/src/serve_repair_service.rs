@@ -57,7 +57,7 @@ impl ServeRepairService {
         );
 
         let t_listen = serve_repair.listen(blockstore, request_receiver, response_sender, exit);
-        let thread_hdls = vec![t_receiver, t_responder, t_listen];
+        let thread_hdls = vec![t_responder, t_receiver, t_listen];
         Self { thread_hdls }
     }
 

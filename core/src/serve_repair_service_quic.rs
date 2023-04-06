@@ -86,7 +86,7 @@ impl ServeRepairService {
             ConnectionCache::Udp(_) => panic!("Do not expect UDP connection cache in this case"),
         };
         let responder_quic_t = streamer::responder::<QuicPool, QuicConnectionManager, QuicConfig>(
-            "RepairQuic",
+            "RprQuic",
             ResponderOption::ConnectionCache(connection_cache),
             response_receiver_quic,
             socket_addr_space,
