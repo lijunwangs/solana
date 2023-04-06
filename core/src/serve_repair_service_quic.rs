@@ -100,7 +100,7 @@ impl ServeRepairService {
             exit,
         );
 
-        let thread_hdls = vec![repair_quic_t, responder_quic_t, listen_quic_t];
+        let thread_hdls = vec![responder_quic_t, repair_quic_t, listen_quic_t];
         Self { thread_hdls }
     }
 
