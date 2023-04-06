@@ -117,6 +117,7 @@ impl ShredFetchStage {
                 break;
             }
         }
+        drop(repair_context);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -326,12 +327,13 @@ impl ShredFetchStage {
         tvu_threads.push(fwd_thread_hdl);
         tvu_threads.push(repair_handler);
 
-        if let Some(repair_quic_t) = repair_quic_t {
-            tvu_threads.push(repair_quic_t);
-        }
 
         if let Some(quic_repair_modifier_t) = quic_repair_modifier_t {
             tvu_threads.push(quic_repair_modifier_t);
+        }
+
+        if let Some(repair_quic_t) = repair_quic_t {
+            tvu_threads.push(repair_quic_t);
         }
 
         (
