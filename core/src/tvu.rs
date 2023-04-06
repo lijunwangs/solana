@@ -1,8 +1,6 @@
 //! The `tvu` module implements the Transaction Validation Unit, a multi-stage transaction
 //! validation pipeline in software.
 
-use std::sync::atomic::Ordering;
-
 use {
     crate::{
         banking_trace::BankingTracer,
@@ -56,7 +54,10 @@ use {
     std::{
         collections::HashSet,
         net::UdpSocket,
-        sync::{atomic::AtomicBool, Arc, RwLock},
+        sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc, RwLock,
+        },
         thread::{self, JoinHandle},
         time::Duration,
     },
@@ -163,7 +164,6 @@ impl Tvu {
         banking_tracer: Arc<BankingTracer>,
         repair_quic_config: Option<RepairQuicConfig>,
     ) -> Result<Self, String> {
-
         let shred_stage_exit = Arc::<AtomicBool>::default();
         let TvuSockets {
             repair: repair_socket,
@@ -369,7 +369,7 @@ impl Tvu {
             warm_quic_cache_service,
             drop_bank_service,
             duplicate_shred_listener,
-            shred_stage_exit
+            shred_stage_exit,
         })
     }
 

@@ -327,7 +327,6 @@ impl ShredFetchStage {
         tvu_threads.push(fwd_thread_hdl);
         tvu_threads.push(repair_handler);
 
-
         if let Some(quic_repair_modifier_t) = quic_repair_modifier_t {
             tvu_threads.push(quic_repair_modifier_t);
         }
