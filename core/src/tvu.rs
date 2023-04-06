@@ -370,8 +370,8 @@ impl Tvu {
     pub fn join(self) -> thread::Result<()> {
         self.retransmit_stage.join()?;
         self.cluster_slots_service.join()?;
-        self.fetch_stage.join()?;
         self.window_service.join()?;
+        self.fetch_stage.join()?;
         self.shred_sigverify.join()?;
         if self.ledger_cleanup_service.is_some() {
             self.ledger_cleanup_service.unwrap().join()?;
