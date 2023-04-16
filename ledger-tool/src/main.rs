@@ -1143,7 +1143,7 @@ fn load_bank_forks(
                 eprintln!(
                     "Unable to load bank forks at slot {halt_slot} due to disconnected blocks.",
                 );
-                exit(1);
+                //exit(1);
             }
         }
     }
