@@ -225,7 +225,7 @@ build() {
   echo "Build took $SECONDS seconds"
 }
 
-SOLANA_HOME="\$HOME/solana"
+SOLANA_HOME="solana"
 CARGO_BIN="\$HOME/.cargo/bin"
 
 startCommon() {
