@@ -317,12 +317,12 @@ async fn setup_connection(
                             stake,
                         ));
                     } else {
-                        info!("connection_add_failed{:?}", remote_addr);
+                        info!("zzzzzzzz connection_add_failed{:?}", remote_addr);
                         stats.connection_add_failed.fetch_add(1, Ordering::Relaxed);
                     }
                 } else {
                     info!(
-                        "connection_add_failed_invalid_stream_count {:?}",
+                        "zzzzzzzz connection_add_failed_invalid_stream_count {:?}",
                         remote_addr
                     );
 
@@ -331,19 +331,19 @@ async fn setup_connection(
                         .fetch_add(1, Ordering::Relaxed);
                 }
             } else {
-                info!("connection_add_failed_unstaked_node {:?}", remote_addr);
+                info!("zzzzzzzz connection_add_failed_unstaked_node {:?}", remote_addr);
                 connection.close(0u32.into(), &[0u8]);
                 stats
                     .connection_add_failed_unstaked_node
                     .fetch_add(1, Ordering::Relaxed);
             }
         } else {
-            info!("connection_setup_error");
+            info!("zzzzzzzz connection_setup_error");
 
             stats.connection_setup_error.fetch_add(1, Ordering::Relaxed);
         }
     } else {
-        info!("connection_setup_timeout");
+        info!("zzzzzzzz connection_setup_timeout");
         stats
             .connection_setup_timeout
             .fetch_add(1, Ordering::Relaxed);
