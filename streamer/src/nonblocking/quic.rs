@@ -213,6 +213,7 @@ async fn setup_connection(
             } = new_connection;
 
             let remote_addr = connection.remote_address();
+            info!("zzzzzz setup connection from {:?} max per peer: {}", remote_addr, max_connections_per_peer);
             let mut remote_pubkey = None;
 
             let table_and_stake = {
