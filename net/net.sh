@@ -233,7 +233,7 @@ build() {
 }
 
 SOLANA_HOME="solana"
-CARGO_BIN="\$HOME/.cargo/bin"
+CARGO_BIN=".cargo/bin"
 
 startCommon() {
   declare ipAddress=$1
