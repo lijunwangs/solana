@@ -14,6 +14,7 @@ use {
     },
     crossbeam_channel::{unbounded, Receiver, RecvError, RecvTimeoutError, Sender},
     itertools::Itertools,
+    rand::Rng,
     solana_gossip::{
         cluster_info::{ClusterInfo, ClusterInfoError},
         contact_info::Protocol,
@@ -425,6 +426,11 @@ pub fn broadcast_shreds(
     shred_select.stop();
     transmit_stats.shred_select += shred_select.as_us();
 
+    let mut rng = rand::thread_rng();
+    let packets = packets
+        .into_iter()
+        .filter(|_| rng.gen_range(0, 100) > 9)
+        .collect::<Vec<_>>();
     let mut send_mmsg_time = Measure::start("send_mmsg");
     if let Err(SendPktsError::IoError(ioerr, num_failed)) = batch_send(s, &packets[..]) {
         transmit_stats.dropped_packets += num_failed;
