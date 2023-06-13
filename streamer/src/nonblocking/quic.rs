@@ -164,14 +164,14 @@ async fn run_server(
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
             stats.total_connectings.fetch_add(1, Ordering::Relaxed);
-            if connection.remote_address().ip().to_string() == "35.233.147.104" {
-                info!(
-                    "Ignore a connection from attacker {:?}",
-                    connection.remote_address()
-                );
-                stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
-                continue;
-            }
+            // if connection.remote_address().ip().to_string() == "35.233.147.104" {
+            //     info!(
+            //         "Ignore a connection from attacker {:?}",
+            //         connection.remote_address()
+            //     );
+            //     stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
+            //     continue;
+            // }
             tokio::spawn(setup_connection(
                 connection,
                 unstaked_connection_table.clone(),
