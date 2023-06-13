@@ -6785,6 +6785,7 @@ dependencies = [
  "histogram",
  "indexmap",
  "itertools",
+ "lazy_static",
  "libc",
  "log",
  "nix",

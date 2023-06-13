@@ -156,7 +156,11 @@ pub struct StreamStats {
     pub(crate) connection_setup_error_locally_closed: AtomicUsize,
     pub(crate) connection_removed: AtomicUsize,
     pub(crate) connection_remove_failed: AtomicUsize,
+    pub(crate) all_connectings: AtomicUsize, // all connections in connecting state ever created
     pub(crate) total_connectings: AtomicUsize, // total connections in connecting state
+    pub(crate) total_success_connectings: AtomicUsize, // total connections in connecting state
+    pub(crate) total_failed_connectings: AtomicUsize, // total connections in connecting state
+    pub(crate) total_timedout_connectings: AtomicUsize, // total connections in connecting state
 }
 
 impl StreamStats {
@@ -172,7 +176,27 @@ impl StreamStats {
                 "active_connectings",
                 self.total_connectings.load(Ordering::Relaxed),
                 i64
-            ),            
+            ),
+            (
+                "all_connectings",
+                self.all_connectings.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "total_success_connectings",
+                self.total_success_connectings.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "total_failed_connectings",
+                self.total_failed_connectings.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "total_timedout_connectings",
+                self.total_timedout_connectings.load(Ordering::Relaxed),
+                i64
+            ),
             (
                 "active_streams",
                 self.total_streams.load(Ordering::Relaxed),

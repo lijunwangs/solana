@@ -10,6 +10,7 @@ use {
     bytes::Bytes,
     crossbeam_channel::Sender,
     indexmap::map::{Entry, IndexMap},
+    lazy_static::lazy_static,
     percentage::Percentage,
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
@@ -37,6 +38,7 @@ use {
         time::{Duration, Instant},
     },
     tokio::{
+        sync::{Semaphore, SemaphorePermit},
         task::JoinHandle,
         time::{sleep, timeout},
     },
@@ -58,6 +60,10 @@ const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] = b"exceed_max_stre
 
 const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
+
+lazy_static! {
+    static ref TASK_SEMAPHORE: Semaphore = Semaphore::new(1000000);
+}
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -153,6 +159,7 @@ async fn run_server(
         stats.clone(),
         coalesce,
     ));
+
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
@@ -160,9 +167,14 @@ async fn run_server(
             stats.report(name);
             last_datapoint = Instant::now();
         }
+        let permit = TASK_SEMAPHORE
+            .acquire()
+            .await
+            .expect("Failed to acquire async task semaphore");
 
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
+            stats.all_connectings.fetch_add(1, Ordering::Relaxed);
             stats.total_connectings.fetch_add(1, Ordering::Relaxed);
             // if connection.remote_address().ip().to_string() == "35.233.147.104" {
             //     info!(
@@ -183,6 +195,7 @@ async fn run_server(
                 max_unstaked_connections,
                 stats.clone(),
                 wait_for_chunk_timeout,
+                permit,
             ));
             sleep(WAIT_BETWEEN_NEW_CONNECTIONS).await;
         } else {
@@ -459,7 +472,7 @@ fn compute_recieve_window(
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn setup_connection(
+async fn setup_connection<'a>(
     connecting: Connecting,
     unstaked_connection_table: Arc<Mutex<ConnectionTable>>,
     staked_connection_table: Arc<Mutex<ConnectionTable>>,
@@ -470,6 +483,7 @@ async fn setup_connection(
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
     wait_for_chunk_timeout: Duration,
+    permit: SemaphorePermit<'a>,
 ) {
     const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
     let from = connecting.remote_address();
@@ -488,6 +502,9 @@ async fn setup_connection(
             Ok(new_connection) => {
                 stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
                 stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
+                stats
+                    .total_success_connectings
+                    .fetch_add(1, Ordering::Relaxed);
 
                 let params = get_connection_stake(&new_connection, &staked_nodes).map_or(
                     NewConnectionHandlerParams::new_unstaked(
@@ -569,16 +586,23 @@ async fn setup_connection(
                 }
             }
             Err(e) => {
+                stats
+                    .total_failed_connectings
+                    .fetch_add(1, Ordering::Relaxed);
                 stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
                 handle_connection_error(e, &stats, from);
             }
         }
     } else {
+        stats
+            .total_timedout_connectings
+            .fetch_add(1, Ordering::Relaxed);
         stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
         stats
             .connection_setup_timeout
             .fetch_add(1, Ordering::Relaxed);
     }
+    drop(permit);
 }
 
 fn handle_connection_error(e: quinn::ConnectionError, stats: &StreamStats, from: SocketAddr) {
