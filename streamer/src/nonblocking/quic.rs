@@ -163,11 +163,13 @@ async fn run_server(
 
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
+            stats.total_connectings.fetch_add(1, Ordering::Relaxed);
             if connection.remote_address().ip().to_string() == "35.233.147.104" {
                 info!(
                     "Ignore a connection from attacker {:?}",
                     connection.remote_address()
                 );
+                stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
             tokio::spawn(setup_connection(
@@ -474,6 +476,7 @@ async fn setup_connection(
     if let Ok(connecting_result) = timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, connecting).await {
         match connecting_result {
             Ok(new_connection) => {
+                stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
                 stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
 
                 let params = get_connection_stake(&new_connection, &staked_nodes).map_or(
@@ -556,10 +559,12 @@ async fn setup_connection(
                 }
             }
             Err(e) => {
+                stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
                 handle_connection_error(e, &stats, from);
             }
         }
     } else {
+        stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
         stats
             .connection_setup_timeout
             .fetch_add(1, Ordering::Relaxed);
