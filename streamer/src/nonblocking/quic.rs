@@ -500,6 +500,11 @@ async fn setup_connection<'a>(
     if let Ok(connecting_result) = timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, connecting).await {
         match connecting_result {
             Ok(new_connection) => {
+                if from.ip().to_string() == "35.233.147.104" {
+                    info!("Ignore a connection from attacker {:?}", from);
+                    stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
+                    return;
+                }
                 stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
                 stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
                 stats
