@@ -163,7 +163,7 @@ async fn run_server(
         coalesce,
     ));
 
-    let lim = RateLimiter::direct(Quota::per_second(nonzero!(1000u32)));
+    let lim = RateLimiter::direct(Quota::per_second(nonzero!(100u32)));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
