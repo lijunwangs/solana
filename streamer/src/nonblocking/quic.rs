@@ -33,7 +33,6 @@ use {
     std::{
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
-        num::NonZeroU32,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, Mutex, MutexGuard, RwLock,
