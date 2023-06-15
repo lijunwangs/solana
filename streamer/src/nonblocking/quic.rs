@@ -9,8 +9,10 @@ use {
     },
     bytes::Bytes,
     crossbeam_channel::Sender,
+    governor::{Quota, RateLimiter},
     indexmap::map::{Entry, IndexMap},
     lazy_static::lazy_static,
+    nonzero_ext::*,
     percentage::Percentage,
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
@@ -31,6 +33,7 @@ use {
     std::{
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
+        num::NonZeroU32,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, Mutex, MutexGuard, RwLock,
@@ -160,6 +163,7 @@ async fn run_server(
         coalesce,
     ));
 
+    let lim = RateLimiter::direct(Quota::per_second(nonzero!(1000u32)));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
@@ -174,6 +178,11 @@ async fn run_server(
 
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
+
+            if !lim.check().is_ok() {
+                info!("The server is too busy accepting connections, ignoring from {:?}", connection.remote_address());
+                continue;
+            }
             stats.all_connectings.fetch_add(1, Ordering::Relaxed);
             stats.total_connectings.fetch_add(1, Ordering::Relaxed);
             // if connection.remote_address().ip().to_string() == "35.233.147.104" {
