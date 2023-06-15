@@ -162,7 +162,7 @@ async fn run_server(
         coalesce,
     ));
 
-    let lim = RateLimiter::direct(Quota::per_second(nonzero!(100u32)));
+    let lim = RateLimiter::direct(Quota::per_second(nonzero!(500u32)));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
@@ -181,6 +181,8 @@ async fn run_server(
             if !lim.check().is_ok() {
                 info!("The server is too busy accepting connections, ignoring from {:?}", connection.remote_address());
                 continue;
+            } else {
+                info!("Allow connection to proceed as within rate limit from {:?}", connection.remote_address());
             }
             stats.all_connectings.fetch_add(1, Ordering::Relaxed);
             stats.total_connectings.fetch_add(1, Ordering::Relaxed);
