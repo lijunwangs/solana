@@ -501,14 +501,16 @@ async fn setup_connection<'a>(
     const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
     let from = connecting.remote_address();
 
-    // if connecting.remote_address().ip().to_string() == "35.233.147.104" {
-    //     info!(
-    //         "Ignore a connection from attacker {:?}",
-    //         connecting.remote_address()
-    //     );
-    //     stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
-    //     return;
-    // }
+    // This also impacts the memory usage
+    if connecting.remote_address().ip().to_string() == "35.233.147.104" {
+        info!(
+            "Ignore a connection from attacker {:?}",
+            connecting.remote_address()
+        );
+        stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
+        drop(cinnecting);
+        return;
+    }
 
     if let Ok(connecting_result) = timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, connecting).await {
         match connecting_result {
