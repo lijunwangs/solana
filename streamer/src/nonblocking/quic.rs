@@ -162,7 +162,7 @@ async fn run_server(
         coalesce,
     ));
 
-    let lim = RateLimiter::direct(Quota::per_second(nonzero!(400u32)));
+    let lim = RateLimiter::direct(Quota::per_second(nonzero!(200u32)));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
@@ -186,14 +186,15 @@ async fn run_server(
             }
             stats.all_connectings.fetch_add(1, Ordering::Relaxed);
             stats.total_connectings.fetch_add(1, Ordering::Relaxed);
-            if connection.remote_address().ip().to_string() == "35.233.147.104" {
-                info!(
-                    "Ignore a connection from attacker {:?}",
-                    connection.remote_address()
-                );
-                stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
-                continue;
-            }
+            // Test indicates if we return here -- it can effectively guard against the attack.
+            // if connection.remote_address().ip().to_string() == "35.233.147.104" {
+            //     info!(
+            //         "Ignore a connection from attacker {:?}",
+            //         connection.remote_address()
+            //     );
+            //     stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
+            //     continue;
+            // }
             tokio::spawn(setup_connection(
                 connection,
                 unstaked_connection_table.clone(),
