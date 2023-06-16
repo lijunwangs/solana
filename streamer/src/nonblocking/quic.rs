@@ -194,6 +194,7 @@ async fn run_server(
                     connection.remote_address()
                 );
                 stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
+                drop(connection);
                 continue;
             }
             tokio::spawn(setup_connection(
