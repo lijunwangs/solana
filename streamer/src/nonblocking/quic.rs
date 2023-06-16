@@ -508,7 +508,7 @@ async fn setup_connection<'a>(
             connecting.remote_address()
         );
         stats.total_connectings.fetch_sub(1, Ordering::Relaxed);
-        drop(cinnecting);
+        drop(connecting);
         return;
     }
 
