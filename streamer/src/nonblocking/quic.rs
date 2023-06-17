@@ -149,6 +149,7 @@ async fn run_server(
     const WAIT_BETWEEN_NEW_CONNECTIONS: Duration = Duration::from_millis(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
+    let mut last_limit_cleanup = Instant::now();
     let unstaked_connection_table: Arc<Mutex<ConnectionTable>> = Arc::new(Mutex::new(
         ConnectionTable::new(ConnectionPeerType::Unstaked),
     ));
@@ -201,6 +202,11 @@ async fn run_server(
                     "Allow connection to proceed as within rate limit from {:?}",
                     connection.remote_address()
                 );
+            }
+
+            if last_limit_cleanup.elapsed().as_secs() >= 120 {
+                per_addr_lim.cleanup(Duration::from_secs(120));
+                last_limit_cleanup = Instant::now();
             }
 
             stats.all_connectings.fetch_add(1, Ordering::Relaxed);
