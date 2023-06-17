@@ -17,6 +17,7 @@ use {
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
     rand::{thread_rng, Rng},
+    ratelimit_meter::KeyedRateLimiter,
     solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
     solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
@@ -163,6 +164,7 @@ async fn run_server(
     ));
 
     let lim = RateLimiter::direct(Quota::per_second(nonzero!(200u32)));
+    let mut per_addr_lim = KeyedRateLimiter::<IpAddr>::new(nonzero!(4u32), Duration::from_secs(1));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
@@ -178,13 +180,29 @@ async fn run_server(
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
 
+            if !per_addr_lim.check(connection.remote_address().ip()).is_ok() {
+                info!(
+                    "Too freqeuent connection request from {:?}, rejected",
+                    connection.remote_address()
+                );
+                drop(connection);
+                continue;
+            }
+
             if !lim.check().is_ok() {
-                info!("The server is too busy accepting connections, ignoring from {:?}", connection.remote_address());
+                info!(
+                    "The server is too busy accepting connections, ignoring from {:?}",
+                    connection.remote_address()
+                );
                 drop(connection);
                 continue;
             } else {
-                info!("Allow connection to proceed as within rate limit from {:?}", connection.remote_address());
+                info!(
+                    "Allow connection to proceed as within rate limit from {:?}",
+                    connection.remote_address()
+                );
             }
+
             stats.all_connectings.fetch_add(1, Ordering::Relaxed);
             stats.total_connectings.fetch_add(1, Ordering::Relaxed);
             // Test indicates if we return here -- it can effectively guard against the attack.

@@ -30,6 +30,7 @@ quinn = { workspace = true }
 quinn-proto = { workspace = true }
 quinn-udp = { workspace = true }
 rand = { workspace = true }
+ratelimit_meter = { workspace = true}
 rcgen = { workspace = true }
 rustls = { workspace = true, features = ["dangerous_configuration"] }
 solana-metrics = { workspace = true }
