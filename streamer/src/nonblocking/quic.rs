@@ -164,7 +164,7 @@ async fn run_server(
         coalesce,
     ));
 
-    let lim = RateLimiter::direct(Quota::per_minute(nonzero!(3000u32)));
+    let lim = RateLimiter::direct(Quota::per_minute(nonzero!(6000u32)));
     let mut per_addr_lim = KeyedRateLimiter::<IpAddr>::new(nonzero!(4u32), Duration::from_secs(1));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
