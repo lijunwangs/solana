@@ -173,32 +173,33 @@ async fn run_server(
             stats.report(name);
             last_datapoint = Instant::now();
         }
-        let permit = TASK_SEMAPHORE
-            .acquire()
-            .await
-            .expect("Failed to acquire async task semaphore");
 
         if let Ok(Some(connection)) = timeout_connection {
+            let permit = TASK_SEMAPHORE
+                .acquire()
+                .await
+                .expect("Failed to acquire async task semaphore");
+
             info!("Got a connection {:?}", connection.remote_address());
 
-            if !per_addr_lim.check(connection.remote_address().ip()).is_ok() {
-                info!(
-                    "Too freqeuent connection request from {:?}, rejected",
-                    connection.remote_address()
-                );
-                drop(connection);
-                continue;
-            }
+            // if !per_addr_lim.check(connection.remote_address().ip()).is_ok() {
+            //     debug!(
+            //         "Too freqeuent connection request from {:?}, rejected",
+            //         connection.remote_address()
+            //     );
+            //     drop(connection);
+            //     continue;
+            // }
 
             if !lim.check().is_ok() {
-                info!(
+                debug!(
                     "The server is too busy accepting connections, ignoring from {:?}",
                     connection.remote_address()
                 );
                 drop(connection);
                 continue;
             } else {
-                info!(
+                trace!(
                     "Allow connection to proceed as within rate limit from {:?}",
                     connection.remote_address()
                 );
