@@ -2065,4 +2065,11 @@ pub mod test {
             compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake + 10);
         assert_eq!(ratio, max_ratio);
     }
+
+    #[tokio::test]
+    async fn test_quic_server_mem_usage() {
+        let (t, _exit, _receiver, _server_address, _stats) = setup_quic_server(None, 4);
+        println!("zzzzzz server address : {:?}", _server_address);
+        t.await.unwrap();
+    }
 }
