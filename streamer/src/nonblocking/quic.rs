@@ -1250,11 +1250,11 @@ pub mod test {
         SocketAddr,
         Arc<StreamStats>,
     ) {
-        let s = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let s = UdpSocket::bind("0.0.0.0:0").unwrap();
         let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
-        let ip = "127.0.0.1".parse().unwrap();
+        let ip = "0.0.0.0".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
         let (_, stats, t) = spawn_server(
