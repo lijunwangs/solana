@@ -235,7 +235,7 @@ async fn run_server(
                 wait_for_chunk_timeout,
                 permit,
             ));
-            sleep(WAIT_BETWEEN_NEW_CONNECTIONS).await;
+            // sleep(WAIT_BETWEEN_NEW_CONNECTIONS).await;
         } else {
             debug!("accept(): Timed out waiting for connection");
         }
