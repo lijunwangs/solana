@@ -2069,6 +2069,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_quic_server_mem_usage() {
+        solana_logger::setup();
         let (t, _exit, _receiver, _server_address, _stats) = setup_quic_server(None, 4);
         println!("zzzzzz server address : {:?}", _server_address);
         t.await.unwrap();
