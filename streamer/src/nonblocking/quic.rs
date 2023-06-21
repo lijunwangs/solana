@@ -179,6 +179,7 @@ async fn run_server(
                 .try_acquire();
             if !permit.is_ok() {
                 info!("Failed to acquire async task semaphore, too many of them.");
+                drop(connection);
                 continue;
             }
             let permit = permit.unwrap();
