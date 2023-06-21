@@ -176,10 +176,12 @@ async fn run_server(
 
         if let Ok(Some(connection)) = timeout_connection {
             let permit = TASK_SEMAPHORE
-                .acquire()
-                .await
-                .expect("Failed to acquire async task semaphore");
-
+                .try_acquire();
+            if !permit.is_ok() {
+                info!("Failed to acquire async task semaphore, too many of them.");
+                continue;
+            }
+            let permit = permit.unwrap();
             info!("Got a connection {:?}", connection.remote_address());
 
             // if !per_addr_lim.check(connection.remote_address().ip()).is_ok() {
