@@ -43,7 +43,7 @@ use {
     tokio::{
         sync::{Semaphore, SemaphorePermit},
         task::JoinHandle,
-        time::{sleep, timeout},
+        time::timeout,
     },
 };
 
@@ -146,7 +146,6 @@ async fn run_server(
     coalesce: Duration,
 ) {
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
-    const WAIT_BETWEEN_NEW_CONNECTIONS: Duration = Duration::from_millis(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
     let mut last_limit_cleanup = Instant::now();
@@ -164,7 +163,7 @@ async fn run_server(
         coalesce,
     ));
 
-    let lim = RateLimiter::direct(Quota::per_minute(nonzero!(24000u32)));
+    let lim = RateLimiter::direct(Quota::per_minute(nonzero!(60000u32)));
     let mut per_addr_lim = KeyedRateLimiter::<IpAddr>::new(nonzero!(4u32), Duration::from_secs(1));
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
@@ -175,8 +174,7 @@ async fn run_server(
         }
 
         if let Ok(Some(connection)) = timeout_connection {
-            let permit = TASK_SEMAPHORE
-                .try_acquire();
+            let permit = TASK_SEMAPHORE.try_acquire();
             if !permit.is_ok() {
                 info!("Failed to acquire async task semaphore, too many of them.");
                 drop(connection);
