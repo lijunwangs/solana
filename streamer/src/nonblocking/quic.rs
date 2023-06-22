@@ -65,7 +65,7 @@ const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 
 lazy_static! {
-    static ref TASK_SEMAPHORE: Semaphore = Semaphore::new(1000000);
+    static ref TASK_SEMAPHORE: Semaphore = Semaphore::new(1000);
 }
 
 // A sequence of bytes that is part of a packet
