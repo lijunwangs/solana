@@ -257,9 +257,9 @@ prost = "0.11.9"
 prost-types = "0.11.9"
 protobuf-src = "1.1.0"
 qstring = "0.7.2"
-quinn =  {git = "https://github.com/lijunwangs/quinn.git", rev = "cd3e3df5dfa120f814c9f457302b3e9f341fe36a"}
-quinn-proto =  {git = "https://github.com/lijunwangs/quinn.git", rev = "cd3e3df5dfa120f814c9f457302b3e9f341fe36a"}
-quinn-udp = {git = "https://github.com/lijunwangs/quinn.git", rev = "cd3e3df5dfa120f814c9f457302b3e9f341fe36a"}
+quinn =  {git = "https://github.com/lijunwangs/quinn.git", rev = "6bf2521f051e8604bab4c38f693e3464d0b09d86"}
+quinn-proto =  {git = "https://github.com/lijunwangs/quinn.git", rev = "6bf2521f051e8604bab4c38f693e3464d0b09d86"}
+quinn-udp = {git = "https://github.com/lijunwangs/quinn.git", rev = "6bf2521f051e8604bab4c38f693e3464d0b09d86"}
 quote = "1.0"
 rand = "0.7.0"
 rand_chacha = "0.2.2"
