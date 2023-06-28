@@ -257,9 +257,9 @@ prost = "0.11.9"
 prost-types = "0.11.9"
 protobuf-src = "1.1.0"
 qstring = "0.7.2"
-quinn =  {git = "https://github.com/lijunwangs/quinn.git", rev = "6d1e09c5c3771d0a2de6580c6888c25b5c92cd67"}
-quinn-proto =  {git = "https://github.com/lijunwangs/quinn.git", rev = "6d1e09c5c3771d0a2de6580c6888c25b5c92cd67"}
-quinn-udp = {git = "https://github.com/lijunwangs/quinn.git", rev = "6d1e09c5c3771d0a2de6580c6888c25b5c92cd67"}
+quinn =  {git = "https://github.com/lijunwangs/quinn.git", rev = "790ff720a9db4b8515792a7e05fdb54a8a30e54c"}
+quinn-proto =  {git = "https://github.com/lijunwangs/quinn.git", rev = "790ff720a9db4b8515792a7e05fdb54a8a30e54c"}
+quinn-udp = {git = "https://github.com/lijunwangs/quinn.git", rev = "790ff720a9db4b8515792a7e05fdb54a8a30e54c"}
 quote = "1.0"
 rand = "0.7.0"
 rand_chacha = "0.2.2"
@@ -274,7 +274,7 @@ rolling-file = "0.2.0"
 reqwest = { version = "0.11.17", default-features = false }
 rpassword = "7.2"
 rustc_version = "0.4"
-rustls = { version = "0.20.8", default-features = false }
+rustls = { version = "0.21.2", default-features = false }
 rustversion = "1.0.12"
 scopeguard = "1.1.0"
 semver = "1.0.17"
@@ -384,7 +384,7 @@ tempfile = "3.6.0"
 test-case = "2.2.2"
 thiserror = "1.0.40"
 tiny-bip39 = "0.8.2"
-tokio = "~1.14.1"
+tokio = "~1.28.1"
 tokio-serde = "0.8"
 tokio-stream = "0.1.12"
 tokio-tungstenite = "0.17.2"

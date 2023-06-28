@@ -203,7 +203,7 @@ impl QuicNewConnection {
     }
 
     fn create_endpoint(config: EndpointConfig, client_socket: UdpSocket) -> Endpoint {
-        quinn::Endpoint::new(config, None, client_socket, TokioRuntime)
+        quinn::Endpoint::new(config, None, client_socket, Arc::new(TokioRuntime))
             .expect("QuicNewConnection::create_endpoint quinn::Endpoint::new")
     }
 

@@ -112,8 +112,13 @@ pub fn spawn_server(
     config.concurrent_connections(
         1024, //max_staked_connections.saturating_add(max_unstaked_connections) as u32,
     );
-    let endpoint = Endpoint::new(EndpointConfig::default(), Some(config), sock, TokioRuntime)
-        .map_err(QuicServerError::EndpointFailed)?;
+    let endpoint = Endpoint::new(
+        EndpointConfig::default(),
+        Some(config),
+        sock,
+        Arc::new(TokioRuntime),
+    )
+    .map_err(QuicServerError::EndpointFailed)?;
     let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
