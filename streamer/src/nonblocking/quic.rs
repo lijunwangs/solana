@@ -1287,7 +1287,7 @@ pub mod test {
     ) -> Connection {
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         let mut endpoint =
-            quinn::Endpoint::new(EndpointConfig::default(), None, client_socket, TokioRuntime)
+            quinn::Endpoint::new(EndpointConfig::default(), None, client_socket, Arc::new(TokioRuntime))
                 .unwrap();
         let default_keypair = Keypair::new();
         endpoint.set_default_client_config(get_client_config(
@@ -1557,7 +1557,7 @@ pub mod test {
 
         let client_socket = UdpSocket::bind("127.0.0.1:0").unwrap();
         let mut endpoint =
-            quinn::Endpoint::new(EndpointConfig::default(), None, client_socket, TokioRuntime)
+            quinn::Endpoint::new(EndpointConfig::default(), None, client_socket, Arc::new(TokioRuntime))
                 .unwrap();
         let default_keypair = Keypair::new();
         endpoint.set_default_client_config(get_client_config(&default_keypair));
