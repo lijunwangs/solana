@@ -4010,7 +4010,7 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 [[package]]
 name = "quinn"
 version = "0.10.1"
-source = "git+https://github.com/lijunwangs/quinn.git?rev=ddce52d08ebf9838c6d91191b045f31bce7032c2#ddce52d08ebf9838c6d91191b045f31bce7032c2"
+source = "git+https://github.com/lijunwangs/quinn.git?rev=468f43713a4572ded7ba483815d255fff57758ce#468f43713a4572ded7ba483815d255fff57758ce"
 dependencies = [
  "bytes",
  "pin-project-lite",
@@ -4026,7 +4026,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.10.1"
-source = "git+https://github.com/lijunwangs/quinn.git?rev=ddce52d08ebf9838c6d91191b045f31bce7032c2#ddce52d08ebf9838c6d91191b045f31bce7032c2"
+source = "git+https://github.com/lijunwangs/quinn.git?rev=468f43713a4572ded7ba483815d255fff57758ce#468f43713a4572ded7ba483815d255fff57758ce"
 dependencies = [
  "bytes",
  "rand 0.8.5",
@@ -4043,7 +4043,7 @@ dependencies = [
 [[package]]
 name = "quinn-udp"
 version = "0.4.0"
-source = "git+https://github.com/lijunwangs/quinn.git?rev=ddce52d08ebf9838c6d91191b045f31bce7032c2#ddce52d08ebf9838c6d91191b045f31bce7032c2"
+source = "git+https://github.com/lijunwangs/quinn.git?rev=468f43713a4572ded7ba483815d255fff57758ce#468f43713a4572ded7ba483815d255fff57758ce"
 dependencies = [
  "bytes",
  "libc",
