@@ -23,6 +23,9 @@ pub struct ClientStats {
     pub make_connection_ms: AtomicU64,
     pub send_timeout: AtomicU64,
     pub send_packets_us: AtomicU64,
+    /// `prepare_connection_us` differs from `make_connection_ms` in that it accounts for the time spent
+    /// on obtaining a successful connection including time spent on retries when sending a packet.
+    pub prepare_connection_us: AtomicU64,
     pub successful_packets: AtomicU64,
 }
 

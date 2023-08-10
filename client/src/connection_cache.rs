@@ -104,6 +104,10 @@ impl ConnectionCacheStats {
             client_stats.successful_packets.load(Ordering::Relaxed),
             Ordering::Relaxed,
         );
+        self.total_client_stats.prepare_connection_us.fetch_add(
+            client_stats.prepare_connection_us.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         self.sent_packets
             .fetch_add(num_packets as u64, Ordering::Relaxed);
         self.total_batches.fetch_add(1, Ordering::Relaxed);
@@ -120,13 +124,19 @@ impl ConnectionCacheStats {
             .successful_packets
             .swap(0, Ordering::Relaxed);
 
-        let average_send_packet_us = if successful_packets > 0 {
-            self.total_client_stats
-                .send_packets_us
-                .swap(0, Ordering::Relaxed)
-                / successful_packets
+        let (average_send_packet_us, average_prepare_connection_us) = if successful_packets > 0 {
+            (
+                self.total_client_stats
+                    .send_packets_us
+                    .swap(0, Ordering::Relaxed)
+                    / successful_packets,
+                self.total_client_stats
+                    .prepare_connection_us
+                    .swap(0, Ordering::Relaxed)
+                    / successful_packets,
+            )
         } else {
-            0
+            (0, 0)
         };
 
         datapoint_info!(
@@ -259,6 +269,7 @@ impl ConnectionCacheStats {
             ),
             ("send_packet_us", average_send_packet_us, i64),
             ("successful_packets", successful_packets, i64),
+            ("prepare_connection_us", average_prepare_connection_us, i64),
         );
     }
 }
