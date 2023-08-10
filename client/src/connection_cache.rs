@@ -96,6 +96,14 @@ impl ConnectionCacheStats {
             client_stats.send_timeout.load(Ordering::Relaxed),
             Ordering::Relaxed,
         );
+        self.total_client_stats.send_packets_us.fetch_add(
+            client_stats.send_packets_us.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        self.total_client_stats.successful_packets.fetch_add(
+            client_stats.successful_packets.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
         self.sent_packets
             .fetch_add(num_packets as u64, Ordering::Relaxed);
         self.total_batches.fetch_add(1, Ordering::Relaxed);
@@ -107,6 +115,20 @@ impl ConnectionCacheStats {
     }
 
     fn report(&self) {
+        let successful_packets = self
+            .total_client_stats
+            .successful_packets
+            .swap(0, Ordering::Relaxed);
+
+        let average_send_packet_us = if successful_packets > 0 {
+            self.total_client_stats
+                .send_packets_us
+                .swap(0, Ordering::Relaxed)
+                / successful_packets
+        } else {
+            0
+        };
+
         datapoint_info!(
             "quic-client-connection-stats",
             (
@@ -235,6 +257,8 @@ impl ConnectionCacheStats {
                     .swap(0, Ordering::Relaxed),
                 i64
             ),
+            ("send_packet_us", average_send_packet_us, i64),
+            ("successful_packets", successful_packets, i64),
         );
     }
 }

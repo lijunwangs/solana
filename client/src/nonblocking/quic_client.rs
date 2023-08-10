@@ -300,6 +300,8 @@ impl QuicClient {
         stats: &ClientStats,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Result<Arc<NewConnection>, QuicError> {
+        let mut measure = Measure::start("send-us");
+
         let mut connection_try_count = 0;
         let mut last_connection_id = 0;
         let mut last_error = None;
@@ -399,6 +401,11 @@ impl QuicClient {
             last_connection_id = connection.connection.stable_id();
             match Self::_send_buffer_using_conn(data, &connection).await {
                 Ok(()) => {
+                    measure.stop();
+                    stats.successful_packets.fetch_add(1, Ordering::Relaxed);
+                    stats
+                        .send_packets_us
+                        .fetch_add(measure.as_us(), Ordering::Relaxed);
                     return Ok(connection);
                 }
                 Err(err) => match err {
