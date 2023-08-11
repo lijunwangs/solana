@@ -28,7 +28,7 @@ use {
 };
 
 // Should be non-zero
-static MAX_CONNECTIONS: usize = 1024;
+static MAX_CONNECTIONS: usize = 2048;
 
 /// Used to decide whether the TPU and underlying connection cache should use
 /// QUIC connections.
