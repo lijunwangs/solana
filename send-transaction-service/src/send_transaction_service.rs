@@ -571,7 +571,14 @@ impl SendTransactionService {
 
         let wire_transactions = transactions
             .iter()
-            .map(|(_, transaction_info)| transaction_info.wire_transaction.as_ref())
+            .map(|(_, transaction_info)| {
+                info!(
+                    "Send transacation {} elapse: {:?} us",
+                    transaction_info.signature,
+                    transaction_info.queued.elapsed().as_micros()
+                );
+                transaction_info.wire_transaction.as_ref()
+            })
             .collect::<Vec<&[u8]>>();
 
         for address in &addresses {
