@@ -1,7 +1,10 @@
 use {
     solana_gossip::cluster_info::ClusterInfo,
     solana_poh::poh_recorder::PohRecorder,
-    solana_sdk::{clock::NUM_CONSECUTIVE_LEADER_SLOTS, pubkey::Pubkey},
+    solana_sdk::{
+        clock::{Slot, NUM_CONSECUTIVE_LEADER_SLOTS},
+        pubkey::Pubkey,
+    },
     solana_send_transaction_service::tpu_info::TpuInfo,
     std::{
         collections::HashMap,
@@ -48,6 +51,27 @@ impl TpuInfo for ClusterTpuInfo {
             if let Some(addr) = self.recent_peers.get(leader) {
                 if !unique_leaders.contains(&addr) {
                     unique_leaders.push(addr);
+                }
+            }
+        }
+        unique_leaders
+    }
+
+    fn get_leader_tpus_with_slots(&self, max_count: u64) -> Vec<(&SocketAddr, Slot)> {
+        let recorder = self.poh_recorder.read().unwrap();
+        let leaders: Vec<_> = (0..max_count)
+            .filter_map(|i| {
+                recorder.leader_and_slot_after_n_slots(i * NUM_CONSECUTIVE_LEADER_SLOTS)
+            })
+            .collect();
+        drop(recorder);
+        let mut unique_leaders = vec![];
+        let mut leader_slot: HashMap<&Pubkey, Slot> = HashMap::default();
+        for leader in leaders.iter() {
+            if let Some(addr) = self.recent_peers.get(&leader.0) {
+                if !leader_slot.contains_key(&leader.0) {
+                    unique_leaders.push((addr, leader.1));
+                    leader_slot.insert(&leader.0, leader.1);
                 }
             }
         }
