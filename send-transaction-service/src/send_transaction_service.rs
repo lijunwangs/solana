@@ -68,6 +68,7 @@ pub struct TransactionInfo {
     retries: usize,
     /// Last time the transaction was sent
     last_sent_time: Option<Instant>,
+    queued: Instant,
 }
 
 impl TransactionInfo {
@@ -87,6 +88,7 @@ impl TransactionInfo {
             max_retries,
             retries: 0,
             last_sent_time,
+            queued: Instant::now(),
         }
     }
 }
@@ -128,7 +130,7 @@ impl Default for Config {
 
 /// The maximum duration the retry thread may be configured to sleep before
 /// processing the transactions that need to be retried.
-pub const MAX_RETRY_SLEEP_MS: u64 = 1000;
+pub const MAX_RETRY_SLEEP_MS: u64 = 100;
 
 /// The leader info refresh rate.
 pub const LEADER_INFO_REFRESH_RATE_MS: u64 = 1000;
@@ -598,7 +600,11 @@ impl SendTransactionService {
                 stats.nonced_transactions.fetch_add(1, Ordering::Relaxed);
             }
             if root_bank.has_signature(signature) {
-                info!("Transaction is rooted: {}", signature);
+                info!(
+                    "Transaction is rooted: {}, elapsed: {:?}",
+                    signature,
+                    transaction_info.queued.elapsed().as_micros()
+                );
                 result.rooted += 1;
                 stats.rooted_transactions.fetch_add(1, Ordering::Relaxed);
                 return false;
@@ -655,7 +661,11 @@ impl SendTransactionService {
                             // Transaction sent before is unknown to the working bank, it might have been
                             // dropped or landed in another fork.  Re-send it
 
-                            info!("Retrying transaction: {}", signature);
+                            info!(
+                                "Retrying transaction: {}, elapse: {:?}",
+                                signature,
+                                transaction_info.queued.elapsed().as_micros()
+                            );
                             result.retried += 1;
                             transaction_info.retries += 1;
                             stats.retries.fetch_add(1, Ordering::Relaxed);
