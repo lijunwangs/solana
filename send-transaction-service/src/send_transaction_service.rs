@@ -573,7 +573,7 @@ impl SendTransactionService {
             .iter()
             .map(|(_, transaction_info)| {
                 info!(
-                    "Send transacation {} elapse: {:?} us to addresses: {:?}",
+                    "Send transacation {} elapse since queued: {:?} us to addresses: {:?}",
                     transaction_info.signature,
                     transaction_info.queued.elapsed().as_micros(),
                     addresses,
