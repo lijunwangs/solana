@@ -1,6 +1,7 @@
 //! Simple nonblocking client that connects to a given UDP port with the QUIC protocol
 //! and provides an interface for sending transactions which is restricted by the
 //! server's flow control.
+
 use {
     crate::{
         client_error::ClientErrorKind, connection_cache::ConnectionCacheStats,
@@ -18,11 +19,13 @@ use {
     solana_measure::measure::Measure,
     solana_net_utils::VALIDATOR_PORT_RANGE,
     solana_sdk::{
+        packet::Packet,
         quic::{
             QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS, QUIC_KEEP_ALIVE_MS, QUIC_MAX_TIMEOUT_MS,
             QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
         },
         signature::Keypair,
+        transaction::VersionedTransaction,
         transport::Result as TransportResult,
     },
     solana_streamer::{
@@ -306,6 +309,17 @@ impl QuicClient {
         let mut connection_try_count = 0;
         let mut last_connection_id = 0;
         let mut last_error = None;
+        let txn = if data.len() > 1 {
+            let packet = Packet::from_data(None, data).ok();
+            if let Some(p) = packet {
+                let txn: Option<VersionedTransaction> = p.deserialize_slice(..).ok();
+                txn
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         while connection_try_count < 2 {
             let connection = {
@@ -411,6 +425,14 @@ impl QuicClient {
                     stats
                         .prepare_connection_us
                         .fetch_add(measure2.as_us(), Ordering::Relaxed);
+
+                    info!(
+                        "Succcessfully sent to {} with id {}, thread: {:?}, txn: {:?}",
+                        self.addr,
+                        connection.connection.stable_id(),
+                        thread::current().id(),
+                        txn,
+                    );
                     return Ok(connection);
                 }
                 Err(err) => match err {
@@ -433,8 +455,8 @@ impl QuicClient {
 
         // if we come here, that means we have exhausted maximum retries, return the error
         info!(
-            "Ran into an error sending transactions {:?}, exhausted retries to {}",
-            last_error, self.addr
+            "Ran into an error sending transactions {:?}, exhausted retries to {} {:?}",
+            last_error, self.addr, txn
         );
         // If we get here but last_error is None, then we have a logic error
         // in this function, so panic here with an expect to help debugging

@@ -7,8 +7,8 @@ use {
     solana_metrics::datapoint_warn,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
     solana_sdk::{
-        clock::Slot, hash::Hash, nonce_account, pubkey::Pubkey, saturating_add_assign, signature::Signature,
-        timing::AtomicInterval, transport::TransportError,
+        clock::Slot, hash::Hash, nonce_account, pubkey::Pubkey, saturating_add_assign,
+        signature::Signature, timing::AtomicInterval, transport::TransportError,
     },
     std::{
         collections::{
