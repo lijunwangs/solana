@@ -427,11 +427,14 @@ impl QuicClient {
                         .fetch_add(measure2.as_us(), Ordering::Relaxed);
 
                     info!(
-                        "Succcessfully sent to {} with id {}, thread: {:?}, txn: {:?}",
+                        "Succcessfully sent to {} with id {}, thread: {:?}, txn: {:?} data len: {}, send_packet_us: {} prepare_connection_us: {}",
                         self.addr,
                         connection.connection.stable_id(),
                         thread::current().id(),
                         txn,
+                        data.len(),
+                        measure.as_us(),
+                        measure2.as_us(),
                     );
                     return Ok(connection);
                 }
