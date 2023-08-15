@@ -310,13 +310,10 @@ impl QuicClient {
         let mut last_connection_id = 0;
         let mut last_error = None;
         let txn = if data.len() > 1 {
-            let packet = Packet::from_data(None, data).ok();
-            if let Some(p) = packet {
-                let txn: Option<VersionedTransaction> = p.deserialize_slice(..).ok();
-                txn
-            } else {
-                None
-            }
+            let mut packet = Packet::default();
+            packet.buffer_mut().copy_from_slice(data);
+            let txn: Option<VersionedTransaction> = packet.deserialize_slice(..).ok();
+            txn
         } else {
             None
         };
