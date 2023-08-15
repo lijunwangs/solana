@@ -9,6 +9,7 @@ use {
     },
     async_mutex::Mutex,
     async_trait::async_trait,
+    bincode::deserialize,
     futures::future::join_all,
     itertools::Itertools,
     log::*,
@@ -19,13 +20,12 @@ use {
     solana_measure::measure::Measure,
     solana_net_utils::VALIDATOR_PORT_RANGE,
     solana_sdk::{
-        packet::Packet,
         quic::{
             QUIC_CONNECTION_HANDSHAKE_TIMEOUT_MS, QUIC_KEEP_ALIVE_MS, QUIC_MAX_TIMEOUT_MS,
             QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
         },
         signature::Keypair,
-        transaction::VersionedTransaction,
+        transaction::Transaction,
         transport::Result as TransportResult,
     },
     solana_streamer::{
@@ -310,10 +310,7 @@ impl QuicClient {
         let mut last_connection_id = 0;
         let mut last_error = None;
         let txn = if data.len() > 1 {
-            let mut packet = Packet::default();
-            packet.buffer_mut()[0..data.len()].copy_from_slice(data);
-            let txn: Option<VersionedTransaction> = packet.deserialize_slice(..).ok();
-            txn
+            deserialize::<Transaction>(data).ok()
         } else {
             None
         };
