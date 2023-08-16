@@ -409,6 +409,11 @@ impl QuicClient {
 
             last_connection_id = connection.connection.stable_id();
             measure2.stop();
+
+            if data.len() == 0 {
+                // no need to send packet as it is only for warming connections
+            }
+
             match Self::_send_buffer_using_conn(data, &connection).await {
                 Ok(()) => {
                     measure.stop();
