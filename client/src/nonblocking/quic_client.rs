@@ -412,6 +412,10 @@ impl QuicClient {
 
             if data.len() == 0 {
                 // no need to send packet as it is only for warming connections
+                stats
+                    .prepare_connection_us
+                    .fetch_add(measure2.as_us(), Ordering::Relaxed);
+                return Ok(connection);
             }
 
             match Self::_send_buffer_using_conn(data, &connection).await {
