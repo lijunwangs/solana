@@ -82,6 +82,7 @@ impl GeyserPluginManager {
         geyser_plugin_config_file: impl AsRef<Path>,
     ) -> JsonRpcResult<String> {
         // First load plugin
+        println!("loading {:?}", geyser_plugin_config_file.as_ref());
         let (mut new_plugin, new_lib, new_config_file) =
             load_plugin_from_config(geyser_plugin_config_file.as_ref()).map_err(|e| {
                 jsonrpc_core::Error {
@@ -389,9 +390,9 @@ mod tests {
             ANOTHER_DUMMY_NAME
         }
     }
-/*
+
     #[test]
-    #[serial]
+    //#[serial]
     fn test_geyser_reload() {
         // Initialize empty manager
         let plugin_manager = Arc::new(RwLock::new(GeyserPluginManager::new()));
@@ -427,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    #[serial]
+    //#[serial]
     fn test_plugin_list() {
         // Initialize empty manager
         let plugin_manager = Arc::new(RwLock::new(GeyserPluginManager::new()));
@@ -435,37 +436,46 @@ mod tests {
 
         // Load two plugins
         // First
+        //println!("load first");
         let (mut plugin, lib, config) = dummy_plugin_and_library();
         plugin.on_load(config).unwrap();
         plugin_manager_lock.plugins.push(plugin);
         plugin_manager_lock.libs.push(lib);
         // Second
+        //println!("load second");
         let (mut plugin, lib, config) = dummy_plugin_and_library2();
         plugin.on_load(config).unwrap();
         plugin_manager_lock.plugins.push(plugin);
         plugin_manager_lock.libs.push(lib);
 
         // Check that both plugins are returned in the list
+        //println!("do listing");
+        std::thread::sleep(std::time::Duration::from_millis(10));
         let plugins = plugin_manager_lock.list_plugins().unwrap();
         assert!(plugins.iter().any(|name| name.eq(DUMMY_NAME)));
         assert!(plugins.iter().any(|name| name.eq(ANOTHER_DUMMY_NAME)));
     }
-*/
+
+
     #[test]
-    #[serial]
+    //#[serial]
     fn test_plugin_load_unload() {
         // Initialize empty manager
         let plugin_manager = Arc::new(RwLock::new(GeyserPluginManager::new()));
         let mut plugin_manager_lock = plugin_manager.write().unwrap();
-
+        //println!("Loading plugin");
         // Load rpc call
         let load_result = plugin_manager_lock.load_plugin(DUMMY_CONFIG);
         assert!(load_result.is_ok());
         assert_eq!(plugin_manager_lock.plugins.len(), 1);
 
         // Unload rpc call
+        //println!("Unloading plugin");
+        std::thread::sleep(std::time::Duration::from_millis(10));
         let unload_result = plugin_manager_lock.unload_plugin(DUMMY_NAME);
         assert!(unload_result.is_ok());
         assert_eq!(plugin_manager_lock.plugins.len(), 0);
+        //println!("unloaded");
     }
+    
 }
