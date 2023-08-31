@@ -538,7 +538,9 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "assertion failed: `(left == right)`")]
+    // rust 1.73+ (our as-of-writing nightly version) changed panic message. we're stuck with this
+    // short common substring until the monorepo is fully 1.73+ including stable.
+    #[should_panic(expected = "left == right")]
     fn test_header_size() {
         _ = BucketStorage::<BucketBadHeader>::new_with_capacity(
             Arc::default(),
