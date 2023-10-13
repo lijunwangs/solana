@@ -270,8 +270,8 @@ prost-types = "0.11.9"
 protobuf-src = "1.1.0"
 qstring = "0.7.2"
 qualifier_attr = { version = "0.2.2", default-features = false }
-quinn = "0.10.2"
-quinn-proto = "0.10.5"
+quinn =  {git = "https://github.com/lijunwangs/quinn.git", rev = "9c90703055421c5cd91e73dc9a1e7bc8ae426460"}
+quinn-proto = {git = "https://github.com/lijunwangs/quinn.git", rev = "9c90703055421c5cd91e73dc9a1e7bc8ae426460"}
 quote = "1.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
