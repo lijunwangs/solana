@@ -12,7 +12,7 @@ use {
     indexmap::map::{Entry, IndexMap},
     percentage::Percentage,
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
-    quinn_proto::VarIntBoundsExceeded,
+    quinn_proto::{StreamId, VarIntBoundsExceeded},
     rand::{thread_rng, Rng},
     solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
     solana_sdk::{
@@ -732,6 +732,7 @@ async fn handle_connection(
                             .await
                             {
                                 if handle_chunk(
+                                    stream.id(),
                                     chunk,
                                     &mut maybe_batch,
                                     &remote_addr,
@@ -746,7 +747,10 @@ async fn handle_connection(
                                 }
                                 start = Instant::now();
                             } else if start.elapsed() > wait_for_chunk_timeout {
-                                debug!("Timeout in receiving on stream");
+                                info!(
+                                    "Timeout in receiving on stream {:?} from {}",
+                                    stream, remote_addr
+                                );
                                 stats
                                     .total_stream_read_timeouts
                                     .fetch_add(1, Ordering::Relaxed);
@@ -757,7 +761,7 @@ async fn handle_connection(
                     });
                 }
                 Err(e) => {
-                    debug!("stream error: {:?}", e);
+                    info!("stream error: {:?} from {}", e, remote_addr);
                     break;
                 }
             }
@@ -783,6 +787,7 @@ async fn handle_connection(
 
 // Return true if the server should drop the stream
 async fn handle_chunk(
+    stream: StreamId,
     chunk: Result<Option<quinn::Chunk>, quinn::ReadError>,
     packet_accum: &mut Option<PacketAccumulator>,
     remote_addr: &SocketAddr,
@@ -793,21 +798,24 @@ async fn handle_chunk(
     match chunk {
         Ok(maybe_chunk) => {
             if let Some(chunk) = maybe_chunk {
-                trace!("got chunk: {:?}", chunk);
+                trace!("got chunk: {:?} stream {}", chunk, stream);
                 let chunk_len = chunk.bytes.len() as u64;
 
                 // shouldn't happen, but sanity check the size and offsets
                 if chunk.offset > PACKET_DATA_SIZE as u64 || chunk_len > PACKET_DATA_SIZE as u64 {
                     stats.total_invalid_chunks.fetch_add(1, Ordering::Relaxed);
+                    info!("Invalid chunk for {stream} from {remote_addr:?}");
                     return true;
                 }
                 let Some(end_of_chunk) = chunk.offset.checked_add(chunk_len) else {
+                    info!("Invalid chunk -- length, for {stream} from {remote_addr:?}");
                     return true;
                 };
                 if end_of_chunk > PACKET_DATA_SIZE as u64 {
                     stats
                         .total_invalid_chunk_size
                         .fetch_add(1, Ordering::Relaxed);
+                    info!("Invalid chunk -- size, for {stream} from {remote_addr:?}");
                     return true;
                 }
 
@@ -825,6 +833,7 @@ async fn handle_chunk(
                     let offset = chunk.offset;
                     let Some(end_of_chunk) = (chunk.offset as usize).checked_add(chunk.bytes.len())
                     else {
+                        info!("Invalid chunk -- offset, for {stream} from {remote_addr:?}");
                         return true;
                     };
                     accum.chunks.push(PacketChunk {
@@ -850,7 +859,7 @@ async fn handle_chunk(
                 }
             } else {
                 // done receiving chunks
-                trace!("chunk is none");
+                trace!("chunk is none, stream {}", stream);
                 if let Some(accum) = packet_accum.take() {
                     let bytes_sent = accum.meta.size;
                     let chunks_sent = accum.chunks.len();
@@ -874,6 +883,7 @@ async fn handle_chunk(
                         trace!("sent {} byte packet for batching", bytes_sent);
                     }
                 } else {
+                    info!("Chunk was none and nothing received before, stop {stream} from remote {:?}", remote_addr);
                     stats
                         .total_packet_batches_none
                         .fetch_add(1, Ordering::Relaxed);
@@ -882,7 +892,7 @@ async fn handle_chunk(
             }
         }
         Err(e) => {
-            debug!("Received stream error: {:?}", e);
+            info!("Received stream error: {:?}, stream: {}", e, stream);
             stats
                 .total_stream_read_errors
                 .fetch_add(1, Ordering::Relaxed);
