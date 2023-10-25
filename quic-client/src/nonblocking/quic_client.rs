@@ -274,9 +274,32 @@ impl QuicClient {
         connection: &Connection,
     ) -> Result<(), QuicError> {
         let mut send_stream = connection.open_uni().await?;
+        info!(
+            "Opened stream {} against {}",
+            send_stream.id(),
+            connection.remote_address()
+        );
 
-        send_stream.write_all(data).await?;
-        send_stream.finish().await?;
+        let result = send_stream.write_all(data).await;
+        if result.is_err() {
+            info!(
+                "Got error writing to stream {} against {} result {:?}",
+                send_stream.id(),
+                connection.remote_address(),
+                result
+            );
+        }
+        result?;
+        let result = send_stream.finish().await;
+        if result.is_err() {
+            info!(
+                "Got error finishing to stream {} against {} result {:?}",
+                send_stream.id(),
+                connection.remote_address(),
+                result
+            );
+        }
+        result?;
         Ok(())
     }
 
