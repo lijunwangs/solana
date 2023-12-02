@@ -116,7 +116,9 @@ impl QuicLazyInitializedEndpoint {
             QuicNewConnection::create_endpoint(EndpointConfig::default(), client_socket)
         };
 
-        let mut file = std::fs::File::create("cert-xxxx.der").unwrap();
+        let charset = "abcdefghijklmnopqrstuvwxyz0123456789";
+        let name = random_string::generate(6, charset);
+        let mut file = std::fs::File::create(format!("cert-{}.der", name)).unwrap();
         file.write_all(&self.client_certificate.certificate.0).unwrap();
     
         let mut crypto = rustls::ClientConfig::builder()

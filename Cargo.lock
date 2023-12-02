@@ -1935,6 +1935,15 @@ dependencies = [
 
 [[package]]
 name = "fastrand"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51093e27b0797c359783294ca4f0a911c270184cb10f85783b118614a1501be"
+dependencies = [
+ "instant",
+]
+
+[[package]]
+name = "fastrand"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6999dc1837253364c2ebb0704ba97994bd874e8f195d665c50b7548f6ea92764"
@@ -4390,6 +4399,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "random-string"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3ada7982e596021551fc3b96413c6077d2ebf57a8f94a3aed70cc71dda78c38"
+dependencies = [
+ "fastrand 1.9.0",
+]
+
+[[package]]
 name = "raptorq"
 version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6827,6 +6845,7 @@ dependencies = [
  "log",
  "quinn",
  "quinn-proto",
+ "random-string",
  "rcgen",
  "rustls",
  "solana-connection-cache",
@@ -8254,7 +8273,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ef1adac450ad7f4b3c28589471ade84f25f731a7a0fe30d71dfa9f60fd808e5"
 dependencies = [
  "cfg-if 1.0.0",
- "fastrand",
+ "fastrand 2.0.0",
  "redox_syscall 0.4.1",
  "rustix",
  "windows-sys 0.48.0",
