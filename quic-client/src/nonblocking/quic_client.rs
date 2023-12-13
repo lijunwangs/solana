@@ -1,8 +1,6 @@
 //! Simple nonblocking client that connects to a given UDP port with the QUIC protocol
 //! and provides an interface for sending data which is restricted by the
 //! server's flow control.
-
-use std::io::Write;
 use {
     async_mutex::Mutex,
     async_trait::async_trait,
@@ -116,9 +114,6 @@ impl QuicLazyInitializedEndpoint {
             QuicNewConnection::create_endpoint(EndpointConfig::default(), client_socket)
         };
 
-        let mut file = std::fs::File::create("cert-xxxx.der").unwrap();
-        file.write_all(&self.client_certificate.certificate.0).unwrap();
-    
         let mut crypto = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_custom_certificate_verifier(SkipServerVerification::new())
