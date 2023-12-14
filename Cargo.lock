@@ -6741,6 +6741,7 @@ dependencies = [
  "log",
  "quinn",
  "quinn-proto",
+ "rayon",
  "rustls",
  "solana-connection-cache",
  "solana-logger",

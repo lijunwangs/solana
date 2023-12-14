@@ -3,18 +3,22 @@ mod tests {
     use {
         crossbeam_channel::{unbounded, Receiver},
         log::*,
+        rayon::iter::{IntoParallelIterator, ParallelIterator},
         solana_connection_cache::connection_cache_stats::ConnectionCacheStats,
         solana_perf::packet::PacketBatch,
         solana_quic_client::nonblocking::quic_client::{
             QuicClientCertificate, QuicLazyInitializedEndpoint,
         },
-        solana_sdk::{net::DEFAULT_TPU_COALESCE, packet::PACKET_DATA_SIZE, signature::Keypair},
+        solana_sdk::{
+            net::DEFAULT_TPU_COALESCE, packet::PACKET_DATA_SIZE,
+            quic::QUIC_MAX_STAKED_CONCURRENT_STREAMS, signature::Keypair,
+        },
         solana_streamer::{
             nonblocking::quic::DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, streamer::StakedNodes,
             tls_certificates::new_dummy_x509_certificate,
         },
         std::{
-            net::{IpAddr, SocketAddr, UdpSocket},
+            net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
             sync::{
                 atomic::{AtomicBool, Ordering},
                 Arc, RwLock,
@@ -298,5 +302,67 @@ mod tests {
         response_recv_exit.store(true, Ordering::Relaxed);
         response_recv_thread.join().unwrap();
         info!("Response receiver exited!");
+    }
+
+    #[tokio::test]
+    async fn test_connection_cache_memory_usage_2() {
+        use {
+            solana_connection_cache::client_connection::ClientConnection,
+            solana_quic_client::quic_client::QuicClientConnection,
+        };
+
+        solana_logger::setup();
+
+        // Request Sender, it uses the same endpoint as the response receiver:
+        let addr = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        let port = 8009;
+        let tpu_addr = SocketAddr::new(addr, port);
+        let connection_cache_stats = Arc::new(ConnectionCacheStats::default());
+
+        let (cert, priv_key) =
+            new_dummy_x509_certificate(&Keypair::new());
+        let client_certificate = Arc::new(QuicClientCertificate {
+            certificate: cert,
+            key: priv_key,
+        });
+
+        let endpoint = Arc::new(QuicLazyInitializedEndpoint::new(client_certificate, None));
+
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .thread_name(|i| format!("concame{i:02}"))
+            .build()
+            .unwrap();
+
+        let mut clients = Vec::default();
+        for i in 0..1 {
+            println!("Connection {i}");
+            let client = QuicClientConnection::new(
+                endpoint.clone(),
+                tpu_addr,
+                connection_cache_stats.clone(),
+            );
+            // Send a full size packet with single byte writes.
+            let num_expected_packets: usize = 1;
+
+            thread_pool.install(|| {
+                (0..1/*QUIC_MAX_STAKED_CONCURRENT_STREAMSi*/)
+                    .into_par_iter()
+                    .for_each(|_i| {
+                        let packets = vec![
+                            vec![0u8; PACKET_DATA_SIZE-1 /*PACKET_DATA_SIZE*/];
+                            num_expected_packets
+                        ];
+                        println!("Sending data in thread {:?}", std::thread::current().id());
+                        let rslt = client.send_data_batch(&packets);
+                        println!("Sent data: {rslt:?}");
+                        if let Err(rslt) = rslt {
+                            info!("Connection {i} error {_i} {rslt:?}");
+                        }
+                    });
+            });
+
+            clients.push(client);
+        }
     }
 }

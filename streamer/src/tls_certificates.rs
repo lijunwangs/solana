@@ -61,7 +61,11 @@ pub fn new_dummy_x509_certificate(keypair: &Keypair) -> (rustls::Certificate, ru
         0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0x30, 0x00, 0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b,
         0x65, 0x70, 0x03, 0x21, 0x00,
     ]);
-    cert_der.extend_from_slice(&keypair.pubkey().to_bytes());
+
+    let pubkey = Pubkey::new_unique();
+    println!("Pubkey: {pubkey:?}");
+    cert_der.extend_from_slice(&pubkey.to_bytes());
+    //cert_der.extend_from_slice(&keypair.pubkey().to_bytes());
     //        extensions [3] (1 elem)
     //          Extensions SEQUENCE (2 elem)
     //            Extension SEQUENCE (3 elem)
