@@ -741,7 +741,7 @@ async fn handle_connection(
                     if reset_throttling_params_if_needed(&mut last_throttling_instant) {
                         streams_in_current_interval = 0;
                     } else if streams_in_current_interval >= max_streams_per_100ms {
-                        let _ = stream.stop(VarInt::from_u32(0));
+                        let _ = stream.stop(VarInt::from_u32(0x42535559));
                         continue;
                     }
                     streams_in_current_interval = streams_in_current_interval.saturating_add(1);
