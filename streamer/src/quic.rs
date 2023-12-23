@@ -133,6 +133,7 @@ impl NotifyKeyUpdate for EndpointKeyUpdater {
 }
 
 #[derive(Default)]
+#[derive(Debug)]
 pub struct StreamStats {
     pub(crate) total_connections: AtomicUsize,
     pub(crate) total_new_connections: AtomicUsize,

@@ -742,10 +742,10 @@ async fn handle_connection(
                     if reset_throttling_params_if_needed(&mut last_throttling_instant) {
                         streams_in_current_interval = 0;
                     } else if streams_in_current_interval >= max_streams_per_100ms {
-                        stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
                         let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
                         continue;
                     }
+                    info!("Got a new stream: {stats:?}");
                     streams_in_current_interval = streams_in_current_interval.saturating_add(1);
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
