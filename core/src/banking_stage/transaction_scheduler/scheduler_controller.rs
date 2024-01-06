@@ -23,6 +23,7 @@ use {
     solana_measure::measure_us,
     solana_program_runtime::compute_budget_processor::process_compute_budget_instructions,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
         feature_set::{
@@ -189,7 +190,11 @@ impl SchedulerController {
         Ok(())
     }
 
-    fn pre_graph_filter(transactions: &[&SanitizedTransaction], results: &mut [bool], bank: &Bank) {
+    fn pre_graph_filter(
+        transactions: &[&ExtendedSanitizedTransaction],
+        results: &mut [bool],
+        bank: &Bank,
+    ) {
         let lock_results = vec![Ok(()); transactions.len()];
         let mut error_counters = TransactionErrorMetrics::default();
         let check_results = bank.check_transactions(
@@ -478,11 +483,11 @@ impl SchedulerController {
     /// Any difference in the prioritization is negligible for
     /// the current transaction costs.
     fn calculate_priority_and_cost(
-        transaction: &SanitizedTransaction,
+        transaction: &ExtendedSanitizedTransaction,
         fee_budget_limits: &FeeBudgetLimits,
         bank: &Bank,
     ) -> (u64, u64) {
-        let cost = CostModel::calculate_cost(transaction, &bank.feature_set).sum();
+        let cost = CostModel::calculate_cost(transaction.transaction(), &bank.feature_set).sum();
         let fee = bank.fee_structure.calculate_fee(
             transaction.message(),
             5_000, // this just needs to be non-zero
