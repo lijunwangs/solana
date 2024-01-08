@@ -33,6 +33,7 @@
 //! It offers a high-level API that signs transactions
 //! on behalf of the caller, and a low-level API for when they have
 //! already been signed and verified.
+
 #[cfg(feature = "dev-context-only-utils")]
 use solana_accounts_db::accounts_db::{
     ACCOUNTS_DB_CONFIG_FOR_BENCHMARKS, ACCOUNTS_DB_CONFIG_FOR_TESTING,
@@ -64,8 +65,10 @@ use {
     byteorder::{ByteOrder, LittleEndian},
     dashmap::{DashMap, DashSet},
     itertools::izip,
+    lazy_static::lazy_static,
     log::*,
     percentage::Percentage,
+    rand::Rng,
     rayon::{
         iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
         slice::ParallelSlice,
@@ -233,6 +236,15 @@ mod transaction_account_state_info;
 pub const SECONDS_PER_YEAR: f64 = 365.25 * 24.0 * 60.0 * 60.0;
 
 pub const MAX_LEADER_SCHEDULE_STAKES: Epoch = 5;
+
+lazy_static! {
+    static ref TXN_MASK: u16 = rand::thread_rng().gen_range(0..4096);
+}
+
+fn match_txn(signature: &Signature) -> bool {
+    let portion: u16 = ((signature.as_ref()[63] as u16) << 8 | signature.as_ref()[62] as u16) >> 4;
+    *TXN_MASK == portion
+}
 
 #[derive(Default)]
 struct RentMetrics {
@@ -5225,6 +5237,11 @@ impl Bank {
                             maybe_compute_budget.unwrap()
                         };
 
+                    info!(
+                        "Executing txn: {}, matching mask?: {}",
+                        tx.signature(),
+                        match_txn(tx.signature())
+                    );
                     let result = self.execute_loaded_transaction(
                         tx,
                         loaded_transaction,
