@@ -242,7 +242,7 @@ lazy_static! {
 }
 
 fn match_txn(signature: &Signature) -> bool {
-    let portion: u16 = ((signature.as_ref()[63] as u16) << 8 | signature.as_ref()[62] as u16) >> 4;
+    let portion: u16 = ((signature.as_ref()[62] as u16) << 8 | signature.as_ref()[61] as u16) >> 4;
     info!("Matching txn: {portion:b} {:b}", *TXN_MASK);
     *TXN_MASK == portion
 }
