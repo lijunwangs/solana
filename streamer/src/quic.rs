@@ -161,6 +161,9 @@ pub struct StreamStats {
     pub(crate) total_unstaked_packets_sent_for_batching: AtomicUsize,
     pub(crate) throttled_staked_streams: AtomicUsize,
     pub(crate) throttled_unstaked_streams: AtomicUsize,
+    pub(crate) stream_load_ema: AtomicUsize,
+    pub(crate) stream_load_ema_overflow: AtomicUsize,
+    pub(crate) stream_load_capacity_overflow: AtomicUsize,
 }
 
 impl StreamStats {
@@ -416,6 +419,21 @@ impl StreamStats {
             (
                 "throttled_staked_streams",
                 self.throttled_staked_streams.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "stream_load_ema",
+                self.stream_load_ema.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "stream_load_ema_overflow",
+                self.stream_load_ema_overflow.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "stream_load_capacity_overflow",
+                self.stream_load_capacity_overflow.load(Ordering::Relaxed),
                 i64
             ),
         );
