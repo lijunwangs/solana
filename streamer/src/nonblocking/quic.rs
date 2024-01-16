@@ -17,7 +17,10 @@ use {
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
     rand::{thread_rng, Rng},
-    solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
+    solana_perf::{
+        packet::{PacketBatch, PACKETS_PER_BATCH},
+        sigverify::PacketError,
+    },
     solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
         pubkey::Pubkey,
@@ -27,10 +30,12 @@ use {
             QUIC_MIN_STAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
             QUIC_TOTAL_STAKED_CONCURRENT_STREAMS, QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
         },
-        signature::Keypair,
+        signature::{Keypair, Signature},
         timing,
     },
+    solana_transaction_metrics_tracker::{get_signature_from_packet, track_packet},
     std::{
+        collections::HashMap,
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
         sync::{
@@ -81,6 +86,7 @@ struct PacketChunk {
 struct PacketAccumulator {
     pub meta: Meta,
     pub chunks: Vec<PacketChunk>,
+    pub start_time: Instant,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -626,6 +632,7 @@ async fn packet_batch_sender(
     trace!("enter packet_batch_sender");
     let mut batch_start_time = Instant::now();
     loop {
+        let mut packet_perf_measure: HashMap<[u8; 64], std::time::Instant> = HashMap::default();
         let mut packet_batch = PacketBatch::with_capacity(PACKETS_PER_BATCH);
         let mut total_bytes: usize = 0;
 
@@ -645,6 +652,7 @@ async fn packet_batch_sender(
                 || (!packet_batch.is_empty() && elapsed >= coalesce)
             {
                 let len = packet_batch.len();
+                track_streamer_fetch_packet_performance(&packet_batch, &mut packet_perf_measure);
                 if let Err(e) = packet_sender.send(packet_batch) {
                     stats
                         .total_packet_batch_send_err
@@ -690,9 +698,42 @@ async fn packet_batch_sender(
 
                 total_bytes += packet_batch[i].meta().size;
 
+                let (do_track, signature) = track_packet(&packet_batch[i])
+                    .or_else(|_| Ok::<(bool, Option<&[u8; 64]>), PacketError>((false, None)))
+                    .unwrap();
+                if do_track {
+                    packet_perf_measure
+                        .insert(signature.unwrap().clone(), packet_accumulator.start_time);
+                    // we set the TRACER_PACKET on
+                    packet_batch[i].meta_mut().set_tracer(true);
+                }
                 stats
                     .total_chunks_processed_by_batcher
                     .fetch_add(num_chunks, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+fn track_streamer_fetch_packet_performance(
+    packet_batch: &PacketBatch,
+    packet_perf_measure: &mut HashMap<[u8; 64], Instant>,
+) {
+    for packet in packet_batch.iter() {
+        if packet.meta().is_tracer_packet() {
+            let signature = get_signature_from_packet(packet);
+            if let Ok(signature) = signature {
+                if let Some(start_time) = packet_perf_measure.remove(signature) {
+                    let duration = Instant::now() - start_time;
+                    debug!(
+                        "QUIC streamer fetch stage takes {duration:?} for transaction {:?}",
+                        Signature::from(signature.clone())
+                    );
+                    inc_new_counter_info!(
+                        "quic-streamer-packet-fetch-us",
+                        duration.as_micros() as usize
+                    );
+                }
             }
         }
     }
@@ -864,6 +905,7 @@ async fn handle_chunk(
                     *packet_accum = Some(PacketAccumulator {
                         meta,
                         chunks: Vec::new(),
+                        start_time: Instant::now(),
                     });
                 }
 
@@ -1467,6 +1509,7 @@ pub mod test {
                     offset,
                     end_of_chunk: size,
                 }],
+                start_time: Instant::now(),
             };
             ptk_sender.send(packet_accum).await.unwrap();
         }

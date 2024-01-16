@@ -405,14 +405,8 @@ impl QuicClient {
                     stats
                         .prepare_connection_us
                         .fetch_add(measure_prepare_connection.as_us(), Ordering::Relaxed);
-                    let packet =
-                        solana_sdk::packet::Packet::from_data(Some(&self.addr), data).unwrap();
-                    let tx: solana_sdk::transaction::VersionedTransaction =
-                        packet.deserialize_slice(..).unwrap();
-
-                    debug!(
-                        "Succcessfully sent to {:?} {} with id {}, thread: {:?}, data len: {}, send_packet_us: {} prepare_connection_us: {}",
-                        tx.signatures[0],
+                    trace!(
+                        "Succcessfully sent to {} with id {}, thread: {:?}, data len: {}, send_packet_us: {} prepare_connection_us: {}",
                         self.addr,
                         connection.stable_id(),
                         thread::current().id(),
