@@ -730,7 +730,7 @@ fn track_streamer_fetch_packet_performance(
                         Signature::from(signature.clone())
                     );
                     inc_new_counter_info!(
-                        "quic-streamer-packet-fetch-us",
+                        "txn-metrics-quic-streamer-packet-fetch-us",
                         duration.as_micros() as usize
                     );
                 }

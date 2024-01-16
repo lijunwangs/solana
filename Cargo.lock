@@ -5959,6 +5959,7 @@ dependencies = [
  "solana-stake-program",
  "solana-streamer",
  "solana-tpu-client",
+ "solana-transaction-metrics-tracker",
  "solana-transaction-status",
  "solana-turbine",
  "solana-unified-scheduler-pool",
