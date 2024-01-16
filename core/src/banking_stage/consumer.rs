@@ -206,6 +206,26 @@ impl Consumer {
             .slot_metrics_tracker
             .increment_retryable_packets_count(retryable_transaction_indexes.len() as u64);
 
+        // Now we track the performance for the interested transactions which is not in the retryable_transaction_indexes
+        // We assume the retryable_transaction_indexes is already sorted, double check
+        for (index, packet) in packets_to_process.iter().enumerate() {
+            if packet.original_packet().meta().is_tracer_packet() {
+                if let Some(start_time) = packet.start_time() {
+                    if retryable_transaction_indexes.binary_search(&index).is_err() {
+                        let duration = Instant::now() - start_time.clone();
+
+                        debug!(
+                            "Banking stage processing took {duration:?} for transaction {:?}",
+                            packet.transaction().get_signatures().get(0)
+                        );
+                        inc_new_counter_info!(
+                            "txn-metrics-banking-stage-process-us",
+                            duration.as_micros() as usize
+                        );
+                    }
+                }
+            }
+        }
         Some(retryable_transaction_indexes)
     }
 

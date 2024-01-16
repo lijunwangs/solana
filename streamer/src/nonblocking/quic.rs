@@ -726,7 +726,7 @@ fn track_streamer_fetch_packet_performance(
                 if let Some(start_time) = packet_perf_measure.remove(signature) {
                     let duration = Instant::now() - start_time;
                     debug!(
-                        "QUIC streamer fetch stage takes {duration:?} for transaction {:?}",
+                        "QUIC streamer fetch stage took {duration:?} for transaction {:?}",
                         Signature::from(signature.clone())
                     );
                     inc_new_counter_info!(
