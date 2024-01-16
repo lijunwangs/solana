@@ -5028,6 +5028,7 @@ dependencies = [
  "solana-send-transaction-service",
  "solana-streamer",
  "solana-tpu-client",
+ "solana-transaction-metrics-tracker",
  "solana-transaction-status",
  "solana-turbine",
  "solana-unified-scheduler-pool",
@@ -6388,6 +6389,7 @@ dependencies = [
  "solana-metrics",
  "solana-perf",
  "solana-sdk",
+ "solana-transaction-metrics-tracker",
  "thiserror",
  "tokio",
  "x509-parser",
@@ -6468,6 +6470,20 @@ dependencies = [
  "solana-sdk",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "solana-transaction-metrics-tracker"
+version = "1.18.0"
+dependencies = [
+ "Inflector",
+ "base64 0.21.6",
+ "bincode",
+ "lazy_static",
+ "log",
+ "rand 0.8.5",
+ "solana-perf",
+ "solana-sdk",
 ]
 
 [[package]]
