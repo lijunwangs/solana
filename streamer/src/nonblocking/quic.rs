@@ -701,6 +701,7 @@ async fn packet_batch_sender(
                 let (do_track, signature) = track_packet(&packet_batch[i])
                     .or_else(|_| Ok::<(bool, Option<&[u8; 64]>), PacketError>((false, None)))
                     .unwrap();
+                info!("Tracking txn? {do_track} for {:?}", signature);
                 if do_track {
                     packet_perf_measure
                         .insert(signature.unwrap().clone(), packet_accumulator.start_time);
