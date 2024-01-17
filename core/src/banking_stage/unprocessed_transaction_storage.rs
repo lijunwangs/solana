@@ -883,6 +883,10 @@ impl ThreadLocalUnprocessedPackets {
         let mut new_retryable_packets = MinMaxHeap::with_capacity(original_capacity);
         let all_packets_to_process = retryable_packets.drain_desc().collect_vec();
 
+        for packet in &all_packets_to_process {
+            debug!("Banking stage tracking txn {:?}", packet.transaction().get_signatures().first());
+        }
+
         let should_process_packet =
             |packet: &Arc<ImmutableDeserializedPacket>, payload: &mut ConsumeScannerPayload| {
                 consume_scan_should_process_packet(bank, banking_stage_stats, packet, payload)
