@@ -17,10 +17,7 @@ use {
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
     rand::{thread_rng, Rng},
-    solana_perf::{
-        packet::{PacketBatch, PACKETS_PER_BATCH},
-        sigverify::PacketError,
-    },
+    solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
     solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
         pubkey::Pubkey,
@@ -698,12 +695,9 @@ async fn packet_batch_sender(
 
                 total_bytes += packet_batch[i].meta().size;
 
-                let (do_track, signature) = track_packet(&packet_batch[i])
-                    .or_else(|_| Ok::<(bool, Option<&[u8; 64]>), PacketError>((false, None)))
-                    .unwrap();
+                let (do_track, signature) = track_packet(&packet_batch[i]).unwrap_or((false, None));
                 if do_track {
-                    packet_perf_measure
-                        .insert(signature.unwrap().clone(), packet_accumulator.start_time);
+                    packet_perf_measure.insert(*signature.unwrap(), packet_accumulator.start_time);
                     // we set the TRACER_PACKET on
                     packet_batch[i].meta_mut().set_tracer(true);
                 }
@@ -727,7 +721,7 @@ fn track_streamer_fetch_packet_performance(
                     let duration = Instant::now() - start_time;
                     debug!(
                         "QUIC streamer fetch stage took {duration:?} for transaction {:?}",
-                        Signature::from(signature.clone())
+                        Signature::from(*signature)
                     );
                     inc_new_counter_info!(
                         "txn-metrics-quic-streamer-packet-fetch-us",

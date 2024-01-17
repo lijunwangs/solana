@@ -49,6 +49,6 @@ pub fn get_signature_from_packet(packet: &Packet) -> Result<&[u8; SIGNATURE_BYTE
         .ok_or(PacketError::InvalidSignatureLen)?;
     let signature = signature
         .try_into()
-        .or_else(|_| Err(PacketError::InvalidSignatureLen))?;
+        .map_err(|_| PacketError::InvalidSignatureLen)?;
     Ok(signature)
 }

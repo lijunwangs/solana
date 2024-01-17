@@ -212,11 +212,11 @@ impl Consumer {
             if packet.original_packet().meta().is_tracer_packet() {
                 if let Some(start_time) = packet.start_time() {
                     if retryable_transaction_indexes.binary_search(&index).is_err() {
-                        let duration = Instant::now() - start_time.clone();
+                        let duration = Instant::now() - *start_time;
 
                         debug!(
                             "Banking stage processing took {duration:?} for transaction {:?}",
-                            packet.transaction().get_signatures().get(0)
+                            packet.transaction().get_signatures().first()
                         );
                         inc_new_counter_info!(
                             "txn-metrics-banking-stage-process-us",

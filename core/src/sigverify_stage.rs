@@ -307,7 +307,7 @@ impl SigVerifyStage {
                 if packet.meta().is_tracer_packet() {
                     let signature = get_signature_from_packet(packet);
                     if let Ok(signature) = signature {
-                        packet_perf_measure.insert(signature.clone(), Instant::now());
+                        packet_perf_measure.insert(*signature, Instant::now());
                     }
                 }
             }
@@ -388,7 +388,7 @@ impl SigVerifyStage {
             let duration = Instant::now() - start_time;
             debug!(
                 "Sigverify took {duration:?} for transaction {:?}",
-                Signature::from(signature.clone())
+                Signature::from(signature)
             );
             inc_new_counter_info!(
                 "txn-metrics-sigverify-packet-verify-us",
