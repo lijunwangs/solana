@@ -222,6 +222,11 @@ impl Consumer {
                             "txn-metrics-banking-stage-process-us",
                             duration.as_micros() as usize
                         );
+                    } else {
+                        debug!(
+                            "Banking stage retyring traced transaction {:?}",
+                            packet.transaction().get_signatures().first()
+                        );
                     }
                 }
             }
