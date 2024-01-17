@@ -45,7 +45,7 @@ pub fn get_signature_from_packet(packet: &Packet) -> Result<&[u8; SIGNATURE_BYTE
     }
 
     let signature = packet
-        .data(sig_start..sig_start + SIGNATURE_BYTES)
+        .data(sig_start..sig_start.saturating_add(SIGNATURE_BYTES))
         .ok_or(PacketError::InvalidSignatureLen)?;
     let signature = signature
         .try_into()
