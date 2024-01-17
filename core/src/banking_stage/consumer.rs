@@ -208,6 +208,7 @@ impl Consumer {
 
         // Now we track the performance for the interested transactions which is not in the retryable_transaction_indexes
         // We assume the retryable_transaction_indexes is already sorted, double check
+        debug!("Banking stage tracking retryable transactions: {:?}", retryable_transaction_indexes);
         for (index, packet) in packets_to_process.iter().enumerate() {
             if packet.original_packet().meta().is_tracer_packet() {
                 debug!(
