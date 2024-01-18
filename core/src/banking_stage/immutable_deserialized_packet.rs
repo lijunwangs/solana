@@ -48,13 +48,18 @@ pub struct ImmutableDeserializedPacket {
 
 impl ImmutableDeserializedPacket {
     pub fn new(packet: Packet) -> Result<Self, DeserializedPacketError> {
+        let versioned_transaction: VersionedTransaction = packet.deserialize_slice(..)?;
+        let sanitized_transaction = SanitizedVersionedTransaction::try_from(versioned_transaction)?;
         let banking_stage_start_time = if packet.meta().is_tracer_packet() {
+            debug!(
+                "Banking stage got a tracing packet: {:?}",
+                sanitized_transaction.get_signatures().first()
+            );
             Some(Instant::now())
         } else {
             None
         };
-        let versioned_transaction: VersionedTransaction = packet.deserialize_slice(..)?;
-        let sanitized_transaction = SanitizedVersionedTransaction::try_from(versioned_transaction)?;
+
         let message_bytes = packet_message(&packet)?;
         let message_hash = Message::hash_raw_message(message_bytes);
         let is_simple_vote = packet.meta().is_simple_vote_tx();
