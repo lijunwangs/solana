@@ -923,6 +923,15 @@ impl ThreadLocalUnprocessedPackets {
                 .iter()
                 .map(|p| (*p).clone())
                 .collect_vec();
+
+            for packet in &packets_to_process {
+                debug!(
+                    "Banking stage tracking txn2 {:?} tracer packtet? {}",
+                    packet.transaction().get_signatures().first(),
+                    packet.original_packet().meta().is_tracer_packet()
+                );
+            }
+
             let retryable_packets = if let Some(retryable_transaction_indexes) =
                 processing_function(&packets_to_process, payload)
             {
