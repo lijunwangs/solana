@@ -662,6 +662,14 @@ impl ThreadLocalUnprocessedPackets {
                                 }
                             }
 
+                            for packet in &packets_to_forward {
+                                debug!(
+                                    "Banking stage, forwarding txn {:?}, is tracer: {}",
+                                    packet.transaction().get_signatures().first(),
+                                    packet.original_packet().meta().is_tracer_packet()
+                                );
+                            }
+
                             let accepted_packet_indexes =
                                 Self::add_filtered_packets_to_forward_buffer(
                                     forward_buffer,
