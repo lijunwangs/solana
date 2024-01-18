@@ -177,6 +177,10 @@ fn consume_scan_should_process_packet(
             payload
                 .message_hash_to_transaction
                 .remove(packet.message_hash());
+            debug!(
+                "Banking stage do not process transaction {:?} account lock error",
+                sanitized_transaction.signature()
+            );
             return ProcessingDecision::Never;
         }
 
@@ -191,6 +195,10 @@ fn consume_scan_should_process_packet(
             payload
                 .message_hash_to_transaction
                 .remove(packet.message_hash());
+            debug!(
+                "Banking stage do not process transaction {:?} payload lock error",
+                sanitized_transaction.signature()
+            );
             return ProcessingDecision::Never;
         }
 
@@ -205,6 +213,10 @@ fn consume_scan_should_process_packet(
         // This prevents lower-priority transactions from taking locks
         // needed by higher-priority txs that were skipped by this check.
         if !payload.account_locks.take_locks(message) {
+            debug!(
+                "Banking stage do not process transaction {:?} lock later",
+                sanitized_transaction.signature()
+            );
             return ProcessingDecision::Later;
         }
 
@@ -214,6 +226,10 @@ fn consume_scan_should_process_packet(
         payload
             .message_hash_to_transaction
             .remove(packet.message_hash());
+        debug!(
+            "Banking stage do not process transaction {:?} not sanitized",
+            packet.transaction().get_signatures().first()
+        );
         ProcessingDecision::Never
     }
 }
@@ -884,7 +900,10 @@ impl ThreadLocalUnprocessedPackets {
         let all_packets_to_process = retryable_packets.drain_desc().collect_vec();
 
         for packet in &all_packets_to_process {
-            debug!("Banking stage tracking txn {:?}", packet.transaction().get_signatures().first());
+            debug!(
+                "Banking stage tracking txn {:?}",
+                packet.transaction().get_signatures().first()
+            );
         }
 
         let should_process_packet =

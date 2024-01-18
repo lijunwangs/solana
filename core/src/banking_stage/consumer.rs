@@ -208,13 +208,16 @@ impl Consumer {
 
         // Now we track the performance for the interested transactions which is not in the retryable_transaction_indexes
         // We assume the retryable_transaction_indexes is already sorted, double check
-        debug!("Banking stage tracking retryable transactions: {:?}", retryable_transaction_indexes);
+        debug!(
+            "Banking stage tracking retryable transactions: {:?}",
+            retryable_transaction_indexes
+        );
         for (index, packet) in packets_to_process.iter().enumerate() {
             if packet.original_packet().meta().is_tracer_packet() {
                 debug!(
                     "Banking stage tracking transaction {:?}",
                     packet.transaction().get_signatures().first()
-                );                
+                );
                 if let Some(start_time) = packet.start_time() {
                     if retryable_transaction_indexes.binary_search(&index).is_err() {
                         let duration = Instant::now() - *start_time;
