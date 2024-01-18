@@ -901,8 +901,9 @@ impl ThreadLocalUnprocessedPackets {
 
         for packet in &all_packets_to_process {
             debug!(
-                "Banking stage tracking txn {:?}",
-                packet.transaction().get_signatures().first()
+                "Banking stage tracking txn {:?} tracer packtet? {}",
+                packet.transaction().get_signatures().first(),
+                packet.original_packet().meta().is_tracer_packet()
             );
         }
 
