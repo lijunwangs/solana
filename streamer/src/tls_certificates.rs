@@ -44,7 +44,7 @@ pub fn new_dummy_x509_certificate(keypair: &Keypair) -> (rustls::Certificate, ru
     //          RelativeDistinguishedName SET (1 elem)
     //            AttributeTypeAndValue SEQUENCE (2 elem)
     //              type AttributeType OBJECT IDENTIFIER 2.5.4.3 commonName (X.520 DN component)
-    //              value AttributeValue [?] UTF8String Solana
+    //              value AttributeValue [?] UTF8String Solana node
     //        validity Validity SEQUENCE (2 elem)
     //          notBefore Time UTCTime 1970-01-01 00:00:00 UTC
     //          notAfter Time GeneralizedTime 4096-01-01 00:00:00 UTC
@@ -112,6 +112,17 @@ mod tests {
     fn test_generate_tls_certificate() {
         let keypair = Keypair::new();
         let (cert, _) = new_dummy_x509_certificate(&keypair);
+
+        let data = cert.as_ref();
+        use std::{
+            fs::File,
+            io::{Write},
+        };
+        let mut file = File::create("dummy.cer").unwrap();
+
+        // Write the binary content to the file
+        file.write_all(data).unwrap();
+
         if let Some(pubkey) = get_pubkey_from_tls_certificate(&cert) {
             assert_eq!(pubkey, keypair.pubkey());
         } else {
