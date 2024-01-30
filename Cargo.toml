@@ -226,7 +226,7 @@ itertools = "0.10.5"
 jemallocator = { package = "tikv-jemallocator", version = "0.4.1", features = [
     "unprefixed_malloc_on_supported_platforms",
 ] }
-js-sys = "0.3.66"
+js-sys = "0.3.67"
 json5 = "0.4.1"
 jsonrpc-core = "18.0.0"
 jsonrpc-core-client = "18.0.0"
@@ -280,7 +280,7 @@ quote = "1.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
 raptorq = "1.8.0"
-rayon = "1.8.0"
+rayon = "1.8.1"
 rcgen = "0.10.0"
 reed-solomon-erasure = "6.0.0"
 regex = "1.10.2"
