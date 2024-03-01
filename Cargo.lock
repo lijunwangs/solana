@@ -7277,6 +7277,7 @@ dependencies = [
  "rand 0.8.5",
  "rustls",
  "solana-logger",
+ "solana-measure",
  "solana-metrics",
  "solana-perf",
  "solana-sdk",
