@@ -6329,6 +6329,7 @@ dependencies = [
  "quinn-proto",
  "rand 0.8.5",
  "rustls",
+ "solana-measure",
  "solana-metrics",
  "solana-perf",
  "solana-sdk",
