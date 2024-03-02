@@ -30,7 +30,7 @@ use {
         rent_debits::RentDebits,
         saturating_add_assign,
         sysvar::{self, instructions::construct_instructions_data},
-        transaction::{self, Result, SanitizedTransaction, TransactionError},
+        transaction::{self, ExtendedSanitizedTransaction, Result, TransactionError},
         transaction_context::{IndexOfAccount, TransactionAccount},
     },
     solana_system_program::{get_system_account_kind, SystemAccountKind},
@@ -112,7 +112,7 @@ pub fn validate_fee_payer(
 /// second element.
 pub(crate) fn load_accounts<CB: TransactionProcessingCallback>(
     callbacks: &CB,
-    txs: &[SanitizedTransaction],
+    txs: &[ExtendedSanitizedTransaction],
     lock_results: &[TransactionCheckResult],
     error_counters: &mut TransactionErrorMetrics,
     fee_structure: &FeeStructure,
@@ -125,7 +125,7 @@ pub(crate) fn load_accounts<CB: TransactionProcessingCallback>(
         .zip(lock_results)
         .map(|etx| match etx {
             (tx, (Ok(()), nonce, lamports_per_signature)) => {
-                let message = tx.message();
+                let message = tx.transaction.message();
                 let fee = if let Some(lamports_per_signature) = lamports_per_signature {
                     fee_structure.calculate_fee(
                         message,

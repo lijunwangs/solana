@@ -23,7 +23,9 @@ use {
         nonce_info::{NonceFull, NonceInfo},
         pubkey::Pubkey,
         slot_hashes::SlotHashes,
-        transaction::{Result, SanitizedTransaction, TransactionAccountLocks, TransactionError},
+        transaction::{
+            ExtendedSanitizedTransaction, Result, TransactionAccountLocks, TransactionError,
+        },
         transaction_context::TransactionAccount,
     },
     solana_svm::{
@@ -31,10 +33,7 @@ use {
     },
     std::{
         cmp::Reverse,
-        collections::{
-            hash_map::{self},
-            BinaryHeap, HashMap, HashSet,
-        },
+        collections::{hash_map, BinaryHeap, HashMap, HashSet},
         ops::RangeBounds,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -577,11 +576,11 @@ impl Accounts {
     #[allow(clippy::needless_collect)]
     pub fn lock_accounts<'a>(
         &self,
-        txs: impl Iterator<Item = &'a SanitizedTransaction>,
+        txs: impl Iterator<Item = &'a ExtendedSanitizedTransaction>,
         tx_account_lock_limit: usize,
     ) -> Vec<Result<()>> {
         let tx_account_locks_results: Vec<Result<_>> = txs
-            .map(|tx| tx.get_account_locks(tx_account_lock_limit))
+            .map(|tx| tx.transaction.get_account_locks(tx_account_lock_limit))
             .collect();
         self.lock_accounts_inner(tx_account_locks_results)
     }
@@ -590,14 +589,14 @@ impl Accounts {
     #[allow(clippy::needless_collect)]
     pub fn lock_accounts_with_results<'a>(
         &self,
-        txs: impl Iterator<Item = &'a SanitizedTransaction>,
+        txs: impl Iterator<Item = &'a ExtendedSanitizedTransaction>,
         results: impl Iterator<Item = Result<()>>,
         tx_account_lock_limit: usize,
     ) -> Vec<Result<()>> {
         let tx_account_locks_results: Vec<Result<_>> = txs
             .zip(results)
             .map(|(tx, result)| match result {
-                Ok(()) => tx.get_account_locks(tx_account_lock_limit),
+                Ok(()) => tx.transaction.get_account_locks(tx_account_lock_limit),
                 Err(err) => Err(err),
             })
             .collect();
@@ -627,11 +626,11 @@ impl Accounts {
     #[allow(clippy::needless_collect)]
     pub fn unlock_accounts<'a>(
         &self,
-        txs_and_results: impl Iterator<Item = (&'a SanitizedTransaction, &'a Result<()>)>,
+        txs_and_results: impl Iterator<Item = (&'a ExtendedSanitizedTransaction, &'a Result<()>)>,
     ) {
         let keys: Vec<_> = txs_and_results
             .filter(|(_, res)| res.is_ok())
-            .map(|(tx, _)| tx.get_account_locks_unchecked())
+            .map(|(tx, _)| tx.transaction.get_account_locks_unchecked())
             .collect();
         if keys.is_empty() {
             return;
@@ -650,7 +649,7 @@ impl Accounts {
     pub fn store_cached(
         &self,
         slot: Slot,
-        txs: &[SanitizedTransaction],
+        txs: &[ExtendedSanitizedTransaction],
         res: &[TransactionExecutionResult],
         loaded: &mut [TransactionLoadResult],
         durable_nonce: &DurableNonce,
@@ -677,14 +676,14 @@ impl Accounts {
     #[allow(clippy::too_many_arguments)]
     fn collect_accounts_to_store<'a>(
         &self,
-        txs: &'a [SanitizedTransaction],
+        txs: &'a [ExtendedSanitizedTransaction],
         execution_results: &'a [TransactionExecutionResult],
         load_results: &'a mut [TransactionLoadResult],
         durable_nonce: &DurableNonce,
         lamports_per_signature: u64,
     ) -> (
         Vec<(&'a Pubkey, &'a AccountSharedData)>,
-        Vec<Option<&'a SanitizedTransaction>>,
+        Vec<Option<&'a ExtendedSanitizedTransaction>>,
     ) {
         let mut accounts = Vec::with_capacity(load_results.len());
         let mut transactions = Vec::with_capacity(load_results.len());
@@ -712,7 +711,7 @@ impl Accounts {
                 }
             };
 
-            let message = tx.message();
+            let message = tx.transaction.message();
             let loaded_transaction = tx_load_result.as_mut().unwrap();
             let mut fee_payer_index = None;
             for (i, (address, account)) in (0..message.account_keys().len())
