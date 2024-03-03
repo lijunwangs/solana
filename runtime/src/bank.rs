@@ -4316,6 +4316,7 @@ impl Bank {
             Some(&account_overrides),
             None,
             true,
+            &mut None,
         );
 
         let post_simulation_accounts = loaded_transactions
@@ -4565,6 +4566,7 @@ impl Bank {
         account_overrides: Option<&AccountOverrides>,
         log_messages_bytes_limit: Option<usize>,
         limit_to_load_programs: bool,
+        perf_track_metrics: &mut Option<&mut histogram::Histogram>,
     ) -> LoadAndExecuteTransactionsOutput {
         let sanitized_txs = batch.sanitized_transactions();
         debug!("processing transactions: {}", sanitized_txs.len());
@@ -4625,6 +4627,7 @@ impl Bank {
                 &mut check_results,
                 &mut error_counters,
                 recording_config,
+                perf_track_metrics,
                 timings,
                 account_overrides,
                 self.builtin_programs.iter(),
@@ -5648,6 +5651,7 @@ impl Bank {
 
     /// Process a batch of transactions.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn load_execute_and_commit_transactions(
         &self,
         batch: &TransactionBatch,
@@ -5656,6 +5660,7 @@ impl Bank {
         recording_config: ExecutionRecordingConfig,
         timings: &mut ExecuteTimings,
         log_messages_bytes_limit: Option<usize>,
+        mut perf_track_metrics: Option<&mut histogram::Histogram>,
     ) -> (TransactionResults, TransactionBalancesSet) {
         let pre_balances = if collect_balances {
             self.collect_balances(batch)
@@ -5679,6 +5684,7 @@ impl Bank {
             None,
             log_messages_bytes_limit,
             false,
+            &mut perf_track_metrics,
         );
 
         let (last_blockhash, lamports_per_signature) =
@@ -5749,6 +5755,7 @@ impl Bank {
             },
             &mut ExecuteTimings::default(),
             Some(1000 * 1000),
+            None,
         );
 
         execution_results.remove(0)
@@ -5784,6 +5791,7 @@ impl Bank {
             false,
             ExecutionRecordingConfig::new_single_setting(false),
             &mut ExecuteTimings::default(),
+            None,
             None,
         )
         .0

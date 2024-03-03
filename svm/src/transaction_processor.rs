@@ -43,6 +43,7 @@ use {
         pubkey::Pubkey,
         rent_collector::RentCollector,
         saturating_add_assign,
+        timing::duration_as_us,
         transaction::{self, ExtendedSanitizedTransaction, SanitizedTransaction, TransactionError},
         transaction_context::{ExecutionRecord, TransactionContext},
     },
@@ -52,6 +53,7 @@ use {
         fmt::{Debug, Formatter},
         rc::Rc,
         sync::{atomic::Ordering, Arc, RwLock},
+        time::Instant,
     },
 };
 
@@ -204,6 +206,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         check_results: &mut [TransactionCheckResult],
         error_counters: &mut TransactionErrorMetrics,
         recording_config: ExecutionRecordingConfig,
+        perf_track_metrics: &mut Option<&mut histogram::Histogram>,
         timings: &mut ExecuteTimings,
         account_overrides: Option<&AccountOverrides>,
         builtin_programs: impl Iterator<Item = &'a Pubkey>,
@@ -295,6 +298,15 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                         programs_modified_by_tx,
                     } = &result
                     {
+                        if let Some(perf_track_metrics) = perf_track_metrics.as_mut() {
+                            if let Some(start_time) = &tx.start_time {
+                                // measure the time from start of banking stage to the execution of the transaction
+                                let duration = Instant::now().duration_since(*start_time);
+                                perf_track_metrics
+                                    .increment(duration_as_us(&duration))
+                                    .unwrap();
+                            }
+                        }
                         // Update batch specific cache of the loaded programs with the modifications
                         // made by the transaction, if it executed successfully.
                         if details.status.is_ok() {

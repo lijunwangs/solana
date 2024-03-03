@@ -208,33 +208,6 @@ impl Consumer {
         payload
             .slot_metrics_tracker
             .increment_retryable_packets_count(retryable_transaction_indexes.len() as u64);
-
-        // Now we track the performance for the interested transactions which is not in the retryable_transaction_indexes
-        // We assume the retryable_transaction_indexes is already sorted.
-        let mut retryable_idx = 0;
-        for (index, packet) in packets_to_process.iter().enumerate() {
-            if packet.original_packet().meta().is_perf_track_packet() {
-                if let Some(start_time) = packet.start_time() {
-                    if retryable_idx >= retryable_transaction_indexes.len()
-                        || retryable_transaction_indexes[retryable_idx] != index
-                    {
-                        let duration = Instant::now().duration_since(*start_time);
-
-                        debug!(
-                            "Banking stage processing took {duration:?} for transaction {:?}",
-                            packet.transaction().get_signatures().first()
-                        );
-                        payload
-                            .slot_metrics_tracker
-                            .increment_process_sampled_packets_us(duration.as_micros() as u64);
-                    } else {
-                        // This packet is retried, advance the retry index to the next, as the next packet's index will
-                        // certainly be > than this.
-                        retryable_idx += 1;
-                    }
-                }
-            }
-        }
         Some(retryable_transaction_indexes)
     }
 
@@ -246,9 +219,13 @@ impl Consumer {
         banking_stage_stats: &BankingStageStats,
         slot_metrics_tracker: &mut LeaderSlotMetricsTracker,
     ) -> ProcessTransactionsSummary {
-        let (mut process_transactions_summary, process_transactions_us) = measure_us!(
-            self.process_transactions(bank, bank_creation_time, sanitized_transactions)
-        );
+        let (mut process_transactions_summary, process_transactions_us) = measure_us!(self
+            .process_transactions(
+                bank,
+                bank_creation_time,
+                sanitized_transactions,
+                &mut slot_metrics_tracker.get_transaction_perf_track_metrics_ref()
+            ));
         slot_metrics_tracker.increment_process_transactions_us(process_transactions_us);
         banking_stage_stats
             .transaction_processing_elapsed
@@ -299,6 +276,7 @@ impl Consumer {
         bank: &Arc<Bank>,
         bank_creation_time: &Instant,
         transactions: &[ExtendedSanitizedTransaction],
+        perf_track_metrics: &mut Option<&mut histogram::Histogram>,
     ) -> ProcessTransactionsSummary {
         let mut chunk_start = 0;
         let mut all_retryable_tx_indexes = vec![];
@@ -328,6 +306,7 @@ impl Consumer {
                 bank,
                 &transactions[chunk_start..chunk_end],
                 chunk_start,
+                perf_track_metrics,
             );
 
             let ProcessTransactionBatchOutput {
@@ -434,6 +413,7 @@ impl Consumer {
         bank: &Arc<Bank>,
         txs: &[ExtendedSanitizedTransaction],
         chunk_offset: usize,
+        perf_track_metrics: &mut Option<&mut histogram::Histogram>,
     ) -> ProcessTransactionBatchOutput {
         let mut error_counters = TransactionErrorMetrics::default();
         let pre_results = vec![Ok(()); txs.len()];
@@ -447,6 +427,7 @@ impl Consumer {
             txs,
             chunk_offset,
             check_results,
+            perf_track_metrics,
         );
 
         // Accumulate error counters from the initial checks into final results
@@ -462,6 +443,7 @@ impl Consumer {
         bank: &Arc<Bank>,
         txs: &[ExtendedSanitizedTransaction],
         max_slot_ages: &[Slot],
+        mut perf_track_metrics: Option<&mut histogram::Histogram>,
     ) -> ProcessTransactionBatchOutput {
         // Need to filter out transactions since they were sanitized earlier.
         // This means that the transaction may cross and epoch boundary (not allowed),
@@ -487,7 +469,13 @@ impl Consumer {
             }
             Ok(())
         });
-        self.process_and_record_transactions_with_pre_results(bank, txs, 0, pre_results)
+        self.process_and_record_transactions_with_pre_results(
+            bank,
+            txs,
+            0,
+            pre_results,
+            &mut perf_track_metrics,
+        )
     }
 
     fn process_and_record_transactions_with_pre_results(
@@ -496,6 +484,7 @@ impl Consumer {
         txs: &[ExtendedSanitizedTransaction],
         chunk_offset: usize,
         pre_results: impl Iterator<Item = Result<(), TransactionError>>,
+        perf_track_metrics: &mut Option<&mut histogram::Histogram>,
     ) -> ProcessTransactionBatchOutput {
         let (
             (transaction_qos_cost_results, cost_model_throttled_transactions_count),
@@ -521,7 +510,7 @@ impl Consumer {
         // WouldExceedMaxAccountCostLimit, WouldExceedMaxVoteCostLimit
         // and WouldExceedMaxAccountDataCostLimit
         let mut execute_and_commit_transactions_output =
-            self.execute_and_commit_transactions_locked(bank, &batch);
+            self.execute_and_commit_transactions_locked(bank, &batch, perf_track_metrics);
 
         // Once the accounts are new transactions can enter the pipeline to process them
         let (_, unlock_us) = measure_us!(drop(batch));
@@ -587,6 +576,7 @@ impl Consumer {
         &self,
         bank: &Arc<Bank>,
         batch: &TransactionBatch,
+        perf_track_metrics: &mut Option<&mut histogram::Histogram>,
     ) -> ExecuteAndCommitTransactionsOutput {
         let transaction_status_sender_enabled = self.committer.transaction_status_sender_enabled();
         let mut execute_and_commit_timings = LeaderExecuteAndCommitTimings::default();
@@ -626,6 +616,7 @@ impl Consumer {
                 None, // account_overrides
                 self.log_messages_bytes_limit,
                 true,
+                perf_track_metrics,
             ));
         execute_and_commit_timings.load_execute_us = load_execute_us;
 
