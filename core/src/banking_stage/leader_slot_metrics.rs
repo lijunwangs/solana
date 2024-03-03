@@ -937,15 +937,17 @@ impl LeaderSlotMetricsTracker {
         }
     }
 
-    pub(crate) fn increment_process_sampled_packets_us(&mut self, us: u64) {
-        if let Some(leader_slot_metrics) = &mut self.leader_slot_metrics {
-            leader_slot_metrics
-                .timing_metrics
-                .process_packets_timings
-                .process_sampled_packets_us_hist
-                .increment(us)
-                .unwrap();
-        }
+    pub(crate) fn get_transaction_perf_track_metrics_ref(
+        &mut self,
+    ) -> Option<&mut histogram::Histogram> {
+        self.leader_slot_metrics
+            .as_mut()
+            .map(|leader_slot_metrics| {
+                &mut leader_slot_metrics
+                    .timing_metrics
+                    .process_packets_timings
+                    .process_sampled_packets_us_hist
+            })
     }
 }
 

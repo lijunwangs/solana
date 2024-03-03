@@ -34,6 +34,7 @@ pub(crate) struct ConsumeWorker {
 
     leader_bank_notifier: Arc<LeaderBankNotifier>,
     metrics: Arc<ConsumeWorkerMetrics>,
+    perf_track_metrics: histogram::Histogram,
 }
 
 #[allow(dead_code)]
@@ -51,6 +52,7 @@ impl ConsumeWorker {
             consumed_sender,
             leader_bank_notifier,
             metrics: Arc::new(ConsumeWorkerMetrics::new(id)),
+            perf_track_metrics: histogram::Histogram::default(),
         }
     }
 
@@ -58,19 +60,23 @@ impl ConsumeWorker {
         self.metrics.clone()
     }
 
-    pub fn run(self) -> Result<(), ConsumeWorkerError> {
+    pub fn run(mut self) -> Result<(), ConsumeWorkerError> {
         loop {
             let work = self.consume_receiver.recv()?;
             self.consume_loop(work)?;
         }
     }
 
-    fn consume_loop(&self, work: ConsumeWork) -> Result<(), ConsumeWorkerError> {
+    fn consume_loop(&mut self, work: ConsumeWork) -> Result<(), ConsumeWorkerError> {
         let Some(mut bank) = self.get_consume_bank() else {
             return self.retry_drain(work);
         };
 
-        for work in try_drain_iter(work, &self.consume_receiver) {
+        // We need to have a mutable borrow in consume, so move the receiver out
+        let (_, dummy_receiver) = crossbeam_channel::unbounded();
+        let consume_receiver = std::mem::replace(&mut self.consume_receiver, dummy_receiver);
+
+        for work in try_drain_iter(work, &consume_receiver) {
             if bank.is_complete() {
                 if let Some(new_bank) = self.get_consume_bank() {
                     bank = new_bank;
@@ -81,15 +87,18 @@ impl ConsumeWorker {
             self.consume(&bank, work)?;
         }
 
+        // restore it
+        self.consume_receiver = consume_receiver;
         Ok(())
     }
 
     /// Consume a single batch.
-    fn consume(&self, bank: &Arc<Bank>, work: ConsumeWork) -> Result<(), ConsumeWorkerError> {
+    fn consume(&mut self, bank: &Arc<Bank>, work: ConsumeWork) -> Result<(), ConsumeWorkerError> {
         let output = self.consumer.process_and_record_aged_transactions(
             bank,
             &work.transactions,
             &work.max_age_slots,
+            Some(&mut self.perf_track_metrics),
         );
 
         self.metrics.update_for_consume(&output);

@@ -169,6 +169,7 @@ pub fn execute_batch(
         ExecutionRecordingConfig::new_single_setting(transaction_status_sender.is_some()),
         timings,
         log_messages_bytes_limit,
+        None,
     );
 
     bank_utils::find_and_send_votes(

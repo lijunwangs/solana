@@ -6909,6 +6909,7 @@ dependencies = [
  "ed25519-dalek",
  "flate2",
  "fnv",
+ "histogram",
  "im",
  "index_list",
  "itertools",
@@ -7207,6 +7208,7 @@ name = "solana-svm"
 version = "1.19.0"
 dependencies = [
  "bincode",
+ "histogram",
  "itertools",
  "log",
  "percentage",

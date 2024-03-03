@@ -11,6 +11,7 @@ edition = { workspace = true }
 
 [dependencies]
 itertools = { workspace = true }
+histogram = { workspace = true }
 log = { workspace = true }
 percentage = { workspace = true }
 solana-bpf-loader-program = { workspace = true }
