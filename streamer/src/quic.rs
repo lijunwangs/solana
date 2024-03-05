@@ -181,7 +181,8 @@ pub struct StreamStats {
 
 impl StreamStats {
     pub fn report(&self, name: &'static str) {
-        let process_sampled_packets_us_hist = self.process_sampled_packets_us_hist.lock().unwrap();
+        let mut process_sampled_packets_us_hist =
+            self.process_sampled_packets_us_hist.lock().unwrap();
         datapoint_info!(
             name,
             (
@@ -456,6 +457,7 @@ impl StreamStats {
                 i64
             ),
         );
+        process_sampled_packets_us_hist.clear();
     }
 }
 
