@@ -118,21 +118,25 @@ impl CostModel {
         transaction: &SanitizedTransaction,
         feature_set: &FeatureSet,
     ) {
-        let mut builtin_costs = 0u64;
-        let mut bpf_costs = 0u64;
+        let mut programs_execution_costs = 0u64;
         let mut loaded_accounts_data_size_cost = 0u64;
         let mut data_bytes_len_total = 0u64;
         let mut compute_unit_limit_is_set = false;
+        let mut has_user_space_instructions = false;
 
         for (program_id, instruction) in transaction.message().program_instructions_iter() {
-            // to keep the same behavior, look for builtin first
-            if let Some(builtin_cost) = BUILT_IN_INSTRUCTION_COSTS.get(program_id) {
-                builtin_costs = builtin_costs.saturating_add(*builtin_cost);
-            } else {
-                bpf_costs = bpf_costs
-                    .saturating_add(u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT))
-                    .min(u64::from(MAX_COMPUTE_UNIT_LIMIT));
-            }
+            let ix_execution_cost =
+                if let Some(builtin_cost) = BUILT_IN_INSTRUCTION_COSTS.get(program_id) {
+                    *builtin_cost
+                } else {
+                    has_user_space_instructions = true;
+                    u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
+                };
+
+            programs_execution_costs = programs_execution_costs
+                .saturating_add(ix_execution_cost)
+                .min(u64::from(MAX_COMPUTE_UNIT_LIMIT));
+
             data_bytes_len_total =
                 data_bytes_len_total.saturating_add(instruction.data.len() as u64);
 
@@ -145,6 +149,7 @@ impl CostModel {
             }
         }
 
+<<<<<<< HEAD
         // calculate bpf cost based on compute budget instructions
         let mut compute_budget = ComputeBudget::default();
 
@@ -154,6 +159,8 @@ impl CostModel {
             feature_set.is_active(&add_set_tx_loaded_accounts_data_size_instruction::id()),
         );
 
+=======
+>>>>>>> 8f3f06cc7f (Combine builtin and BPF compute cost in cost model (#29))
         // if failed to process compute_budget instructions, the transaction will not be executed
         // by `bank`, therefore it should be considered as no execution cost by cost model.
         match result {
@@ -163,8 +170,13 @@ impl CostModel {
                 // 'compute_unit_limit_is_set' flag, because compute_budget does not distinguish
                 // builtin and bpf instructions when calculating default compute-unit-limit. (see
                 // compute_budget.rs test `test_process_mixed_instructions_without_compute_budget`)
+<<<<<<< HEAD
                 if bpf_costs > 0 && compute_unit_limit_is_set {
                     bpf_costs = compute_budget.compute_unit_limit
+=======
+                if has_user_space_instructions && compute_unit_limit_is_set {
+                    programs_execution_costs = u64::from(compute_budget_limits.compute_unit_limit);
+>>>>>>> 8f3f06cc7f (Combine builtin and BPF compute cost in cost model (#29))
                 }
 
                 if feature_set
@@ -175,13 +187,11 @@ impl CostModel {
                 }
             }
             Err(_) => {
-                builtin_costs = 0;
-                bpf_costs = 0;
+                programs_execution_costs = 0;
             }
         }
 
-        tx_cost.builtins_execution_cost = builtin_costs;
-        tx_cost.bpf_execution_cost = bpf_costs;
+        tx_cost.programs_execution_cost = programs_execution_costs;
         tx_cost.loaded_accounts_data_size_cost = loaded_accounts_data_size_cost;
         tx_cost.data_bytes_cost = data_bytes_len_total / INSTRUCTION_DATA_BYTES_COST;
     }
@@ -333,8 +343,7 @@ mod tests {
             &simple_transaction,
             &FeatureSet::all_enabled(),
         );
-        assert_eq!(*expected_execution_cost, tx_cost.builtins_execution_cost);
-        assert_eq!(0, tx_cost.bpf_execution_cost);
+        assert_eq!(*expected_execution_cost, tx_cost.programs_execution_cost);
         assert_eq!(3, tx_cost.data_bytes_cost);
     }
 
@@ -362,8 +371,10 @@ mod tests {
             &token_transaction,
             &FeatureSet::all_enabled(),
         );
-        assert_eq!(0, tx_cost.builtins_execution_cost);
-        assert_eq!(200_000, tx_cost.bpf_execution_cost);
+        assert_eq!(
+            DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT as u64,
+            tx_cost.programs_execution_cost
+        );
         assert_eq!(0, tx_cost.data_bytes_cost);
     }
 
@@ -399,13 +410,8 @@ mod tests {
             &token_transaction,
             &FeatureSet::all_enabled(),
         );
-        assert_eq!(
-            *BUILT_IN_INSTRUCTION_COSTS
-                .get(&compute_budget::id())
-                .unwrap(),
-            tx_cost.builtins_execution_cost
-        );
-        assert_eq!(12_345, tx_cost.bpf_execution_cost);
+        // If cu-limit is specified, that would the cost for all programs
+        assert_eq!(12_345, tx_cost.programs_execution_cost);
         assert_eq!(1, tx_cost.data_bytes_cost);
     }
 
@@ -449,8 +455,7 @@ mod tests {
             &token_transaction,
             &FeatureSet::all_enabled(),
         );
-        assert_eq!(0, tx_cost.builtins_execution_cost);
-        assert_eq!(0, tx_cost.bpf_execution_cost);
+        assert_eq!(0, tx_cost.programs_execution_cost);
     }
 
     #[test]
@@ -477,8 +482,7 @@ mod tests {
 
         let mut tx_cost = UsageCostDetails::default();
         CostModel::get_transaction_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
-        assert_eq!(expected_cost, tx_cost.builtins_execution_cost);
-        assert_eq!(0, tx_cost.bpf_execution_cost);
+        assert_eq!(expected_cost, tx_cost.programs_execution_cost);
         assert_eq!(6, tx_cost.data_bytes_cost);
     }
 
@@ -509,8 +513,7 @@ mod tests {
         let expected_cost = DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT as u64 * 2;
         let mut tx_cost = UsageCostDetails::default();
         CostModel::get_transaction_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
-        assert_eq!(0, tx_cost.builtins_execution_cost);
-        assert_eq!(expected_cost, tx_cost.bpf_execution_cost);
+        assert_eq!(expected_cost, tx_cost.programs_execution_cost);
         assert_eq!(0, tx_cost.data_bytes_cost);
     }
 
@@ -569,7 +572,7 @@ mod tests {
 
         let tx_cost = CostModel::calculate_cost(&tx, &FeatureSet::all_enabled());
         assert_eq!(expected_account_cost, tx_cost.write_lock_cost());
-        assert_eq!(*expected_execution_cost, tx_cost.builtins_execution_cost());
+        assert_eq!(*expected_execution_cost, tx_cost.programs_execution_cost());
         assert_eq!(2, tx_cost.writable_accounts().len());
         assert_eq!(
             expected_loaded_accounts_data_size_cost,
@@ -598,7 +601,7 @@ mod tests {
 
         let tx_cost = CostModel::calculate_cost(&tx, &feature_set);
         assert_eq!(expected_account_cost, tx_cost.write_lock_cost());
-        assert_eq!(*expected_execution_cost, tx_cost.builtins_execution_cost());
+        assert_eq!(*expected_execution_cost, tx_cost.programs_execution_cost());
         assert_eq!(2, tx_cost.writable_accounts().len());
         assert_eq!(
             expected_loaded_accounts_data_size_cost,
@@ -637,7 +640,7 @@ mod tests {
 
         let tx_cost = CostModel::calculate_cost(&tx, &feature_set);
         assert_eq!(expected_account_cost, tx_cost.write_lock_cost());
-        assert_eq!(expected_execution_cost, tx_cost.builtins_execution_cost());
+        assert_eq!(expected_execution_cost, tx_cost.programs_execution_cost());
         assert_eq!(2, tx_cost.writable_accounts().len());
         assert_eq!(
             expected_loaded_accounts_data_size_cost,
@@ -737,7 +740,37 @@ mod tests {
         let mut tx_cost = UsageCostDetails::default();
         CostModel::get_transaction_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
 
-        assert_eq!(expected_builtin_cost, tx_cost.builtins_execution_cost);
-        assert_eq!(expected_bpf_cost as u64, tx_cost.bpf_execution_cost);
+        assert_eq!(
+            expected_builtin_cost + expected_bpf_cost as u64,
+            tx_cost.programs_execution_cost
+        );
+    }
+
+    #[test]
+    fn test_transaction_cost_with_mix_instruction_with_cu_limit() {
+        let (mint_keypair, start_hash) = test_setup();
+
+        let transaction =
+            SanitizedTransaction::from_transaction_for_tests(Transaction::new_signed_with_payer(
+                &[
+                    system_instruction::transfer(&mint_keypair.pubkey(), &Pubkey::new_unique(), 2),
+                    ComputeBudgetInstruction::set_compute_unit_limit(12_345),
+                ],
+                Some(&mint_keypair.pubkey()),
+                &[&mint_keypair],
+                start_hash,
+            ));
+        // transaction has one builtin instruction, and one ComputeBudget::compute_unit_limit
+        let expected_cost = *BUILT_IN_INSTRUCTION_COSTS
+            .get(&solana_system_program::id())
+            .unwrap()
+            + BUILT_IN_INSTRUCTION_COSTS
+                .get(&compute_budget::id())
+                .unwrap();
+
+        let mut tx_cost = UsageCostDetails::default();
+        CostModel::get_transaction_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
+
+        assert_eq!(expected_cost, tx_cost.programs_execution_cost);
     }
 }
