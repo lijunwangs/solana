@@ -100,7 +100,11 @@ mod tests {
     use {
         super::*,
         crate::genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
-        solana_sdk::{signature::Keypair, system_transaction, transaction::{SanitizedTransaction, TransactionError}},
+        solana_sdk::{
+            signature::Keypair,
+            system_transaction,
+            transaction::{SanitizedTransaction, TransactionError},
+        },
     };
 
     #[test]
@@ -185,17 +189,36 @@ mod tests {
         let keypair2 = Keypair::new();
         let pubkey2 = solana_sdk::pubkey::new_rand();
 
-        let mut txs = vec![SanitizedTransaction::from_transaction_for_tests(
-            system_transaction::transfer(&mint_keypair, &pubkey, 1, genesis_config.hash()),
-        ).into()];
+        let mut txs =
+            vec![
+                SanitizedTransaction::from_transaction_for_tests(system_transaction::transfer(
+                    &mint_keypair,
+                    &pubkey,
+                    1,
+                    genesis_config.hash(),
+                ))
+                .into(),
+            ];
         if insert_conflicting_tx {
-            txs.push(SanitizedTransaction::from_transaction_for_tests(
-                system_transaction::transfer(&mint_keypair, &pubkey2, 1, genesis_config.hash()),
-            ).into());
+            txs.push(
+                SanitizedTransaction::from_transaction_for_tests(system_transaction::transfer(
+                    &mint_keypair,
+                    &pubkey2,
+                    1,
+                    genesis_config.hash(),
+                ))
+                .into(),
+            );
         }
-        txs.push(SanitizedTransaction::from_transaction_for_tests(
-            system_transaction::transfer(&keypair2, &pubkey2, 1, genesis_config.hash()),
-        ).into());
+        txs.push(
+            SanitizedTransaction::from_transaction_for_tests(system_transaction::transfer(
+                &keypair2,
+                &pubkey2,
+                1,
+                genesis_config.hash(),
+            ))
+            .into(),
+        );
         (bank, txs)
     }
 }
