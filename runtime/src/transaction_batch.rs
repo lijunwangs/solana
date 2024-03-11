@@ -1,7 +1,7 @@
 use {
     crate::bank::Bank,
-    solana_sdk::transaction::{ExtendedSanitizedTransaction, Result},
-    std::borrow::Cow,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+    solana_sdk::transaction::Result, std::borrow::Cow,
 };
 
 // Represents the results of trying to lock a set of accounts

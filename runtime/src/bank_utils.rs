@@ -7,7 +7,7 @@ use {
     solana_sdk::{pubkey::Pubkey, signature::Signer},
 };
 use {
-    solana_sdk::transaction::ExtendedSanitizedTransaction,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_svm::transaction_results::TransactionResults,
     solana_vote::{vote_parser, vote_sender_types::ReplayVoteSender},
 };

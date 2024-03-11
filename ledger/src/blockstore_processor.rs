@@ -42,6 +42,7 @@ use {
         prioritization_fee_cache::PrioritizationFeeCache,
         transaction_batch::TransactionBatch,
     },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::{Slot, MAX_PROCESSING_AGE},
         feature_set,
@@ -53,8 +54,7 @@ use {
         signature::{Keypair, Signature},
         timing,
         transaction::{
-            ExtendedSanitizedTransaction, Result, TransactionError, TransactionVerificationMode,
-            VersionedTransaction,
+            Result, TransactionError, TransactionVerificationMode, VersionedTransaction,
         },
     },
     solana_svm::{

@@ -102,6 +102,7 @@ use {
         runtime_config::RuntimeConfig,
         timings::{ExecuteTimingType, ExecuteTimings},
     },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         account::{
             create_account_shared_data_with_fields as create_account, create_executable_meta,
@@ -152,9 +153,8 @@ use {
         sysvar::{self, last_restart_slot::LastRestartSlot, Sysvar, SysvarId},
         timing::years_as_slots,
         transaction::{
-            self, ExtendedSanitizedTransaction, MessageHash, Result, SanitizedTransaction,
-            Transaction, TransactionError, TransactionVerificationMode, VersionedTransaction,
-            MAX_TX_ACCOUNT_LOCKS,
+            self, MessageHash, Result, SanitizedTransaction, Transaction, TransactionError,
+            TransactionVerificationMode, VersionedTransaction, MAX_TX_ACCOUNT_LOCKS,
         },
         transaction_context::{TransactionAccount, TransactionReturnData},
     },

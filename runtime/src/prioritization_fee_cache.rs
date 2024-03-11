@@ -5,10 +5,10 @@ use {
     log::*,
     lru::LruCache,
     solana_measure::measure,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::{BankId, Slot},
         pubkey::Pubkey,
-        transaction::ExtendedSanitizedTransaction,
     },
     std::{
         collections::HashMap,

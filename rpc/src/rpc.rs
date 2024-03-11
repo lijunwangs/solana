@@ -3252,10 +3252,8 @@ pub mod rpc_accounts_scan {
 pub mod rpc_full {
     use {
         super::*,
-        solana_sdk::{
-            message::{SanitizedVersionedMessage, VersionedMessage},
-            transaction::ExtendedSanitizedTransaction,
-        },
+        solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+        solana_sdk::message::{SanitizedVersionedMessage, VersionedMessage},
         solana_transaction_status::UiInnerInstructions,
     };
     #[rpc]

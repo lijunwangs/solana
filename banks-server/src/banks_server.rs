@@ -13,6 +13,7 @@ use {
         bank_forks::BankForks,
         commitment::BlockCommitmentCache,
     },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         account::Account,
         clock::Slot,
@@ -23,10 +24,7 @@ use {
         message::{Message, SanitizedMessage},
         pubkey::Pubkey,
         signature::Signature,
-        transaction::{
-            self, ExtendedSanitizedTransaction, MessageHash, SanitizedTransaction,
-            VersionedTransaction,
-        },
+        transaction::{self, MessageHash, SanitizedTransaction, VersionedTransaction},
     },
     solana_send_transaction_service::{
         send_transaction_service::{SendTransactionService, TransactionInfo},

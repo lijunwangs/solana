@@ -23,13 +23,14 @@ use {
         compute_budget_details::GetComputeBudgetDetails,
         transaction_batch::TransactionBatch,
     },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::{Slot, FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET, MAX_PROCESSING_AGE},
         feature_set,
         message::SanitizedMessage,
         saturating_add_assign,
         timing::timestamp,
-        transaction::{self, AddressLoader, ExtendedSanitizedTransaction, TransactionError},
+        transaction::{self, AddressLoader, TransactionError},
     },
     solana_svm::{
         account_loader::{validate_fee_payer, TransactionCheckResult},

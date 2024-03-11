@@ -8,11 +8,12 @@ use {
     solana_cost_model::{cost_model::CostModel, transaction_cost::TransactionCost},
     solana_measure::measure::Measure,
     solana_runtime::bank::Bank,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::Slot,
         feature_set::FeatureSet,
         saturating_add_assign,
-        transaction::{self, ExtendedSanitizedTransaction, TransactionError},
+        transaction::{self, TransactionError},
     },
     std::sync::atomic::{AtomicU64, Ordering},
 };

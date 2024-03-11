@@ -22,13 +22,14 @@ use {
         sigverify,
     },
     solana_rayon_threadlimit::get_max_thread_count,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         hash::Hash,
         packet::Meta,
         timing,
         transaction::{
-            ExtendedSanitizedTransaction, Result, Transaction, TransactionError,
-            TransactionVerificationMode, VersionedTransaction,
+            Result, Transaction, TransactionError, TransactionVerificationMode,
+            VersionedTransaction,
         },
     },
     std::{
