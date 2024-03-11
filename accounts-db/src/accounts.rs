@@ -10,6 +10,7 @@ use {
     },
     dashmap::DashMap,
     log::*,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
         account_utils::StateMut,
@@ -23,9 +24,7 @@ use {
         nonce_info::{NonceFull, NonceInfo},
         pubkey::Pubkey,
         slot_hashes::SlotHashes,
-        transaction::{
-            ExtendedSanitizedTransaction, Result, TransactionAccountLocks, TransactionError,
-        },
+        transaction::{Result, TransactionAccountLocks, TransactionError},
         transaction_context::TransactionAccount,
     },
     solana_svm::{

@@ -19,12 +19,10 @@ use {
     min_max_heap::MinMaxHeap,
     solana_measure::{measure, measure_us},
     solana_runtime::bank::Bank,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
-        clock::FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET,
-        feature_set::FeatureSet,
-        hash::Hash,
-        saturating_add_assign,
-        transaction::{ExtendedSanitizedTransaction, SanitizedTransaction},
+        clock::FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET, feature_set::FeatureSet, hash::Hash,
+        saturating_add_assign, transaction::SanitizedTransaction,
     },
     solana_svm::transaction_error_metrics::TransactionErrorMetrics,
     std::{

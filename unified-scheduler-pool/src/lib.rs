@@ -26,7 +26,8 @@ use {
         },
         prioritization_fee_cache::PrioritizationFeeCache,
     },
-    solana_sdk::transaction::{ExtendedSanitizedTransaction, Result},
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+    solana_sdk::transaction::Result,
     solana_unified_scheduler_logic::Task,
     solana_vote::vote_sender_types::ReplayVoteSender,
     std::{

@@ -23,6 +23,7 @@ use {
     solana_measure::measure_us,
     solana_program_runtime::compute_budget_processor::process_compute_budget_instructions,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::MAX_PROCESSING_AGE,
         feature_set::{
@@ -31,7 +32,7 @@ use {
         },
         fee::FeeBudgetLimits,
         saturating_add_assign,
-        transaction::{ExtendedSanitizedTransaction, SanitizedTransaction},
+        transaction::SanitizedTransaction,
     },
     solana_svm::transaction_error_metrics::TransactionErrorMetrics,
     std::{

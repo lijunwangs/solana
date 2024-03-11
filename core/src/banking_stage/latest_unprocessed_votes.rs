@@ -7,11 +7,11 @@ use {
     rand::{thread_rng, Rng},
     solana_perf::packet::Packet,
     solana_runtime::bank::Bank,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         clock::{Slot, UnixTimestamp},
         program_utils::limited_deserialize,
         pubkey::Pubkey,
-        transaction::ExtendedSanitizedTransaction,
     },
     solana_vote_program::vote_instruction::VoteInstruction,
     std::{

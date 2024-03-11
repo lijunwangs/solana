@@ -24,11 +24,8 @@ use {
     crate::bank::Bank,
     log::*,
     solana_program_runtime::timings::ExecuteTimings,
-    solana_sdk::{
-        hash::Hash,
-        slot_history::Slot,
-        transaction::{ExtendedSanitizedTransaction, Result},
-    },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+    solana_sdk::{hash::Hash, slot_history::Slot, transaction::Result},
     std::{
         fmt::Debug,
         ops::Deref,

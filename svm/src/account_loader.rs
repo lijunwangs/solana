@@ -10,6 +10,7 @@ use {
         compute_budget_processor::process_compute_budget_instructions,
         loaded_programs::LoadedProgramsForTxBatch,
     },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         account::{
             create_executable_meta, is_builtin, is_executable, Account, AccountSharedData,
@@ -30,7 +31,7 @@ use {
         rent_debits::RentDebits,
         saturating_add_assign,
         sysvar::{self, instructions::construct_instructions_data},
-        transaction::{self, ExtendedSanitizedTransaction, Result, TransactionError},
+        transaction::{self, Result, TransactionError},
         transaction_context::{IndexOfAccount, TransactionAccount},
     },
     solana_system_program::{get_system_account_kind, SystemAccountKind},

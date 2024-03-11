@@ -1,4 +1,4 @@
-use solana_sdk::transaction::ExtendedSanitizedTransaction;
+use solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction;
 
 pub struct Task {
     transaction: ExtendedSanitizedTransaction,

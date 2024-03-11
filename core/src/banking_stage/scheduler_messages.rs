@@ -1,6 +1,7 @@
 use {
     super::immutable_deserialized_packet::ImmutableDeserializedPacket,
-    solana_sdk::{clock::Slot, transaction::ExtendedSanitizedTransaction},
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+    solana_sdk::clock::Slot,
     std::{fmt::Display, sync::Arc},
 };
 

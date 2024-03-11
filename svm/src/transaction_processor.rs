@@ -26,6 +26,7 @@ use {
         sysvar_cache::SysvarCache,
         timings::{ExecuteDetailsTimings, ExecuteTimingType, ExecuteTimings},
     },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount, PROGRAM_OWNERS},
         account_utils::StateMut,
@@ -44,7 +45,7 @@ use {
         rent_collector::RentCollector,
         saturating_add_assign,
         timing::duration_as_us,
-        transaction::{self, ExtendedSanitizedTransaction, SanitizedTransaction, TransactionError},
+        transaction::{self, SanitizedTransaction, TransactionError},
         transaction_context::{ExecutionRecord, TransactionContext},
     },
     std::{

@@ -6,7 +6,8 @@ use {
         cost_tracker::{CostTracker, CostTrackerError},
     },
     solana_perf::packet::Packet,
-    solana_sdk::{feature_set::FeatureSet, transaction::ExtendedSanitizedTransaction},
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+    solana_sdk::feature_set::FeatureSet,
     std::sync::Arc,
 };
 

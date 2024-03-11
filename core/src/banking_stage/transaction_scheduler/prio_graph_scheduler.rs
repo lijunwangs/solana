@@ -16,10 +16,8 @@ use {
     itertools::izip,
     prio_graph::{AccessKind, PrioGraph},
     solana_measure::measure_us,
-    solana_sdk::{
-        pubkey::Pubkey, saturating_add_assign, slot_history::Slot,
-        transaction::ExtendedSanitizedTransaction,
-    },
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
+    solana_sdk::{pubkey::Pubkey, saturating_add_assign, slot_history::Slot},
 };
 
 pub(crate) struct PrioGraphScheduler {

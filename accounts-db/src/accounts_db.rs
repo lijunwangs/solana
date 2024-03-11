@@ -83,6 +83,7 @@ use {
     solana_measure::{measure::Measure, measure_us},
     solana_nohash_hasher::{IntMap, IntSet},
     solana_rayon_threadlimit::get_thread_count,
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         account::{Account, AccountSharedData, ReadableAccount, WritableAccount},
         clock::{BankId, Epoch, Slot},
@@ -93,7 +94,6 @@ use {
         rent_collector::RentCollector,
         saturating_add_assign,
         timing::AtomicInterval,
-        transaction::ExtendedSanitizedTransaction,
     },
     std::{
         borrow::{Borrow, Cow},
