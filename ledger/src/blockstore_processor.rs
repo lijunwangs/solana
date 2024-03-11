@@ -1972,7 +1972,7 @@ pub mod tests {
             signature::{Keypair, Signer},
             system_instruction::SystemError,
             system_transaction,
-            transaction::{Transaction, TransactionError},
+            transaction::{SanitizedTransaction, Transaction, TransactionError},
         },
         solana_svm::transaction_processor::ExecutionRecordingConfig,
         solana_vote::vote_account::VoteAccount,
@@ -3968,6 +3968,7 @@ pub mod tests {
             ExecutionRecordingConfig::new_single_setting(false),
             &mut ExecuteTimings::default(),
             None,
+            None,
         );
         let (err, signature) = get_first_error(&batch, fee_collection_results).unwrap();
         assert_eq!(err.unwrap_err(), TransactionError::AccountNotFound);
@@ -4361,7 +4362,7 @@ pub mod tests {
     fn create_test_transactions(
         mint_keypair: &Keypair,
         genesis_hash: &Hash,
-    ) -> Vec<SanitizedTransaction> {
+    ) -> Vec<ExtendedSanitizedTransaction> {
         let pubkey = solana_sdk::pubkey::new_rand();
         let keypair2 = Keypair::new();
         let pubkey2 = solana_sdk::pubkey::new_rand();
@@ -4374,19 +4375,22 @@ pub mod tests {
                 &pubkey,
                 1,
                 *genesis_hash,
-            )),
+            ))
+            .into(),
             SanitizedTransaction::from_transaction_for_tests(system_transaction::transfer(
                 &keypair2,
                 &pubkey2,
                 1,
                 *genesis_hash,
-            )),
+            ))
+            .into(),
             SanitizedTransaction::from_transaction_for_tests(system_transaction::transfer(
                 &keypair3,
                 &pubkey3,
                 1,
                 *genesis_hash,
-            )),
+            ))
+            .into(),
         ]
     }
 

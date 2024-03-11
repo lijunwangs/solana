@@ -427,7 +427,7 @@ mod tests {
         },
         assert_matches::assert_matches,
         mockall::Sequence,
-        solana_sdk::system_transaction,
+        solana_sdk::{system_transaction, transaction::SanitizedTransaction},
         std::sync::Mutex,
     };
 
@@ -574,6 +574,6 @@ mod tests {
         );
 
         let bank = BankWithScheduler::new(bank, Some(mocked_scheduler));
-        bank.schedule_transaction_executions([(&tx0, &0)].into_iter());
+        bank.schedule_transaction_executions([(&tx0.into(), &0)].into_iter());
     }
 }

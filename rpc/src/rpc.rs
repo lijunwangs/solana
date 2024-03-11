@@ -5081,7 +5081,7 @@ pub mod tests {
             let prioritization_fee_cache = &self.meta.prioritization_fee_cache;
             let transactions: Vec<_> = transactions
                 .into_iter()
-                .map(SanitizedTransaction::from_transaction_for_tests)
+                .map(|t| SanitizedTransaction::from_transaction_for_tests(t).into())
                 .collect();
             prioritization_fee_cache.update(&bank, transactions.iter());
         }

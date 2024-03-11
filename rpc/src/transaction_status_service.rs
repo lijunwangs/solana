@@ -415,7 +415,7 @@ pub(crate) mod tests {
         let transaction_index: usize = bank.transaction_count().try_into().unwrap();
         let transaction_status_batch = TransactionStatusBatch {
             bank,
-            transactions: vec![transaction],
+            transactions: vec![transaction.into()],
             execution_results: vec![transaction_result],
             balances,
             token_balances,

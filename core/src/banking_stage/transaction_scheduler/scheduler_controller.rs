@@ -749,7 +749,7 @@ mod tests {
         let message_hashes = consume_work
             .transactions
             .iter()
-            .map(|tx| tx.message_hash())
+            .map(|tx| tx.transaction.message_hash())
             .collect_vec();
         assert_eq!(message_hashes, vec![&tx2_hash, &tx1_hash]);
     }
@@ -807,7 +807,11 @@ mod tests {
         let num_txs_per_batch = consume_works.iter().map(|cw| cw.ids.len()).collect_vec();
         let message_hashes = consume_works
             .iter()
-            .flat_map(|cw| cw.transactions.iter().map(|tx| tx.message_hash()))
+            .flat_map(|cw| {
+                cw.transactions
+                    .iter()
+                    .map(|tx| tx.transaction.message_hash())
+            })
             .collect_vec();
         assert_eq!(num_txs_per_batch, vec![1; 2]);
         assert_eq!(message_hashes, vec![&tx2_hash, &tx1_hash]);
@@ -930,14 +934,14 @@ mod tests {
             .unwrap()
             .transactions
             .iter()
-            .map(|tx| *tx.message_hash())
+            .map(|tx| *tx.transaction.message_hash())
             .collect_vec();
         let t1_actual = consume_work_receivers[1]
             .try_recv()
             .unwrap()
             .transactions
             .iter()
-            .map(|tx| *tx.message_hash())
+            .map(|tx| *tx.transaction.message_hash())
             .collect_vec();
 
         assert_eq!(t0_actual, t0_expected);
@@ -996,7 +1000,7 @@ mod tests {
         let message_hashes = consume_work
             .transactions
             .iter()
-            .map(|tx| tx.message_hash())
+            .map(|tx| tx.transaction.message_hash())
             .collect_vec();
         assert_eq!(message_hashes, vec![&tx2_hash, &tx1_hash]);
 
@@ -1016,7 +1020,7 @@ mod tests {
         let message_hashes = consume_work
             .transactions
             .iter()
-            .map(|tx| tx.message_hash())
+            .map(|tx| tx.transaction.message_hash())
             .collect_vec();
         assert_eq!(message_hashes, vec![&tx1_hash]);
     }

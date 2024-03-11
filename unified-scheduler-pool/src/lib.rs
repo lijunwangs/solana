@@ -963,7 +963,8 @@ mod tests {
             &solana_sdk::pubkey::new_rand(),
             2,
             genesis_config.hash(),
-        ));
+        ))
+        .into();
         let bank = Bank::new_for_tests(&genesis_config);
         let bank = setup_dummy_fork_graph(bank);
         let ignored_prioritization_fee_cache = Arc::new(PrioritizationFeeCache::new(0u64));
@@ -1004,7 +1005,8 @@ mod tests {
                 &solana_sdk::pubkey::new_rand(),
                 2,
                 genesis_config.hash(),
-            ));
+            ))
+            .into();
         assert_eq!(bank.transaction_count(), 0);
         scheduler.schedule_execution(&(bad_tx, 0));
         // simulate the task-sending thread is stalled for some reason.
@@ -1017,7 +1019,8 @@ mod tests {
                 &solana_sdk::pubkey::new_rand(),
                 3,
                 genesis_config.hash(),
-            ));
+            ))
+            .into();
         // make sure this tx is really a good one to execute.
         assert_matches!(
             bank.simulate_transaction_unchecked(good_tx_after_bad_tx, false)
@@ -1080,7 +1083,10 @@ mod tests {
             &self.2
         }
 
-        fn schedule_execution(&self, &(transaction, index): &(&SanitizedTransaction, usize)) {
+        fn schedule_execution(
+            &self,
+            &(transaction, index): &(&ExtendedSanitizedTransaction, usize),
+        ) {
             let transaction_and_index = (transaction.clone(), index);
             let context = self.context().clone();
             let pool = self.3.clone();
@@ -1208,7 +1214,7 @@ mod tests {
         assert_eq!(bank.transaction_count(), 0);
 
         // schedule but not immediately execute transaction
-        bank.schedule_transaction_executions([(&very_old_valid_tx, &0)].into_iter());
+        bank.schedule_transaction_executions([(&very_old_valid_tx.into(), &0)].into_iter());
         // this calls register_recent_blockhash internally
         bank.fill_bank_with_ticks_for_tests();
 
