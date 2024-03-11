@@ -982,7 +982,7 @@ mod tests {
             dyn Fn(
                     VersionedTransaction,
                     TransactionVerificationMode,
-                ) -> Result<SanitizedTransaction>
+                ) -> Result<ExtendedSanitizedTransaction>
                 + Send
                 + Sync,
         >,
@@ -994,7 +994,7 @@ mod tests {
             } else {
                 TransactionVerificationMode::FullVerification
             };
-            move |versioned_tx: VersionedTransaction| -> Result<SanitizedTransaction> {
+            move |versioned_tx: VersionedTransaction| -> Result<ExtendedSanitizedTransaction> {
                 verify(versioned_tx, verification_mode)
             }
         };
@@ -1035,7 +1035,7 @@ mod tests {
         let verify_transaction = {
             move |versioned_tx: VersionedTransaction,
                   verification_mode: TransactionVerificationMode|
-                  -> Result<SanitizedTransaction> {
+                  -> Result<ExtendedSanitizedTransaction> {
                 let sanitized_tx = {
                     let message_hash =
                         if verification_mode == TransactionVerificationMode::FullVerification {
@@ -1050,7 +1050,8 @@ mod tests {
                         None,
                         SimpleAddressLoader::Disabled,
                     )
-                }?;
+                }?
+                .into();
 
                 Ok(sanitized_tx)
             }

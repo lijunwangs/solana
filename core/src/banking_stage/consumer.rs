@@ -888,7 +888,7 @@ mod tests {
             signature::Keypair,
             signer::Signer,
             system_instruction, system_program, system_transaction,
-            transaction::{MessageHash, Transaction, VersionedTransaction},
+            transaction::{MessageHash, SanitizedTransaction, Transaction, VersionedTransaction},
         },
         solana_transaction_status::{TransactionStatusMeta, VersionedTransactionWithStatusMeta},
         std::{
@@ -941,7 +941,7 @@ mod tests {
         );
         let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
         let process_transactions_summary =
-            consumer.process_transactions(&bank, &Instant::now(), &transactions);
+            consumer.process_transactions(&bank, &Instant::now(), &transactions, &mut None);
 
         poh_recorder
             .read()
@@ -1117,7 +1117,7 @@ mod tests {
             let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             let ExecuteAndCommitTransactionsOutput {
                 transactions_attempted_execution_count,
@@ -1162,7 +1162,7 @@ mod tests {
             )]);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             let ExecuteAndCommitTransactionsOutput {
                 transactions_attempted_execution_count,
@@ -1302,7 +1302,7 @@ mod tests {
             let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
             let ExecuteAndCommitTransactionsOutput {
                 transactions_attempted_execution_count,
                 executed_transactions_count,
@@ -1404,7 +1404,7 @@ mod tests {
             let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             let ExecuteAndCommitTransactionsOutput {
                 transactions_attempted_execution_count,
@@ -1510,7 +1510,7 @@ mod tests {
             )]);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             let ExecuteAndCommitTransactionsOutput {
                 executed_with_successful_result_count,
@@ -1541,7 +1541,7 @@ mod tests {
             ]);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             let ExecuteAndCommitTransactionsOutput {
                 executed_with_successful_result_count,
@@ -1575,14 +1575,17 @@ mod tests {
                         }
                     };
 
-                let mut cost = CostModel::calculate_cost(&transactions[0], &bank.feature_set);
+                let mut cost =
+                    CostModel::calculate_cost(&transactions[0].transaction, &bank.feature_set);
                 if let TransactionCost::Transaction(ref mut usage_cost) = cost {
                     usage_cost.programs_execution_cost = actual_programs_execution_cost;
                 }
 
                 block_cost + cost.sum()
             } else {
-                block_cost + CostModel::calculate_cost(&transactions[0], &bank.feature_set).sum()
+                block_cost
+                    + CostModel::calculate_cost(&transactions[0].transaction, &bank.feature_set)
+                        .sum()
             };
 
             assert_eq!(get_block_cost(), expected_block_cost);
@@ -1650,7 +1653,7 @@ mod tests {
             let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
 
             let process_transactions_batch_output =
-                consumer.process_and_record_transactions(&bank, &transactions, 0);
+                consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             poh_recorder
                 .read()
@@ -1847,7 +1850,7 @@ mod tests {
             let consumer = Consumer::new(committer, recorder.clone(), QosService::new(1), None);
 
             let process_transactions_summary =
-                consumer.process_transactions(&bank, &Instant::now(), &transactions);
+                consumer.process_transactions(&bank, &Instant::now(), &transactions, &mut None);
 
             let ProcessTransactionsSummary {
                 reached_max_poh_height,
@@ -1974,7 +1977,7 @@ mod tests {
             );
             let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
 
-            let _ = consumer.process_and_record_transactions(&bank, &transactions, 0);
+            let _ = consumer.process_and_record_transactions(&bank, &transactions, 0, &mut None);
 
             drop(consumer); // drop/disconnect transaction_status_sender
             transaction_status_service.join().unwrap();
@@ -2119,7 +2122,12 @@ mod tests {
             );
             let consumer = Consumer::new(committer, recorder, QosService::new(1), None);
 
-            let _ = consumer.process_and_record_transactions(&bank, &[sanitized_tx.clone()], 0);
+            let _ = consumer.process_and_record_transactions(
+                &bank,
+                &[sanitized_tx.clone().into()],
+                0,
+                &mut None,
+            );
 
             drop(consumer); // drop/disconnect transaction_status_sender
             transaction_status_service.join().unwrap();
@@ -2328,7 +2336,8 @@ mod tests {
                     &lock_account,
                     1,
                     bank.last_blockhash(),
-                ));
+                ))
+                .into();
             let _ = bank_start.working_bank.accounts().lock_accounts(
                 std::iter::once(&manual_lock_tx),
                 bank_start.working_bank.get_transaction_account_lock_limit(),

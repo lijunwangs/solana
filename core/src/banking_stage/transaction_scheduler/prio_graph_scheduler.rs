@@ -490,8 +490,14 @@ mod tests {
         crossbeam_channel::{unbounded, Receiver},
         itertools::Itertools,
         solana_sdk::{
-            compute_budget::ComputeBudgetInstruction, hash::Hash, message::Message, pubkey::Pubkey,
-            signature::Keypair, signer::Signer, system_instruction, transaction::Transaction,
+            compute_budget::ComputeBudgetInstruction,
+            hash::Hash,
+            message::Message,
+            pubkey::Pubkey,
+            signature::Keypair,
+            signer::Signer,
+            system_instruction,
+            transaction::{SanitizedTransaction, Transaction},
         },
         std::borrow::Borrow,
     };
@@ -567,7 +573,8 @@ mod tests {
                 to_pubkeys,
                 lamports,
                 compute_unit_price,
-            );
+            )
+            .into();
             let transaction_ttl = SanitizedTransactionTTL {
                 transaction,
                 max_age_slot: Slot::MAX,
@@ -596,11 +603,11 @@ mod tests {
             .unzip()
     }
 
-    fn test_pre_graph_filter(_txs: &[&SanitizedTransaction], results: &mut [bool]) {
+    fn test_pre_graph_filter(_txs: &[&ExtendedSanitizedTransaction], results: &mut [bool]) {
         results.fill(true);
     }
 
-    fn test_pre_lock_filter(_tx: &SanitizedTransaction) -> bool {
+    fn test_pre_lock_filter(_tx: &ExtendedSanitizedTransaction) -> bool {
         true
     }
 
@@ -775,8 +782,9 @@ mod tests {
         ]);
 
         // 2nd transaction should be filtered out and dropped before locking.
-        let pre_lock_filter =
-            |tx: &SanitizedTransaction| tx.message().fee_payer() != &keypair.pubkey();
+        let pre_lock_filter = |tx: &ExtendedSanitizedTransaction| {
+            tx.transaction.message().fee_payer() != &keypair.pubkey()
+        };
         let scheduling_summary = scheduler
             .schedule(&mut container, test_pre_graph_filter, pre_lock_filter)
             .unwrap();

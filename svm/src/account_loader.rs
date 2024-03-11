@@ -550,7 +550,7 @@ mod tests {
         fee_structure: &FeeStructure,
     ) -> Vec<TransactionLoadResult> {
         feature_set.deactivate(&feature_set::disable_rent_fees_collection::id());
-        let sanitized_tx = SanitizedTransaction::from_transaction_for_tests(tx);
+        let sanitized_tx = SanitizedTransaction::from_transaction_for_tests(tx).into();
         let mut accounts_map = HashMap::new();
         for (pubkey, account) in ka {
             accounts_map.insert(*pubkey, account.clone());
@@ -1026,7 +1026,7 @@ mod tests {
         tx: Transaction,
         account_overrides: Option<&AccountOverrides>,
     ) -> Vec<TransactionLoadResult> {
-        let tx = SanitizedTransaction::from_transaction_for_tests(tx);
+        let tx = SanitizedTransaction::from_transaction_for_tests(tx).into();
 
         let mut error_counters = TransactionErrorMetrics::default();
         let mut accounts_map = HashMap::new();

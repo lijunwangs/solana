@@ -813,7 +813,7 @@ mod tests {
             rent_debits::RentDebits,
             signature::{keypair_from_seed, signers::Signers, Keypair, Signer},
             system_instruction, system_program,
-            transaction::{Transaction, MAX_TX_ACCOUNT_LOCKS},
+            transaction::{SanitizedTransaction, Transaction, MAX_TX_ACCOUNT_LOCKS},
         },
         solana_svm::{
             account_loader::LoadedTransaction,
@@ -1080,7 +1080,7 @@ mod tests {
         };
 
         let tx = new_sanitized_tx(&[&keypair], message, Hash::default());
-        let results = accounts.lock_accounts([tx].iter(), MAX_TX_ACCOUNT_LOCKS);
+        let results = accounts.lock_accounts([tx.into()].iter(), MAX_TX_ACCOUNT_LOCKS);
         assert_eq!(results[0], Err(TransactionError::AccountLoadedTwice));
     }
 
@@ -1107,7 +1107,7 @@ mod tests {
                 ..Message::default()
             };
 
-            let txs = vec![new_sanitized_tx(&[&keypair], message, Hash::default())];
+            let txs = vec![new_sanitized_tx(&[&keypair], message, Hash::default()).into()];
             let results = accounts.lock_accounts(txs.iter(), MAX_TX_ACCOUNT_LOCKS);
             assert_eq!(results, vec![Ok(())]);
             accounts.unlock_accounts(txs.iter().zip(&results));
@@ -1129,7 +1129,7 @@ mod tests {
                 ..Message::default()
             };
 
-            let txs = vec![new_sanitized_tx(&[&keypair], message, Hash::default())];
+            let txs = vec![new_sanitized_tx(&[&keypair], message, Hash::default()).into()];
             let results = accounts.lock_accounts(txs.iter(), MAX_TX_ACCOUNT_LOCKS);
             assert_eq!(results[0], Err(TransactionError::TooManyAccountLocks));
         }
@@ -1164,7 +1164,7 @@ mod tests {
             instructions,
         );
         let tx = new_sanitized_tx(&[&keypair0], message, Hash::default());
-        let results0 = accounts.lock_accounts([tx.clone()].iter(), MAX_TX_ACCOUNT_LOCKS);
+        let results0 = accounts.lock_accounts([tx.clone().into()].iter(), MAX_TX_ACCOUNT_LOCKS);
 
         assert_eq!(results0, vec![Ok(())]);
         assert_eq!(
@@ -1198,7 +1198,7 @@ mod tests {
             instructions,
         );
         let tx1 = new_sanitized_tx(&[&keypair1], message, Hash::default());
-        let txs = vec![tx0, tx1];
+        let txs = vec![tx0.into(), tx1.into()];
         let results1 = accounts.lock_accounts(txs.iter(), MAX_TX_ACCOUNT_LOCKS);
         assert_eq!(
             results1,
@@ -1218,7 +1218,7 @@ mod tests {
             2
         );
 
-        accounts.unlock_accounts(iter::once(&tx).zip(&results0));
+        accounts.unlock_accounts(iter::once(&tx.into()).zip(&results0));
         accounts.unlock_accounts(txs.iter().zip(&results1));
         let instructions = vec![CompiledInstruction::new(2, &(), vec![0, 1])];
         let message = Message::new_with_compiled_instructions(
@@ -1230,7 +1230,7 @@ mod tests {
             instructions,
         );
         let tx = new_sanitized_tx(&[&keypair1], message, Hash::default());
-        let results2 = accounts.lock_accounts([tx].iter(), MAX_TX_ACCOUNT_LOCKS);
+        let results2 = accounts.lock_accounts([tx.into()].iter(), MAX_TX_ACCOUNT_LOCKS);
         assert_eq!(
             results2,
             vec![Ok(())] // Now keypair1 account can be locked as writable
@@ -1293,7 +1293,7 @@ mod tests {
         let accounts_clone = accounts_arc.clone();
         let exit_clone = exit.clone();
         thread::spawn(move || loop {
-            let txs = vec![writable_tx.clone()];
+            let txs = vec![writable_tx.clone().into()];
             let results = accounts_clone
                 .clone()
                 .lock_accounts(txs.iter(), MAX_TX_ACCOUNT_LOCKS);
@@ -1309,7 +1309,7 @@ mod tests {
         });
         let counter_clone = counter;
         for _ in 0..5 {
-            let txs = vec![readonly_tx.clone()];
+            let txs = vec![readonly_tx.clone().into()];
             let results = accounts_arc
                 .clone()
                 .lock_accounts(txs.iter(), MAX_TX_ACCOUNT_LOCKS);
@@ -1353,7 +1353,7 @@ mod tests {
             instructions,
         );
         let tx = new_sanitized_tx(&[&keypair0], message, Hash::default());
-        let results0 = accounts.lock_accounts([tx].iter(), MAX_TX_ACCOUNT_LOCKS);
+        let results0 = accounts.lock_accounts([tx.into()].iter(), MAX_TX_ACCOUNT_LOCKS);
 
         assert!(results0[0].is_ok());
         // Instruction program-id account demoted to readonly
@@ -1445,7 +1445,7 @@ mod tests {
             instructions,
         );
         let tx2 = new_sanitized_tx(&[&keypair3], message, Hash::default());
-        let txs = vec![tx0, tx1, tx2];
+        let txs = vec![tx0.into(), tx1.into(), tx2.into()];
 
         let qos_results = vec![
             Ok(()),
@@ -1575,7 +1575,7 @@ mod tests {
                 .unwrap()
                 .insert_new_readonly(&pubkey);
         }
-        let txs = vec![tx0.clone(), tx1.clone()];
+        let txs = vec![tx0.clone().into(), tx1.clone().into()];
         let execution_results = vec![new_execution_result(Ok(()), None); 2];
         let (collected_accounts, transactions) = accounts.collect_accounts_to_store(
             &txs,
@@ -1593,8 +1593,12 @@ mod tests {
             .any(|(pubkey, _account)| *pubkey == &keypair1.pubkey()));
 
         assert_eq!(transactions.len(), 2);
-        assert!(transactions.iter().any(|txn| txn.unwrap().eq(&tx0)));
-        assert!(transactions.iter().any(|txn| txn.unwrap().eq(&tx1)));
+        assert!(transactions
+            .iter()
+            .any(|txn| txn.unwrap().eq(&tx0.clone().into())));
+        assert!(transactions
+            .iter()
+            .any(|txn| txn.unwrap().eq(&tx1.clone().into())));
 
         // Ensure readonly_lock reflects lock
         assert_eq!(
@@ -1947,7 +1951,7 @@ mod tests {
         let durable_nonce = DurableNonce::from_blockhash(&Hash::new_unique());
         let accounts_db = AccountsDb::new_single_for_tests();
         let accounts = Accounts::new(Arc::new(accounts_db));
-        let txs = vec![tx];
+        let txs = vec![tx.into()];
         let execution_results = vec![new_execution_result(
             Err(TransactionError::InstructionError(
                 1,
@@ -2053,7 +2057,7 @@ mod tests {
         let durable_nonce = DurableNonce::from_blockhash(&Hash::new_unique());
         let accounts_db = AccountsDb::new_single_for_tests();
         let accounts = Accounts::new(Arc::new(accounts_db));
-        let txs = vec![tx];
+        let txs = vec![tx.into()];
         let execution_results = vec![new_execution_result(
             Err(TransactionError::InstructionError(
                 1,

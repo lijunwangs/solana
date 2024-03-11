@@ -139,8 +139,12 @@ mod tests {
         super::*,
         crate::banking_stage::unprocessed_packet_batches::DeserializedPacket,
         solana_sdk::{
-            compute_budget::ComputeBudgetInstruction, feature_set::FeatureSet, message::Message,
-            pubkey::Pubkey, system_instruction, transaction::Transaction,
+            compute_budget::ComputeBudgetInstruction,
+            feature_set::FeatureSet,
+            message::Message,
+            pubkey::Pubkey,
+            system_instruction,
+            transaction::{SanitizedTransaction, Transaction},
         },
     };
 
@@ -149,7 +153,7 @@ mod tests {
     fn build_test_transaction_and_packet(
         priority: u64,
         write_to_account: &Pubkey,
-    ) -> (SanitizedTransaction, DeserializedPacket, u32) {
+    ) -> (ExtendedSanitizedTransaction, DeserializedPacket, u32) {
         let from_account = solana_sdk::pubkey::new_rand();
 
         let transaction = Transaction::new_unsigned(Message::new(
@@ -169,7 +173,11 @@ mod tests {
         // set limit ratio so each batch can only have one test transaction
         let limit_ratio: u32 =
             ((block_cost_limits::MAX_WRITABLE_ACCOUNT_UNITS - cost + 1) / cost) as u32;
-        (sanitized_transaction, deserialized_packet, limit_ratio)
+        (
+            sanitized_transaction.into(),
+            deserialized_packet,
+            limit_ratio,
+        )
     }
 
     #[test]
