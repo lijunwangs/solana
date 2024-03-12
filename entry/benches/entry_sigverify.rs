@@ -75,7 +75,7 @@ fn bench_cpusigverify(bencher: &mut Bencher) {
         .collect::<Vec<_>>();
 
     let verify_transaction = {
-        move |versioned_tx: VersionedTransaction| -> Result<SanitizedTransaction> {
+        move |versioned_tx: VersionedTransaction| -> Result<ExtendedSanitizedTransaction> {
             let sanitized_tx = {
                 let message_hash = versioned_tx.verify_and_hash_message()?;
                 SanitizedTransaction::try_create(
@@ -84,7 +84,7 @@ fn bench_cpusigverify(bencher: &mut Bencher) {
                     None,
                     SimpleAddressLoader::Disabled,
                 )
-            }?;
+            }?.into();
 
             Ok(sanitized_tx)
         }
