@@ -34,7 +34,6 @@ pub(crate) struct ConsumeWorker {
 
     leader_bank_notifier: Arc<LeaderBankNotifier>,
     metrics: Arc<ConsumeWorkerMetrics>,
-    perf_track_metrics: Arc<Mutex<histogram::Histogram>>,
 }
 
 #[allow(dead_code)]
@@ -52,7 +51,6 @@ impl ConsumeWorker {
             consumed_sender,
             leader_bank_notifier,
             metrics: Arc::new(ConsumeWorkerMetrics::new(id)),
-            perf_track_metrics: Arc::new(Mutex::new(histogram::Histogram::default())),
         }
     }
 
@@ -92,7 +90,7 @@ impl ConsumeWorker {
             bank,
             &work.transactions,
             &work.max_age_slots,
-            Some(&mut self.perf_track_metrics.lock().unwrap()),
+            Some(&mut self.metrics.perf_track_metrics.lock().unwrap()),
         );
 
         self.metrics.update_for_consume(&output);
@@ -161,6 +159,7 @@ pub(crate) struct ConsumeWorkerMetrics {
     count_metrics: ConsumeWorkerCountMetrics,
     error_metrics: ConsumeWorkerTransactionErrorMetrics,
     timing_metrics: ConsumeWorkerTimingMetrics,
+    perf_track_metrics: Arc<Mutex<histogram::Histogram>>,
 }
 
 impl ConsumeWorkerMetrics {
@@ -173,7 +172,43 @@ impl ConsumeWorkerMetrics {
             self.count_metrics.report_and_reset(self.id);
             self.timing_metrics.report_and_reset(self.id);
             self.error_metrics.report_and_reset(self.id);
+            self.report_and_reset_perf_track_metrics(self.id);
         }
+    }
+
+    fn report_and_reset_perf_track_metrics(&self, id: u32) {
+        let process_sampled_packets_us_hist = {
+            let mut metrics = self.perf_track_metrics.lock().unwrap();
+            let local_metrics = metrics.clone();
+            metrics.clear();
+            local_metrics
+        };
+        datapoint_info!(
+            "banking_stage_tracked_packet_metrics",
+            ("id", id, i64),
+            (
+                "process_sampled_packets_us_90pct",
+                process_sampled_packets_us_hist
+                    .percentile(90.0)
+                    .unwrap_or(0),
+                i64
+            ),
+            (
+                "process_sampled_packets_us_min",
+                process_sampled_packets_us_hist.minimum().unwrap_or(0),
+                i64
+            ),
+            (
+                "process_sampled_packets_us_max",
+                process_sampled_packets_us_hist.maximum().unwrap_or(0),
+                i64
+            ),
+            (
+                "process_sampled_packets_us_mean",
+                process_sampled_packets_us_hist.mean().unwrap_or(0),
+                i64
+            ),
+        );
     }
 
     fn new(id: u32) -> Self {
@@ -184,6 +219,7 @@ impl ConsumeWorkerMetrics {
             count_metrics: ConsumeWorkerCountMetrics::default(),
             error_metrics: ConsumeWorkerTransactionErrorMetrics::default(),
             timing_metrics: ConsumeWorkerTimingMetrics::default(),
+            perf_track_metrics: Arc::new(Mutex::new(histogram::Histogram::default())),
         }
     }
 
