@@ -159,6 +159,7 @@ fn execute_transactions(
         ExecutionRecordingConfig::new_single_setting(true),
         &mut timings,
         None,
+        None,
     );
     let tx_post_token_balances = collect_token_balances(&bank, &batch, &mut mint_decimals);
 
