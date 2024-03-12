@@ -84,7 +84,8 @@ fn bench_cpusigverify(bencher: &mut Bencher) {
                     None,
                     SimpleAddressLoader::Disabled,
                 )
-            }?.into();
+            }?
+            .into();
 
             Ok(sanitized_tx)
         }
