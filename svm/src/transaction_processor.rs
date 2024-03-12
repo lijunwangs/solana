@@ -1935,10 +1935,10 @@ mod tests {
         );
 
         let transactions = vec![
-            sanitized_transaction_1.clone(),
-            sanitized_transaction_2.clone(),
-            sanitized_transaction_2,
-            sanitized_transaction_1,
+            sanitized_transaction_1.clone().into(),
+            sanitized_transaction_2.clone().into(),
+            sanitized_transaction_2.into(),
+            sanitized_transaction_1.into(),
         ];
         let mut lock_results = vec![
             (Ok(()), None, Some(25)),
