@@ -207,6 +207,11 @@ impl SigVerifierStats {
                 i64
             ),
             (
+                "process_sampled_packets_count",
+                self.process_sampled_packets_us_hist.entries(),
+                i64
+            ),
+            (
                 "batches_90pct",
                 self.batches_hist.percentile(90.0).unwrap_or(0),
                 i64

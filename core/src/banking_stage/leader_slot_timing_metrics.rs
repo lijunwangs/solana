@@ -289,6 +289,11 @@ impl ProcessPacketsTimings {
                 self.process_sampled_packets_us_hist.mean().unwrap_or(0),
                 i64
             ),
+            (
+                "process_sampled_packets_count",
+                self.process_sampled_packets_us_hist.entries(),
+                i64
+            ),
         );
     }
 }

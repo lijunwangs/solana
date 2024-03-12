@@ -181,8 +181,13 @@ pub struct StreamStats {
 
 impl StreamStats {
     pub fn report(&self, name: &'static str) {
-        let mut process_sampled_packets_us_hist =
-            self.process_sampled_packets_us_hist.lock().unwrap();
+        let process_sampled_packets_us_hist = {
+            let mut metrics = self.process_sampled_packets_us_hist.lock().unwrap();
+            let process_sampled_packets_us_hist = metrics.clone();
+            metrics.clear();
+            process_sampled_packets_us_hist
+        };
+
         datapoint_info!(
             name,
             (
@@ -452,12 +457,16 @@ impl StreamStats {
                 i64
             ),
             (
+                "process_sampled_packets_count",
+                process_sampled_packets_us_hist.entries(),
+                i64
+            ),
+            (
                 "perf_track_overhead_us",
                 self.perf_track_overhead_us.swap(0, Ordering::Relaxed),
                 i64
             ),
         );
-        process_sampled_packets_us_hist.clear();
     }
 }
 

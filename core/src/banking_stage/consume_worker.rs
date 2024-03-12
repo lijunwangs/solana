@@ -208,6 +208,11 @@ impl ConsumeWorkerMetrics {
                 process_sampled_packets_us_hist.mean().unwrap_or(0),
                 i64
             ),
+            (
+                "process_sampled_packets_count",
+                process_sampled_packets_us_hist.entries(),
+                i64
+            ),
         );
     }
 
