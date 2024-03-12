@@ -12,7 +12,7 @@ use {
     std::{
         sync::{
             atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
-            Arc,
+            Arc, Mutex,
         },
         time::Duration,
     },
@@ -34,7 +34,7 @@ pub(crate) struct ConsumeWorker {
 
     leader_bank_notifier: Arc<LeaderBankNotifier>,
     metrics: Arc<ConsumeWorkerMetrics>,
-    perf_track_metrics: histogram::Histogram,
+    perf_track_metrics: Arc<Mutex<histogram::Histogram>>,
 }
 
 #[allow(dead_code)]
@@ -52,7 +52,7 @@ impl ConsumeWorker {
             consumed_sender,
             leader_bank_notifier,
             metrics: Arc::new(ConsumeWorkerMetrics::new(id)),
-            perf_track_metrics: histogram::Histogram::default(),
+            perf_track_metrics: Arc::new(Mutex::new(histogram::Histogram::default())),
         }
     }
 
@@ -98,7 +98,7 @@ impl ConsumeWorker {
             bank,
             &work.transactions,
             &work.max_age_slots,
-            Some(&mut self.perf_track_metrics),
+            Some(&mut self.perf_track_metrics.lock().unwrap()),
         );
 
         self.metrics.update_for_consume(&output);
