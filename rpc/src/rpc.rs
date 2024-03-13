@@ -3745,7 +3745,7 @@ pub mod rpc_full {
             let transaction = sanitize_transaction(unsanitized_tx, bank)?;
             let transaction = ExtendedSanitizedTransaction::from(transaction);
             if sig_verify {
-                verify_transaction(&transaction.transaction(), &bank.feature_set)?;
+                verify_transaction(transaction.transaction(), &bank.feature_set)?;
             }
 
             let TransactionSimulationResult {

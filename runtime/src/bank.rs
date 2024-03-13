@@ -4477,7 +4477,7 @@ impl Bank {
             .map(|(sanitized_tx, (lock_result, nonce, lamports))| {
                 let sanitized_tx = sanitized_tx.borrow();
                 if lock_result.is_ok()
-                    && self.is_transaction_already_processed(&sanitized_tx.transaction(), &rcache)
+                    && self.is_transaction_already_processed(sanitized_tx.transaction(), &rcache)
                 {
                     error_counters.already_processed += 1;
                     return (Err(TransactionError::AlreadyProcessed), None, None);
