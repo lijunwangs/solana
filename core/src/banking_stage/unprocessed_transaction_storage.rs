@@ -153,6 +153,12 @@ fn consume_scan_should_process_packet(
         return ProcessingDecision::Now;
     }
 
+    info!(
+        "consume_scan_should_process_packet, to process packet? txn:{:?} start_time: {:?}",
+        packet.transaction().get_signatures()[0],
+        packet.start_time()
+    );
+
     // Try to sanitize the packet
     let (maybe_sanitized_transaction, sanitization_time_us) = measure_us!(
         packet.build_sanitized_transaction(&bank.feature_set, bank.vote_only_bank(), bank)
