@@ -126,7 +126,7 @@ pub(crate) fn load_accounts<CB: TransactionProcessingCallback>(
         .zip(lock_results)
         .map(|etx| match etx {
             (tx, (Ok(()), nonce, lamports_per_signature)) => {
-                let message = tx.transaction.message();
+                let message = tx.message();
                 let fee = if let Some(lamports_per_signature) = lamports_per_signature {
                     fee_structure.calculate_fee(
                         message,

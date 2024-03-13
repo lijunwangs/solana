@@ -3745,7 +3745,7 @@ pub mod rpc_full {
             let transaction = sanitize_transaction(unsanitized_tx, bank)?;
             let transaction = ExtendedSanitizedTransaction::from(transaction);
             if sig_verify {
-                verify_transaction(&transaction.transaction, &bank.feature_set)?;
+                verify_transaction(&transaction.transaction(), &bank.feature_set)?;
             }
 
             let TransactionSimulationResult {
@@ -3757,7 +3757,7 @@ pub mod rpc_full {
                 inner_instructions,
             } = bank.simulate_transaction(&transaction, enable_cpi_recording);
 
-            let account_keys = transaction.transaction.message().account_keys();
+            let account_keys = transaction.message().account_keys();
             let number_of_accounts = account_keys.len();
 
             let accounts = if let Some(config_accounts) = config_accounts {

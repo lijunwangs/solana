@@ -218,19 +218,14 @@ impl PrioritizationFeeCache {
                 for sanitized_transaction in txs {
                     // Vote transactions are not prioritized, therefore they are excluded from
                     // updating fee_cache.
-                    if sanitized_transaction
-                        .transaction
-                        .is_simple_vote_transaction()
-                    {
+                    if sanitized_transaction.is_simple_vote_transaction() {
                         continue;
                     }
 
                     let round_compute_unit_price_enabled = false; // TODO: bank.feture_set.is_active(round_compute_unit_price)
                     let compute_budget_details = sanitized_transaction
-                        .transaction
                         .get_compute_budget_details(round_compute_unit_price_enabled);
                     let account_locks = sanitized_transaction
-                        .transaction
                         .get_account_locks(bank.get_transaction_account_lock_limit());
 
                     if compute_budget_details.is_none() || account_locks.is_err() {

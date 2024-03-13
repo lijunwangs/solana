@@ -6391,7 +6391,7 @@ impl AccountsDb {
                 self.notify_account_at_accounts_update(
                     slot,
                     &account,
-                    &txn.map(|txn| &txn.transaction),
+                    &txn.map(|txn| txn.transaction()),
                     accounts_and_meta_to_store.pubkey(i),
                     &mut write_version_producer,
                 );

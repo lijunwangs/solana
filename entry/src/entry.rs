@@ -562,7 +562,7 @@ fn start_verify_transactions_gpu(
             }
             let entry_tx_iter = slice
                 .into_par_iter()
-                .map(|tx| tx.transaction.to_versioned_transaction());
+                .map(|tx| tx.to_versioned_transaction());
 
             let res = packet_batch
                 .par_iter_mut()

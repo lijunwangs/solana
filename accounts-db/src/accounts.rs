@@ -579,7 +579,7 @@ impl Accounts {
         tx_account_lock_limit: usize,
     ) -> Vec<Result<()>> {
         let tx_account_locks_results: Vec<Result<_>> = txs
-            .map(|tx| tx.transaction.get_account_locks(tx_account_lock_limit))
+            .map(|tx| tx.get_account_locks(tx_account_lock_limit))
             .collect();
         self.lock_accounts_inner(tx_account_locks_results)
     }
@@ -595,7 +595,7 @@ impl Accounts {
         let tx_account_locks_results: Vec<Result<_>> = txs
             .zip(results)
             .map(|(tx, result)| match result {
-                Ok(()) => tx.transaction.get_account_locks(tx_account_lock_limit),
+                Ok(()) => tx.get_account_locks(tx_account_lock_limit),
                 Err(err) => Err(err),
             })
             .collect();
@@ -629,7 +629,7 @@ impl Accounts {
     ) {
         let keys: Vec<_> = txs_and_results
             .filter(|(_, res)| res.is_ok())
-            .map(|(tx, _)| tx.transaction.get_account_locks_unchecked())
+            .map(|(tx, _)| tx.get_account_locks_unchecked())
             .collect();
         if keys.is_empty() {
             return;
@@ -710,7 +710,7 @@ impl Accounts {
                 }
             };
 
-            let message = tx.transaction.message();
+            let message = tx.message();
             let loaded_transaction = tx_load_result.as_mut().unwrap();
             let mut fee_payer_index = None;
             for (i, (address, account)) in (0..message.account_keys().len())

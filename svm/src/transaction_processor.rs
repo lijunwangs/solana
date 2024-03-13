@@ -266,7 +266,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                             let mut compute_budget_process_transaction_time =
                                 Measure::start("compute_budget_process_transaction_time");
                             let maybe_compute_budget = ComputeBudget::try_from_instructions(
-                                tx.transaction.message().program_instructions_iter(),
+                                tx.message().program_instructions_iter(),
                             );
                             compute_budget_process_transaction_time.stop();
                             saturating_add_assign!(
@@ -283,7 +283,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
 
                     let result = self.execute_loaded_transaction(
                         callbacks,
-                        &tx.transaction,
+                        tx.transaction(),
                         loaded_transaction,
                         compute_budget,
                         nonce.as_ref().map(DurableNonceFee::from),
@@ -362,8 +362,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         lock_results.iter_mut().zip(txs).for_each(|etx| {
             if let ((Ok(()), _nonce, lamports_per_signature), tx) = etx {
                 if lamports_per_signature.is_some() {
-                    tx.transaction
-                        .message()
+                    tx.message()
                         .account_keys()
                         .iter()
                         .for_each(|key| match result.entry(*key) {

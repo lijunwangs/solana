@@ -159,15 +159,15 @@ impl PrioGraphScheduler {
                 }
 
                 // Check if this transaction conflicts with any blocked transactions
-                if !blocking_locks.check_locks(transaction.transaction.message()) {
-                    blocking_locks.take_locks(transaction.transaction.message());
+                if !blocking_locks.check_locks(transaction.message()) {
+                    blocking_locks.take_locks(transaction.message());
                     unschedulable_ids.push(id);
                     saturating_add_assign!(num_unschedulable, 1);
                     continue;
                 }
 
                 // Schedule the transaction if it can be.
-                let transaction_locks = transaction.transaction.get_account_locks_unchecked();
+                let transaction_locks = transaction.get_account_locks_unchecked();
                 let Some(thread_id) = self.account_locks.try_lock_accounts(
                     transaction_locks.writable.into_iter(),
                     transaction_locks.readonly.into_iter(),
@@ -180,7 +180,7 @@ impl PrioGraphScheduler {
                         )
                     },
                 ) else {
-                    blocking_locks.take_locks(transaction.transaction.message());
+                    blocking_locks.take_locks(transaction.message());
                     unschedulable_ids.push(id);
                     saturating_add_assign!(num_unschedulable, 1);
                     continue;
@@ -331,7 +331,7 @@ impl PrioGraphScheduler {
     ) {
         let thread_id = self.in_flight_tracker.complete_batch(batch_id);
         for transaction in transactions {
-            let account_locks = transaction.transaction.get_account_locks_unchecked();
+            let account_locks = transaction.get_account_locks_unchecked();
             self.account_locks.unlock_accounts(
                 account_locks.writable.into_iter(),
                 account_locks.readonly.into_iter(),
@@ -410,7 +410,7 @@ impl PrioGraphScheduler {
     fn get_transaction_account_access(
         transaction: &SanitizedTransactionTTL,
     ) -> impl Iterator<Item = (Pubkey, AccessKind)> + '_ {
-        let message = transaction.transaction.transaction.message();
+        let message = transaction.transaction.message();
         message
             .account_keys()
             .iter()
@@ -782,9 +782,8 @@ mod tests {
         ]);
 
         // 2nd transaction should be filtered out and dropped before locking.
-        let pre_lock_filter = |tx: &ExtendedSanitizedTransaction| {
-            tx.transaction.message().fee_payer() != &keypair.pubkey()
-        };
+        let pre_lock_filter =
+            |tx: &ExtendedSanitizedTransaction| tx.message().fee_payer() != &keypair.pubkey();
         let scheduling_summary = scheduler
             .schedule(&mut container, test_pre_graph_filter, pre_lock_filter)
             .unwrap();

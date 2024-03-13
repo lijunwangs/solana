@@ -209,11 +209,7 @@ impl SchedulerController {
             .zip(transactions)
             .map(|((result, _nonce, _lamports), tx)| {
                 result?; // if there's already error do nothing
-                Consumer::check_fee_payer_unlocked(
-                    bank,
-                    tx.transaction.message(),
-                    &mut error_counters,
-                )
+                Consumer::check_fee_payer_unlocked(bank, tx.message(), &mut error_counters)
             })
             .collect();
 
@@ -496,9 +492,9 @@ impl SchedulerController {
         fee_budget_limits: &FeeBudgetLimits,
         bank: &Bank,
     ) -> (u64, u64) {
-        let cost = CostModel::calculate_cost(&transaction.transaction, &bank.feature_set).sum();
+        let cost = CostModel::calculate_cost(transaction.transaction(), &bank.feature_set).sum();
         let fee = bank.fee_structure.calculate_fee(
-            transaction.transaction.message(),
+            transaction.message(),
             5_000, // this just needs to be non-zero
             fee_budget_limits,
             bank.feature_set
@@ -749,7 +745,7 @@ mod tests {
         let message_hashes = consume_work
             .transactions
             .iter()
-            .map(|tx| tx.transaction.message_hash())
+            .map(|tx| tx.message_hash())
             .collect_vec();
         assert_eq!(message_hashes, vec![&tx2_hash, &tx1_hash]);
     }
@@ -807,11 +803,7 @@ mod tests {
         let num_txs_per_batch = consume_works.iter().map(|cw| cw.ids.len()).collect_vec();
         let message_hashes = consume_works
             .iter()
-            .flat_map(|cw| {
-                cw.transactions
-                    .iter()
-                    .map(|tx| tx.transaction.message_hash())
-            })
+            .flat_map(|cw| cw.transactions.iter().map(|tx| tx.message_hash()))
             .collect_vec();
         assert_eq!(num_txs_per_batch, vec![1; 2]);
         assert_eq!(message_hashes, vec![&tx2_hash, &tx1_hash]);
@@ -934,14 +926,14 @@ mod tests {
             .unwrap()
             .transactions
             .iter()
-            .map(|tx| *tx.transaction.message_hash())
+            .map(|tx| *tx.message_hash())
             .collect_vec();
         let t1_actual = consume_work_receivers[1]
             .try_recv()
             .unwrap()
             .transactions
             .iter()
-            .map(|tx| *tx.transaction.message_hash())
+            .map(|tx| *tx.message_hash())
             .collect_vec();
 
         assert_eq!(t0_actual, t0_expected);
@@ -1000,7 +992,7 @@ mod tests {
         let message_hashes = consume_work
             .transactions
             .iter()
-            .map(|tx| tx.transaction.message_hash())
+            .map(|tx| tx.message_hash())
             .collect_vec();
         assert_eq!(message_hashes, vec![&tx2_hash, &tx1_hash]);
 
@@ -1020,7 +1012,7 @@ mod tests {
         let message_hashes = consume_work
             .transactions
             .iter()
-            .map(|tx| tx.transaction.message_hash())
+            .map(|tx| tx.message_hash())
             .collect_vec();
         assert_eq!(message_hashes, vec![&tx1_hash]);
     }

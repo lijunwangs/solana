@@ -455,7 +455,7 @@ impl Consumer {
                 // Re-sanitized transaction should be equal to the original transaction,
                 // but whether it will pass sanitization needs to be checked.
                 let resanitized_tx =
-                    bank.fully_verify_transaction(tx.transaction.to_versioned_transaction())?;
+                    bank.fully_verify_transaction(tx.to_versioned_transaction())?;
                 if resanitized_tx != *tx {
                     // Sanitization before/after epoch give different transaction data - do not execute.
                     return Err(TransactionError::ResanitizationNeeded);
@@ -463,7 +463,7 @@ impl Consumer {
             } else {
                 // Any transaction executed between sanitization time and now may have closed the lookup table(s).
                 // Above re-sanitization already loads addresses, so don't need to re-check in that case.
-                let lookup_tables = tx.transaction.message().message_address_table_lookups();
+                let lookup_tables = tx.message().message_address_table_lookups();
                 if !lookup_tables.is_empty() {
                     bank.load_addresses(lookup_tables)?;
                 }
@@ -600,7 +600,6 @@ impl Consumer {
             .filter_map(|transaction| {
                 let round_compute_unit_price_enabled = false; // TODO get from working_bank.feature_set
                 transaction
-                    .transaction
                     .get_compute_budget_details(round_compute_unit_price_enabled)
                     .map(|details| details.compute_unit_price)
             })
@@ -640,7 +639,7 @@ impl Consumer {
                 .zip(batch.sanitized_transactions())
                 .filter_map(|(execution_result, tx)| {
                     if execution_result.was_executed() {
-                        Some(tx.transaction.to_versioned_transaction())
+                        Some(tx.to_versioned_transaction())
                     } else {
                         None
                     }
@@ -1576,7 +1575,7 @@ mod tests {
                     };
 
                 let mut cost =
-                    CostModel::calculate_cost(&transactions[0].transaction, &bank.feature_set);
+                    CostModel::calculate_cost(transactions[0].transaction(), &bank.feature_set);
                 if let TransactionCost::Transaction(ref mut usage_cost) = cost {
                     usage_cost.programs_execution_cost = actual_programs_execution_cost;
                 }
@@ -1584,7 +1583,7 @@ mod tests {
                 block_cost + cost.sum()
             } else {
                 block_cost
-                    + CostModel::calculate_cost(&transactions[0].transaction, &bank.feature_set)
+                    + CostModel::calculate_cost(transactions[0].transaction(), &bank.feature_set)
                         .sum()
             };
 

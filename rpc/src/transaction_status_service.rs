@@ -110,16 +110,15 @@ impl TransactionStatusService {
                             }
                             Some(DurableNonceFee::Invalid) => None,
                             None => bank.get_lamports_per_signature_for_blockhash(
-                                transaction.transaction.message().recent_blockhash(),
+                                transaction.message().recent_blockhash(),
                             ),
                         }
                         .expect("lamports_per_signature must be available");
                         let fee = bank.get_fee_for_message_with_lamports_per_signature(
-                            transaction.transaction.message(),
+                            transaction.message(),
                             lamports_per_signature,
                         );
-                        let tx_account_locks =
-                            transaction.transaction.get_account_locks_unchecked();
+                        let tx_account_locks = transaction.get_account_locks_unchecked();
 
                         let inner_instructions = inner_instructions.map(|inner_instructions| {
                             map_inner_instructions(inner_instructions).collect()
@@ -139,7 +138,7 @@ impl TransactionStatusService {
                                 })
                                 .collect(),
                         );
-                        let loaded_addresses = transaction.transaction.get_loaded_addresses();
+                        let loaded_addresses = transaction.get_loaded_addresses();
                         let mut transaction_status_meta = TransactionStatusMeta {
                             status,
                             fee,
@@ -159,9 +158,9 @@ impl TransactionStatusService {
                             transaction_notifier.notify_transaction(
                                 slot,
                                 transaction_index,
-                                transaction.transaction.signature(),
+                                transaction.signature(),
                                 &transaction_status_meta,
-                                &transaction.transaction,
+                                transaction.transaction(),
                             );
                         }
 
@@ -173,22 +172,16 @@ impl TransactionStatusService {
                         }
 
                         if enable_rpc_transaction_history {
-                            if let Some(memos) =
-                                extract_and_fmt_memos(transaction.transaction.message())
-                            {
+                            if let Some(memos) = extract_and_fmt_memos(transaction.message()) {
                                 blockstore
-                                    .write_transaction_memos(
-                                        transaction.transaction.signature(),
-                                        slot,
-                                        memos,
-                                    )
+                                    .write_transaction_memos(transaction.signature(), slot, memos)
                                     .expect("Expect database write to succeed: TransactionMemos");
                             }
 
                             blockstore
                                 .write_transaction_status(
                                     slot,
-                                    *transaction.transaction.signature(),
+                                    *transaction.signature(),
                                     tx_account_locks.writable,
                                     tx_account_locks.readonly,
                                     transaction_status_meta,

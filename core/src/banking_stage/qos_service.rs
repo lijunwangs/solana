@@ -75,7 +75,7 @@ impl QosService {
         let txs_costs: Vec<_> = transactions
             .zip(pre_results)
             .map(|(tx, pre_result)| {
-                pre_result.map(|()| CostModel::calculate_cost(&tx.transaction, feature_set))
+                pre_result.map(|()| CostModel::calculate_cost(tx.transaction(), feature_set))
             })
             .collect();
         compute_cost_time.stop();
@@ -632,7 +632,7 @@ mod tests {
             .map(|(index, cost)| {
                 assert_eq!(
                     cost.as_ref().unwrap().sum(),
-                    CostModel::calculate_cost(&txs[index].transaction, &FeatureSet::all_enabled())
+                    CostModel::calculate_cost(txs[index].transaction(), &FeatureSet::all_enabled())
                         .sum()
                 );
             })
