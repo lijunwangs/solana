@@ -209,6 +209,9 @@ fn consume_scan_should_process_packet(
             return ProcessingDecision::Later;
         }
 
+        if let Some(start_time) = packet.start_time() {
+            info!("consume_scan_should_process_packet, found tracked packet: txn: {:?} {start_time:?}", sanitized_transaction.signature());
+        }
         payload
             .sanitized_transactions
             .push(ExtendedSanitizedTransaction::new(
