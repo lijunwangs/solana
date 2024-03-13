@@ -40,25 +40,25 @@ impl ExtendedSanitizedTransaction {
     /// value `num_required_signatures` which must be greater than 0 itself.
     #[inline(always)]
     pub fn signature(&self) -> &Signature {
-        &self.transaction.signature()
+        self.transaction.signature()
     }
 
     /// Return the list of signatures for this transaction
     #[inline(always)]
     pub fn signatures(&self) -> &[Signature] {
-        &self.transaction.signatures()
+        self.transaction.signatures()
     }
 
     /// Return the signed message
     #[inline(always)]
     pub fn message(&self) -> &SanitizedMessage {
-        &self.transaction.message()
+        self.transaction.message()
     }
 
     /// Return the hash of the signed message
     #[inline(always)]
     pub fn message_hash(&self) -> &Hash {
-        &self.transaction.message_hash()
+        self.transaction.message_hash()
     }
 
     /// Returns true if this transaction is a simple vote
@@ -90,6 +90,7 @@ impl ExtendedSanitizedTransaction {
     }
 
     /// Return the list of addresses loaded from on-chain address lookup tables
+    #[inline(always)]
     pub fn get_loaded_addresses(&self) -> LoadedAddresses {
         self.transaction.get_loaded_addresses()
     }
