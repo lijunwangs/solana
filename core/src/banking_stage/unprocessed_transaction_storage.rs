@@ -211,6 +211,8 @@ fn consume_scan_should_process_packet(
 
         if let Some(start_time) = packet.start_time() {
             info!("consume_scan_should_process_packet, found tracked packet: txn: {:?} {start_time:?}", sanitized_transaction.signature());
+        } else {
+            info!("consume_scan_should_process_packet, adding non-tracked-packet to payload: txn:{:?}", sanitized_transaction.signature());
         }
         payload
             .sanitized_transactions
