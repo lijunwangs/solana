@@ -211,7 +211,10 @@ fn consume_scan_should_process_packet(
 
         payload
             .sanitized_transactions
-            .push(ExtendedSanitizedTransaction::from(sanitized_transaction));
+            .push(ExtendedSanitizedTransaction::new(
+                sanitized_transaction,
+                packet.start_time().clone(),
+            ));
         ProcessingDecision::Now
     } else {
         payload

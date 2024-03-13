@@ -300,7 +300,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                     } = &result
                     {
                         if let Some(perf_track_metrics) = perf_track_metrics.as_mut() {
-                            if let Some(start_time) = &tx.start_time {
+                            if let Some(start_time) = tx.start_time() {
                                 // measure the time from start of banking stage to the execution of the transaction
                                 let duration = Instant::now().duration_since(*start_time);
                                 perf_track_metrics

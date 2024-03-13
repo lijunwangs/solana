@@ -14,7 +14,7 @@ use {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct ExtendedSanitizedTransaction {
     transaction: SanitizedTransaction,
-    pub start_time: Option<Instant>,
+    start_time: Option<Instant>,
 }
 
 impl From<SanitizedTransaction> for ExtendedSanitizedTransaction {
@@ -27,8 +27,19 @@ impl From<SanitizedTransaction> for ExtendedSanitizedTransaction {
 }
 
 impl ExtendedSanitizedTransaction {
+    pub fn new(transaction: SanitizedTransaction, start_time: Option<Instant>) -> Self {
+        Self {
+            transaction,
+            start_time,
+        }
+    }
+
     pub fn transaction(&self) -> &SanitizedTransaction {
         &self.transaction
+    }
+
+    pub fn start_time(&self) -> &Option<Instant> {
+        &self.start_time
     }
 
     /// Return the first signature for this transaction.
