@@ -213,7 +213,7 @@ fn consume_scan_should_process_packet(
             .sanitized_transactions
             .push(ExtendedSanitizedTransaction::new(
                 sanitized_transaction,
-                packet.start_time().clone(),
+                *packet.start_time(),
             ));
         ProcessingDecision::Now
     } else {
