@@ -67,6 +67,13 @@ impl ImmutableDeserializedPacket {
             compute_budget_details.compute_unit_price = 0;
         };
 
+        if let Some(start_time) = &banking_stage_start_time {
+            info!(
+                "ImmutableDeserializedPacket got a tracked packet {start_time:?}, {:?}",
+                sanitized_transaction.get_signatures()[0]
+            );
+        }
+
         Ok(Self {
             original_packet: packet,
             transaction: sanitized_transaction,
