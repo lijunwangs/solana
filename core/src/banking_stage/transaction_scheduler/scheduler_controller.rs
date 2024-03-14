@@ -392,12 +392,7 @@ impl SchedulerController {
                 })
                 .filter_map(|tx| {
                     process_compute_budget_instructions(tx.message().program_instructions_iter())
-                        .map(|compute_budget| {
-                            (
-                                ExtendedSanitizedTransaction::from(tx),
-                                compute_budget.into(),
-                            )
-                        })
+                        .map(|compute_budget| (tx, compute_budget.into()))
                         .ok()
                 })
                 .unzip();

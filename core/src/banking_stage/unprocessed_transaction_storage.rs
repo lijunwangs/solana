@@ -209,12 +209,7 @@ fn consume_scan_should_process_packet(
             return ProcessingDecision::Later;
         }
 
-        payload
-            .sanitized_transactions
-            .push(ExtendedSanitizedTransaction::new(
-                sanitized_transaction,
-                *packet.start_time(),
-            ));
+        payload.sanitized_transactions.push(sanitized_transaction);
         ProcessingDecision::Now
     } else {
         payload

@@ -1,6 +1,7 @@
 use {
     solana_perf::packet::Packet,
     solana_runtime::compute_budget_details::{ComputeBudgetDetails, GetComputeBudgetDetails},
+    solana_runtime_transaction::extended_transaction::ExtendedSanitizedTransaction,
     solana_sdk::{
         feature_set,
         hash::Hash,
@@ -116,7 +117,7 @@ impl ImmutableDeserializedPacket {
         feature_set: &Arc<feature_set::FeatureSet>,
         votes_only: bool,
         address_loader: impl AddressLoader,
-    ) -> Option<SanitizedTransaction> {
+    ) -> Option<ExtendedSanitizedTransaction> {
         if votes_only && !self.is_simple_vote() {
             return None;
         }
@@ -128,7 +129,7 @@ impl ImmutableDeserializedPacket {
         )
         .ok()?;
         tx.verify_precompiles(feature_set).ok()?;
-        Some(tx)
+        Some(ExtendedSanitizedTransaction::new(tx, *self.start_time()))
     }
 }
 
