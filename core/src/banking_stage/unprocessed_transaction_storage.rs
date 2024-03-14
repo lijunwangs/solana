@@ -785,12 +785,7 @@ impl ThreadLocalUnprocessedPackets {
             .filter_map(|(packet_index, deserialized_packet)| {
                 deserialized_packet
                     .build_sanitized_transaction(&bank.feature_set, bank.vote_only_bank(), bank)
-                    .map(|transaction| {
-                        (
-                            ExtendedSanitizedTransaction::from(transaction),
-                            packet_index,
-                        )
-                    })
+                    .map(|transaction| (transaction, packet_index))
             })
             .unzip();
 
