@@ -220,12 +220,7 @@ fn consume_scan_should_process_packet(
         } else {
             info!("consume_scan_should_process_packet, adding non-tracked-packet to payload: txn:{:?}", sanitized_transaction.signature());
         }
-        payload
-            .sanitized_transactions
-            .push(ExtendedSanitizedTransaction::new(
-                sanitized_transaction,
-                *packet.start_time(),
-            ));
+        payload.sanitized_transactions.push(sanitized_transaction);
         ProcessingDecision::Now
     } else {
         payload
