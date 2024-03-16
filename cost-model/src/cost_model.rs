@@ -149,7 +149,6 @@ impl CostModel {
             }
         }
 
-<<<<<<< HEAD
         // calculate bpf cost based on compute budget instructions
         let mut compute_budget = ComputeBudget::default();
 
@@ -159,8 +158,6 @@ impl CostModel {
             feature_set.is_active(&add_set_tx_loaded_accounts_data_size_instruction::id()),
         );
 
-=======
->>>>>>> 8f3f06cc7f (Combine builtin and BPF compute cost in cost model (#29))
         // if failed to process compute_budget instructions, the transaction will not be executed
         // by `bank`, therefore it should be considered as no execution cost by cost model.
         match result {
@@ -170,13 +167,8 @@ impl CostModel {
                 // 'compute_unit_limit_is_set' flag, because compute_budget does not distinguish
                 // builtin and bpf instructions when calculating default compute-unit-limit. (see
                 // compute_budget.rs test `test_process_mixed_instructions_without_compute_budget`)
-<<<<<<< HEAD
-                if bpf_costs > 0 && compute_unit_limit_is_set {
-                    bpf_costs = compute_budget.compute_unit_limit
-=======
                 if has_user_space_instructions && compute_unit_limit_is_set {
-                    programs_execution_costs = u64::from(compute_budget_limits.compute_unit_limit);
->>>>>>> 8f3f06cc7f (Combine builtin and BPF compute cost in cost model (#29))
+                    programs_execution_costs = u64::from(compute_budget.compute_unit_limit);
                 }
 
                 if feature_set
@@ -673,7 +665,7 @@ mod tests {
 
         let tx_cost = CostModel::calculate_cost(&tx, &feature_set);
         assert_eq!(expected_account_cost, tx_cost.write_lock_cost());
-        assert_eq!(expected_execution_cost, tx_cost.builtins_execution_cost());
+        assert_eq!(expected_execution_cost, tx_cost.programs_execution_cost());
         assert_eq!(2, tx_cost.writable_accounts().len());
         assert_eq!(
             expected_loaded_accounts_data_size_cost,
