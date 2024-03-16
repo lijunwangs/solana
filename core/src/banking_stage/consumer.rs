@@ -1289,22 +1289,12 @@ mod tests {
             assert_eq!(retryable_transaction_indexes, vec![1]);
 
             let expected_block_cost = if !apply_cost_tracker_during_replay_enabled {
-<<<<<<< HEAD
-                let actual_bpf_execution_cost = match commit_transactions_result.get(0).unwrap() {
-                    CommitTransactionDetails::Committed { compute_units } => *compute_units,
-                    CommitTransactionDetails::NotCommitted => {
-                        unreachable!()
-                    }
-                };
-=======
-                let actual_programs_execution_cost =
-                    match commit_transactions_result.first().unwrap() {
+                let actual_programs_execution_cost = match commit_transactions_result.first().unwrap() {
                         CommitTransactionDetails::Committed { compute_units } => *compute_units,
                         CommitTransactionDetails::NotCommitted => {
                             unreachable!()
                         }
                     };
->>>>>>> 8f3f06cc7f (Combine builtin and BPF compute cost in cost model (#29))
 
                 let mut cost = CostModel::calculate_cost(&transactions[0], &bank.feature_set);
                 if let TransactionCost::Transaction(ref mut usage_cost) = cost {
