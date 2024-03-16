@@ -168,7 +168,7 @@ impl CostModel {
                 // builtin and bpf instructions when calculating default compute-unit-limit. (see
                 // compute_budget.rs test `test_process_mixed_instructions_without_compute_budget`)
                 if has_user_space_instructions && compute_unit_limit_is_set {
-                    programs_execution_costs = u64::from(compute_budget.compute_unit_limit);
+                    programs_execution_costs = compute_budget.compute_unit_limit;
                 }
 
                 if feature_set

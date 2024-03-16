@@ -1289,7 +1289,8 @@ mod tests {
             assert_eq!(retryable_transaction_indexes, vec![1]);
 
             let expected_block_cost = if !apply_cost_tracker_during_replay_enabled {
-                let actual_programs_execution_cost = match commit_transactions_result.first().unwrap() {
+                let actual_programs_execution_cost =
+                    match commit_transactions_result.first().unwrap() {
                         CommitTransactionDetails::Committed { compute_units } => *compute_units,
                         CommitTransactionDetails::NotCommitted => {
                             unreachable!()
