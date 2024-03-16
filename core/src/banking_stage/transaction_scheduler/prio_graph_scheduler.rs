@@ -191,9 +191,7 @@ impl PrioGraphScheduler {
                 saturating_add_assign!(num_scheduled, 1);
 
                 let sanitized_transaction_ttl = transaction_state.transition_to_pending();
-                let cu_limit = transaction_state
-                    .transaction_priority_details()
-                    .compute_unit_limit;
+                let cost = transaction_state.cost();
 
                 let SanitizedTransactionTTL {
                     transaction,
@@ -203,7 +201,7 @@ impl PrioGraphScheduler {
                 batches.transactions[thread_id].push(transaction);
                 batches.ids[thread_id].push(id.id);
                 batches.max_age_slots[thread_id].push(max_age_slot);
-                saturating_add_assign!(batches.total_cus[thread_id], cu_limit);
+                saturating_add_assign!(batches.total_cus[thread_id], cost);
 
                 // If target batch size is reached, send only this batch.
                 if batches.ids[thread_id].len() >= TARGET_NUM_TRANSACTIONS_PER_BATCH {
@@ -390,7 +388,8 @@ impl PrioGraphScheduler {
     /// If the `chain_thread` is available, this thread will be selected, regardless of
     /// load-balancing.
     ///
-    /// Panics if the `thread_set` is empty.
+    /// Panics if the `thread_set` is empty. This should never happen, see comment
+    /// on `ThreadAwareAccountLocks::try_lock_accounts`.
     fn select_thread(
         thread_set: ThreadSet,
         batches_per_thread: &[Vec<SanitizedTransaction>],
@@ -492,7 +491,6 @@ mod tests {
         crate::banking_stage::consumer::TARGET_NUM_TRANSACTIONS_PER_BATCH,
         crossbeam_channel::{unbounded, Receiver},
         itertools::Itertools,
-        solana_runtime::transaction_priority_details::TransactionPriorityDetails,
         solana_sdk::{
             compute_budget::ComputeBudgetInstruction, hash::Hash, message::Message, pubkey::Pubkey,
             signature::Keypair, signer::Signer, system_instruction, transaction::Transaction,
@@ -562,23 +560,26 @@ mod tests {
         >,
     ) -> TransactionStateContainer {
         let mut container = TransactionStateContainer::with_capacity(10 * 1024);
-        for (index, (from_keypair, to_pubkeys, lamports, priority)) in
+        for (index, (from_keypair, to_pubkeys, lamports, compute_unit_price)) in
             tx_infos.into_iter().enumerate()
         {
             let id = TransactionId::new(index as u64);
-            let transaction =
-                prioritized_tranfers(from_keypair.borrow(), to_pubkeys, lamports, priority);
+            let transaction = prioritized_tranfers(
+                from_keypair.borrow(),
+                to_pubkeys,
+                lamports,
+                compute_unit_price,
+            );
             let transaction_ttl = SanitizedTransactionTTL {
                 transaction,
                 max_age_slot: Slot::MAX,
             };
+            const TEST_TRANSACTION_COST: u64 = 5000;
             container.insert_new_transaction(
                 id,
                 transaction_ttl,
-                TransactionPriorityDetails {
-                    priority,
-                    compute_unit_limit: 1,
-                },
+                compute_unit_price,
+                TEST_TRANSACTION_COST,
             );
         }
 
