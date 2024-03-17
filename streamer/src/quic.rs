@@ -177,6 +177,8 @@ pub struct StreamStats {
     pub(crate) stream_load_capacity_overflow: AtomicUsize,
     pub(crate) process_sampled_packets_us_hist: Mutex<histogram::Histogram>,
     pub(crate) perf_track_overhead_us: AtomicU64,
+    pub(crate) total_staked_packets_sent_for_batching: AtomicUsize,
+    pub(crate) total_unstaked_packets_sent_for_batching: AtomicUsize,
 }
 
 impl StreamStats {
@@ -335,6 +337,18 @@ impl StreamStats {
             (
                 "packets_sent_for_batching",
                 self.total_packets_sent_for_batching
+                    .swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "staked_packets_sent_for_batching",
+                self.total_staked_packets_sent_for_batching
+                    .swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "unstaked_packets_sent_for_batching",
+                self.total_unstaked_packets_sent_for_batching
                     .swap(0, Ordering::Relaxed),
                 i64
             ),
