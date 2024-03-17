@@ -177,6 +177,8 @@ pub struct StreamStats {
     pub(crate) stream_load_capacity_overflow: AtomicUsize,
     pub(crate) process_sampled_packets_us_hist: Mutex<histogram::Histogram>,
     pub(crate) perf_track_overhead_us: AtomicU64,
+    pub(crate) throttled_staked_streams: AtomicUsize,
+    pub(crate) throttled_unstaked_streams: AtomicUsize,
 }
 
 impl StreamStats {
@@ -432,6 +434,16 @@ impl StreamStats {
             (
                 "stream_load_capacity_overflow",
                 self.stream_load_capacity_overflow.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "throttled_unstaked_streams",
+                self.throttled_unstaked_streams.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "throttled_staked_streams",
+                self.throttled_staked_streams.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
