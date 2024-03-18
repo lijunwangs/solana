@@ -954,7 +954,8 @@ async fn handle_connection(
                                 .await
                                 {
                                     last_update.store(timing::timestamp(), Ordering::Relaxed);
-                                    update_peer_stats(&params.remote_pubkey, &stats, &peer_stat);
+                                    update_peer_stats(&params.remote_pubkey, &stats, &peer_stat)
+                                        .await;
                                     break;
                                 }
                                 start = Instant::now();
@@ -966,7 +967,7 @@ async fn handle_connection(
                                 peer_stat
                                     .stream_read_timeouts
                                     .fetch_add(1, Ordering::Relaxed);
-                                update_peer_stats(&params.remote_pubkey, &stats, &peer_stat);
+                                update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
                                 break;
                             }
                         }
