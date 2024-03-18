@@ -613,7 +613,11 @@ impl StreamStats {
                 );
                 stat.end_time = Instant::now();
             })
-            .or_insert(peer_stat.clone());
+            .or_insert({
+                let mut stat = peer_stat.clone();
+                stat.start_time = Instant::now();
+                stat
+            });
     }
 }
 
