@@ -516,7 +516,8 @@ async fn setup_connection(
 
                 match params.peer_type {
                     ConnectionPeerType::Staked(stake) => {
-                        let mut connection_table_l = staked_connection_table.lock().unwrap();
+                        let mut connection_table_l = staked_connection_table.lock().await;
+
                         if connection_table_l.total_size >= max_staked_connections {
                             let num_pruned =
                                 connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
@@ -547,7 +548,9 @@ async fn setup_connection(
                                 &params,
                                 wait_for_chunk_timeout,
                                 stream_load_ema.clone(),
-                            ) {
+                            )
+                            .await
+                            {
                                 stats
                                     .connection_added_from_staked_peer
                                     .fetch_add(1, Ordering::Relaxed);
@@ -569,7 +572,9 @@ async fn setup_connection(
                             &params,
                             wait_for_chunk_timeout,
                             stream_load_ema.clone(),
-                        ) {
+                        )
+                        .await
+                        {
                             stats
                                 .connection_added_from_unstaked_peer
                                 .fetch_add(1, Ordering::Relaxed);
