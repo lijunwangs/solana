@@ -548,9 +548,9 @@ impl StreamStats {
         self.report_peer_stats();
     }
 
-    fn report_peer_stats(&self) {
+    async fn report_peer_stats(&self) {
         let map = {
-            let mut stats = self.peer_stats.stats.lock().unwrap();
+            let mut stats = self.peer_stats.stats.lock().await;
             let new_map = HashMap::<Pubkey, PeerStats>::default();
             std::mem::replace(&mut *stats, new_map)
         };
@@ -573,8 +573,8 @@ impl StreamStats {
     }
 
     /// Update the peer stat for a peer given its key
-    pub fn update_peer_stats(&self, pubkey: &Pubkey, peer_stat: &PeerStats) {
-        let mut stats = self.peer_stats.stats.lock().unwrap();
+    pub async fn update_peer_stats(&self, pubkey: &Pubkey, peer_stat: &PeerStats) {
+        let mut stats = self.peer_stats.stats.lock().await;
         stats
             .entry(*pubkey)
             .and_modify(|stat| {
