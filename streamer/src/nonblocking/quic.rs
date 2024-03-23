@@ -2254,7 +2254,7 @@ pub mod test {
 
         let _guard = runtime.enter();
 
-        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 10);
+        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 1000);
 
         let handle = std::thread::Builder::new()
             .name("solQuicServer".into())
@@ -2275,7 +2275,7 @@ pub mod test {
         let start = Instant::now();
         let mut handles = Vec::default();
         let server_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8009);
-        for _i in 0..10 {
+        for _i in 0..100 {
             let task = tokio::spawn(send_streams(server_address.clone()));
             handles.push(task);
         }
