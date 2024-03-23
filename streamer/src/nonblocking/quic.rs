@@ -2228,7 +2228,10 @@ pub mod test {
         let mut num_expected_packets = 0;
 
         for i in 0..1000000 {
-            debug!("sending: {}", i);
+
+            if i % 10000 == 0 {
+                debug!("sending: {}", i);
+            }
             let c2 = conn2.clone();
             let mut s2 = c2.open_uni().await.unwrap();
             s2.write_all(&[0u8]).await.unwrap();
