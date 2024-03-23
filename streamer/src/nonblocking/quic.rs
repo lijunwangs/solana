@@ -2255,7 +2255,7 @@ pub mod test {
 
         let _guard = runtime.enter();
 
-        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 1000);
+        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 10000);
 
         let handle = std::thread::Builder::new()
             .name("solQuicServer".into())
