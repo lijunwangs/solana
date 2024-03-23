@@ -2223,15 +2223,10 @@ pub mod test {
     }
 
 
-    #[tokio::test]
-    async fn test_quic_server_raw_perf() {
-        solana_logger::setup();
-        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 1);
-
+    async fn send_streams(server_address: SocketAddr) {
         let conn2 = Arc::new(make_client_endpoint(&server_address, None).await);
         let mut num_expected_packets = 0;
 
-        let start = Instant::now();
         for i in 0..1000000 {
             info!("sending: {}", i);
             let c2 = conn2.clone();
@@ -2240,7 +2235,24 @@ pub mod test {
             s2.finish().await.unwrap();
             num_expected_packets += 2;
         }
+    }
 
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_quic_server_raw_perf() {
+        solana_logger::setup();
+        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 10);
+
+        let start = Instant::now();
+        let mut handles = Vec::default();
+        for _i in 0..10 {
+            let task = tokio::spawn(send_streams(server_address.clone()));
+            handles.push(task);
+        }
+        
+        for handle in handles {
+            let _rslt = tokio::join!(handle);
+        }
         println!("Run time in us: {}", Instant::now().duration_since(start).as_micros());
         exit.store(true, Ordering::Relaxed);
         t.await.unwrap();
