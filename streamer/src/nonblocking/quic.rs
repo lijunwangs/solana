@@ -2227,6 +2227,22 @@ pub mod test {
     async fn test_quic_server_raw_perf() {
         solana_logger::setup();
         let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 1);
+
+        let conn2 = Arc::new(make_client_endpoint(&server_address, None).await);
+        let mut num_expected_packets = 0;
+
+        let start = Instant::now();
+        for i in 0..1000000 {
+            info!("sending: {}", i);
+            let c2 = conn2.clone();
+            let mut s2 = c2.open_uni().await.unwrap();
+            s2.write_all(&[0u8]).await.unwrap();
+            s2.finish().await.unwrap();
+            num_expected_packets += 2;
+        }
+
+        println!("Run time in us: {}", Instant::now().duration_since(start).as_micros());
+        exit.store(true, Ordering::Relaxed);
         t.await.unwrap();
     }    
 }
