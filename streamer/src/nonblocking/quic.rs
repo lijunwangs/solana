@@ -1355,13 +1355,14 @@ pub mod test {
         SocketAddr,
         Arc<StreamStats>,
     ) {
-        let s = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let s = UdpSocket::bind("127.0.0.1:8009").unwrap();
         let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
+
         let (_, stats, t) = spawn_server(
             "quic_stest",
             s,
@@ -2222,13 +2223,11 @@ pub mod test {
         );
     }
 
-
     async fn send_streams(server_address: SocketAddr) {
         let conn2 = Arc::new(make_client_endpoint(&server_address, None).await);
         let mut num_expected_packets = 0;
 
         for i in 0..1000000 {
-
             if i % 10000 == 0 {
                 debug!("sending: {}", i);
             }
@@ -2240,24 +2239,53 @@ pub mod test {
         }
     }
 
+    fn rt() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .thread_name("quic-server")
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn run_test_server() {
+        solana_logger::setup();
+        let runtime: tokio::runtime::Runtime = rt();
+
+        let _guard = runtime.enter();
+
+        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 10);
+
+        let handle = std::thread::Builder::new()
+            .name("solQuicServer".into())
+            .spawn(move || {
+                if let Err(e) = runtime.block_on(t) {
+                    warn!("error from runtime.block_on: {:?}", e);
+                }
+            })
+            .unwrap();
+        println!("Server address: {server_address:?}");
+        handle.join().expect("Couldn't join on the associated thread");
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_quic_server_raw_perf() {
         solana_logger::setup();
-        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 10);
 
         let start = Instant::now();
         let mut handles = Vec::default();
+        let server_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8009);
         for _i in 0..10 {
             let task = tokio::spawn(send_streams(server_address.clone()));
             handles.push(task);
         }
-        
+
         for handle in handles {
             let _rslt = tokio::join!(handle);
         }
-        println!("Run time in us: {}", Instant::now().duration_since(start).as_micros());
-        exit.store(true, Ordering::Relaxed);
-        t.await.unwrap();
-    }    
+        println!(
+            "Run time in us: {}",
+            Instant::now().duration_since(start).as_micros()
+        );
+    }
 }
