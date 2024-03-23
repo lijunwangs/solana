@@ -2274,7 +2274,7 @@ pub mod test {
 
         let start = Instant::now();
         let mut handles = Vec::default();
-        let server_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8009);
+        let server_address = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8009);
         for _i in 0..10 {
             let task = tokio::spawn(send_streams(server_address.clone()));
             handles.push(task);
