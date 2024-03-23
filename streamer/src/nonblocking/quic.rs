@@ -1363,7 +1363,7 @@ pub mod test {
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
         let (_, stats, t) = spawn_server(
-            "quic_streamer_test",
+            "quic_stest",
             s,
             &keypair,
             ip,
