@@ -797,7 +797,7 @@ async fn handle_connection(
     let max_streams_per_100ms =
         max_streams_for_connection_in_100ms(peer_type, params.stake, params.total_stake);
     let mut last_throttling_instant = tokio::time::Instant::now();
-    let mut streams_in_current_interval = 0;
+    let mut streams_in_current_interval: usize = 0;
     let peer = ConnectionTableKey::new(remote_addr.ip(), params.remote_pubkey);
     let connection_count = { connection_table.lock().await.get_connection_count(&peer) };
     let peer_stat = Arc::new(PeerStats::new(peer_type, params.stake, connection_count));
@@ -824,29 +824,30 @@ async fn handle_connection(
                     }
                     peer_stat.received_streams.fetch_add(1, Ordering::Relaxed);
 
-                    if reset_throttling_params_if_needed(&mut last_throttling_instant) {
-                        streams_in_current_interval = 0;
-                    } else if streams_in_current_interval >= max_streams_per_100ms {
-                        stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        match peer_type {
-                            ConnectionPeerType::Unstaked => {
-                                stats
-                                    .throttled_unstaked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
-                            }
-                            ConnectionPeerType::Staked => {
-                                stats
-                                    .throttled_staked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
-                        peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        info!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
-                            params.stake, params.total_stake);
-                        let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
-                        update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
-                        continue;
-                    }
+                    // if reset_throttling_params_if_needed(&mut last_throttling_instant) {
+                    //     streams_in_current_interval = 0;
+                    // } else if streams_in_current_interval >= max_streams_per_100ms {
+                    //     stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                    //     match peer_type {
+                    //         ConnectionPeerType::Unstaked => {
+                    //             stats
+                    //                 .throttled_unstaked_streams
+                    //                 .fetch_add(1, Ordering::Relaxed);
+                    //         }
+                    //         ConnectionPeerType::Staked => {
+                    //             stats
+                    //                 .throttled_staked_streams
+                    //                 .fetch_add(1, Ordering::Relaxed);
+                    //         }
+                    //     }
+                    //     peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                    //     info!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
+                    //         params.stake, params.total_stake);
+                    //     let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
+                    //     update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
+                    //     continue;
+                    // }
+
                     streams_in_current_interval = streams_in_current_interval.saturating_add(1);
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
@@ -2220,4 +2221,12 @@ pub mod test {
             8
         );
     }
+
+
+    #[tokio::test]
+    async fn test_quic_server_raw_perf() {
+        solana_logger::setup();
+        let (t, exit, receiver, server_address, stats) = setup_quic_server(None, 1);
+        t.await.unwrap();
+    }    
 }
