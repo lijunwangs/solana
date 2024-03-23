@@ -1373,8 +1373,8 @@ pub mod test {
             exit.clone(),
             max_connections_per_peer,
             staked_nodes,
-            MAX_STAKED_CONNECTIONS,
-            MAX_UNSTAKED_CONNECTIONS,
+            10000,
+            10000,
             Duration::from_secs(2),
             DEFAULT_TPU_COALESCE,
         )
