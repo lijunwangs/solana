@@ -294,7 +294,7 @@ reqwest-middleware = "0.2.5"
 rolling-file = "0.2.0"
 rpassword = "7.3"
 rustc_version = "0.4"
-rustls = { version = "0.21.12", default-features = false, features = ["quic"] }
+rustls = { version = "0.23.9", default-features = false }
 rustversion = "1.0.17"
 scopeguard = "1.2.0"
 semver = "1.0.23"
