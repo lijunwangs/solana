@@ -185,18 +185,26 @@ async fn run_server(
 
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
-            tokio::spawn(setup_connection(
-                connection,
-                unstaked_connection_table.clone(),
-                staked_connection_table.clone(),
-                sender.clone(),
-                max_connections_per_peer,
-                staked_nodes.clone(),
-                max_staked_connections,
-                max_unstaked_connections,
-                stats.clone(),
-                wait_for_chunk_timeout,
-            ));
+            let connection = connection.accept();
+            match connection {
+                Ok(connection) => {
+                    tokio::spawn(setup_connection(
+                        connection,
+                        unstaked_connection_table.clone(),
+                        staked_connection_table.clone(),
+                        sender.clone(),
+                        max_connections_per_peer,
+                        staked_nodes.clone(),
+                        max_staked_connections,
+                        max_unstaked_connections,
+                        stats.clone(),
+                        wait_for_chunk_timeout,
+                    ));
+                }
+                Err(err) => {
+                    debug!("Incoming::accept(): error {:?}", err);
+                }
+            }
         } else {
             debug!("accept(): Timed out waiting for connection");
         }
@@ -2266,7 +2274,9 @@ pub mod test {
             })
             .unwrap();
         println!("Server address: {server_address:?}");
-        handle.join().expect("Couldn't join on the associated thread");
+        handle
+            .join()
+            .expect("Couldn't join on the associated thread");
     }
 
     #[tokio::test(flavor = "multi_thread")]
