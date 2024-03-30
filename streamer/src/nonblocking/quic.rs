@@ -195,10 +195,11 @@ async fn run_server(
             debug!("Got a connection {:?}", remote_address);
             let do_rate_limiting = true;
             if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
-                debug!("Reject attacker connection from {:?}", remote_address);
-                stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
-                connection.reject();
-                continue;
+                info!("Should reject attacker connection from {:?}", remote_address);
+                // debug!("Reject attacker connection from {:?}", remote_address);
+                // stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
+                // connection.reject();
+                // continue;
             }
             let connection = connection.accept();
             match connection {
