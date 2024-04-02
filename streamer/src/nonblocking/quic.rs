@@ -1,9 +1,7 @@
 use {
     crate::{
         nonblocking::connection_rate_limiter::ConnectionRateLimiter,
-        quic::{
-            configure_server, PeerStats, QuicServerError, StreamStats,
-        },
+        quic::{configure_server, PeerStats, QuicServerError, StreamStats},
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
     },
@@ -31,10 +29,12 @@ use {
         signature::{Keypair, Signature},
         timing,
     },
-    solana_transaction_metrics_tracker::signature_if_should_track_packet,
+    solana_transaction_metrics_tracker::{
+        get_signature_from_packet, /*signature_if_should_track_packet*/
+    },
     std::{
         iter::repeat_with,
-        net::{IpAddr, SocketAddr, UdpSocket},
+        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         // CAUTION: be careful not to introduce any awaits while holding an RwLock.
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
@@ -406,7 +406,7 @@ fn handle_and_cache_new_connection(
                 params.clone(),
                 peer_type,
                 wait_for_chunk_timeout,
-                max_unstaked_connections
+                max_unstaked_connections,
             ));
             Ok(())
         } else {
@@ -447,7 +447,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
             connection_table_clone,
             params,
             wait_for_chunk_timeout,
-            max_connections
+            max_connections,
         )
     } else {
         connection.close(
@@ -665,6 +665,11 @@ async fn packet_batch_sender(
 ) {
     trace!("enter packet_batch_sender");
     let mut batch_start_time = Instant::now();
+
+    // The RPC node is 136.144.48.141
+    let ping_server = IpAddr::V4(Ipv4Addr::new(136, 144, 48, 141));
+    // Could be 145.40.114.251?
+    let ping_server2 = IpAddr::V4(Ipv4Addr::new(145, 40, 114, 251));
     loop {
         let mut packet_perf_measure: Vec<([u8; 64], std::time::Instant)> = Vec::default();
         let mut packet_batch = PacketBatch::with_capacity(PACKETS_PER_BATCH);
@@ -734,13 +739,17 @@ async fn packet_batch_sender(
 
                 total_bytes += packet_batch[i].meta().size;
 
-                if let Some(signature) = signature_if_should_track_packet(&packet_batch[i])
-                    .ok()
-                    .flatten()
-                {
-                    packet_perf_measure.push((*signature, packet_accumulator.start_time));
-                    // we set the PERF_TRACK_PACKET on
-                    packet_batch[i].meta_mut().set_track_performance(true);
+                // if let Some(signature) = signature_if_should_track_packet(&packet_batch[i])
+                //     .ok()
+                //     .flatten()
+                if packet_batch[i].meta().addr == ping_server || packet_batch[i].meta().addr == ping_server2 {
+                    let signature = get_signature_from_packet(&packet_batch[i]);
+                    if let Ok(signature) = signature {
+                        packet_perf_measure.push((*signature, packet_accumulator.start_time));
+                        // we set the PERF_TRACK_PACKET on
+                        packet_batch[i].meta_mut().set_track_performance(true);
+                        info!("Received ping packets from {:?}", packet_batch[i].meta().addr);
+                    }
                 }
                 stats
                     .total_chunks_processed_by_batcher
@@ -830,8 +839,12 @@ async fn handle_connection(
     );
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
-    let max_streams_per_100ms =
-        max_streams_for_connection_in_100ms(peer_type, params.stake, params.total_stake, max_unstaked_connections);
+    let max_streams_per_100ms = max_streams_for_connection_in_100ms(
+        peer_type,
+        params.stake,
+        params.total_stake,
+        max_unstaked_connections,
+    );
     let mut last_throttling_instant = tokio::time::Instant::now();
     let mut streams_in_current_interval = 0;
     let peer = ConnectionTableKey::new(remote_addr.ip(), params.remote_pubkey);
