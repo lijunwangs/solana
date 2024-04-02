@@ -242,7 +242,7 @@ async fn run_server(
                 .fetch_add(1, Ordering::Relaxed);
             let remote_address = incoming.remote_address();
             debug!("Got a connection {:?}", remote_address);
-            let do_rate_limiting = true;
+            let do_rate_limiting = false;
             if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
                 debug!(
                     "Reject connection from {:?} -- rate limiting exceeded",
