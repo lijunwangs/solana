@@ -805,7 +805,7 @@ async fn track_streamer_fetch_packet_performance(
 
     for (signature, start_time) in packet_perf_measure.iter() {
         let duration = Instant::now().duration_since(*start_time);
-        debug!(
+        info!(
             "QUIC streamer fetch stage took {duration:?} for transaction {:?}",
             Signature::from(*signature)
         );
