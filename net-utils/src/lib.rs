@@ -388,7 +388,7 @@ fn udp_socket(_reuseaddr: bool) -> io::Result<Socket> {
 }
 
 #[cfg(not(any(windows, target_os = "ios")))]
-fn udp_socket(reuseaddr: bool) -> io::Result<Socket> {
+fn udp_socket(reuseaddr: bool, mut reuseport: bool) -> io::Result<Socket> {
     use {
         nix::sys::socket::{
             setsockopt,
@@ -400,10 +400,13 @@ fn udp_socket(reuseaddr: bool) -> io::Result<Socket> {
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, None)?;
     let sock_fd = sock.as_raw_fd();
 
+    // best effort, i.e. ignore setsockopt() errors, we'll get the failure in caller
     if reuseaddr {
-        // best effort, i.e. ignore errors here, we'll get the failure in caller
-        setsockopt(sock_fd, ReusePort, &true).ok();
         setsockopt(sock_fd, ReuseAddr, &true).ok();
+        reuseport = true;
+    }
+    if reuseport {
+        setsockopt(sock_fd, ReusePort, &true).ok();
     }
 
     Ok(sock)
@@ -415,7 +418,7 @@ pub fn bind_common_in_range(
     range: PortRange,
 ) -> io::Result<(u16, (UdpSocket, TcpListener))> {
     for port in range.0..range.1 {
-        if let Ok((sock, listener)) = bind_common(ip_addr, port, false) {
+        if let Ok((sock, listener)) = bind_common(ip_addr, port, false, false) {
             return Result::Ok((sock.local_addr().unwrap().port(), (sock, listener)));
         }
     }
@@ -427,7 +430,7 @@ pub fn bind_common_in_range(
 }
 
 pub fn bind_in_range(ip_addr: IpAddr, range: PortRange) -> io::Result<(u16, UdpSocket)> {
-    let sock = udp_socket(false)?;
+    let sock = udp_socket(false, false)?;
 
     for port in range.0..range.1 {
         let addr = SocketAddr::new(ip_addr, port);
@@ -445,7 +448,7 @@ pub fn bind_in_range(ip_addr: IpAddr, range: PortRange) -> io::Result<(u16, UdpS
 }
 
 pub fn bind_with_any_port(ip_addr: IpAddr) -> io::Result<UdpSocket> {
-    let sock = udp_socket(false)?;
+    let sock = udp_socket(false, false)?;
     let addr = SocketAddr::new(ip_addr, 0);
     match sock.bind(&SockAddr::from(addr)) {
         Ok(_) => Result::Ok(sock.into()),
@@ -482,7 +485,7 @@ pub fn multi_bind_in_range(
         }; // drop the probe, port should be available... briefly.
 
         for _ in 0..num {
-            let sock = bind_to(ip_addr, port, true);
+            let sock = bind_to(ip_addr, port, true, true);
             if let Ok(sock) = sock {
                 sockets.push(sock);
             } else {
@@ -502,8 +505,13 @@ pub fn multi_bind_in_range(
     Ok((port, sockets))
 }
 
-pub fn bind_to(ip_addr: IpAddr, port: u16, reuseaddr: bool) -> io::Result<UdpSocket> {
-    let sock = udp_socket(reuseaddr)?;
+pub fn bind_to(
+    ip_addr: IpAddr,
+    port: u16,
+    reuseaddr: bool,
+    reuseport: bool,
+) -> io::Result<UdpSocket> {
+    let sock = udp_socket(reuseaddr, reuseport)?;
 
     let addr = SocketAddr::new(ip_addr, port);
 
@@ -515,8 +523,9 @@ pub fn bind_common(
     ip_addr: IpAddr,
     port: u16,
     reuseaddr: bool,
+    reuseport: bool,
 ) -> io::Result<(UdpSocket, TcpListener)> {
-    let sock = udp_socket(reuseaddr)?;
+    let sock = udp_socket(reuseaddr, reuseport)?;
 
     let addr = SocketAddr::new(ip_addr, port);
     let sock_addr = SockAddr::from(addr);
@@ -529,6 +538,15 @@ pub fn bind_two_in_range_with_offset(
     range: PortRange,
     offset: u16,
 ) -> io::Result<((u16, UdpSocket), (u16, UdpSocket))> {
+    bind_two_in_range_with_offset_reuseport(ip_addr, range, offset, (false, false))
+}
+
+pub fn bind_two_in_range_with_offset_reuseport(
+    ip_addr: IpAddr,
+    range: PortRange,
+    offset: u16,
+    reuseport: (bool, bool),
+) -> io::Result<((u16, UdpSocket), (u16, UdpSocket))> {
     if range.1.saturating_sub(range.0) < offset {
         return Err(io::Error::new(
             io::ErrorKind::Other,
@@ -536,9 +554,9 @@ pub fn bind_two_in_range_with_offset(
         ));
     }
     for port in range.0..range.1 {
-        if let Ok(first_bind) = bind_to(ip_addr, port, false) {
+        if let Ok(first_bind) = bind_to(ip_addr, port, false, reuseport.0) {
             if range.1.saturating_sub(port) >= offset {
-                if let Ok(second_bind) = bind_to(ip_addr, port + offset, false) {
+                if let Ok(second_bind) = bind_to(ip_addr, port + offset, false, reuseport.1) {
                     return Ok((
                         (first_bind.local_addr().unwrap().port(), first_bind),
                         (second_bind.local_addr().unwrap().port(), second_bind),
@@ -560,7 +578,7 @@ pub fn find_available_port_in_range(ip_addr: IpAddr, range: PortRange) -> io::Re
     let mut tries_left = end - start;
     let mut rand_port = thread_rng().gen_range(start..end);
     loop {
-        match bind_common(ip_addr, rand_port, false) {
+        match bind_common(ip_addr, rand_port, false, false) {
             Ok(_) => {
                 break Ok(rand_port);
             }
@@ -576,6 +594,15 @@ pub fn find_available_port_in_range(ip_addr: IpAddr, range: PortRange) -> io::Re
         }
         tries_left -= 1;
     }
+}
+
+pub fn bind_more_reuseport(socket: UdpSocket, num: usize) -> Vec<UdpSocket> {
+    let addr = socket.local_addr().unwrap();
+    let ip = addr.ip();
+    let port = addr.port();
+    let mut sockets = vec![socket];
+    sockets.extend((1..num).map(|_| bind_to(ip, port, false, true).unwrap()));
+    sockets
 }
 
 #[cfg(test)]
@@ -681,13 +708,13 @@ mod tests {
         let ip_addr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
         assert_eq!(bind_in_range(ip_addr, (2000, 2001)).unwrap().0, 2000);
         let ip_addr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-        let x = bind_to(ip_addr, 2002, true).unwrap();
-        let y = bind_to(ip_addr, 2002, true).unwrap();
+        let x = bind_to(ip_addr, 2002, true, true).unwrap();
+        let y = bind_to(ip_addr, 2002, true, true).unwrap();
         assert_eq!(
             x.local_addr().unwrap().port(),
             y.local_addr().unwrap().port()
         );
-        bind_to(ip_addr, 2002, false).unwrap_err();
+        bind_to(ip_addr, 2002, false, false).unwrap_err();
         bind_in_range(ip_addr, (2002, 2003)).unwrap_err();
 
         let (port, v) = multi_bind_in_range(ip_addr, (2010, 2110), 10).unwrap();
@@ -724,7 +751,7 @@ mod tests {
         let port = find_available_port_in_range(ip_addr, (3000, 3050)).unwrap();
         assert!((3000..3050).contains(&port));
 
-        let _socket = bind_to(ip_addr, port, false).unwrap();
+        let _socket = bind_to(ip_addr, port, false, false).unwrap();
         find_available_port_in_range(ip_addr, (port, port + 1)).unwrap_err();
     }
 
