@@ -173,6 +173,7 @@ async fn run_server(
         Arc::new(Mutex::new(ConnectionTable::new(ConnectionPeerType::Staked)));
     let (sender, receiver) = async_unbounded();
     tokio::spawn(packet_batch_sender(
+        name,
         packet_sender,
         receiver,
         exit.clone(),
@@ -657,6 +658,7 @@ fn handle_connection_error(e: quinn::ConnectionError, stats: &StreamStats, from:
 }
 
 async fn packet_batch_sender(
+    name: &'static str,
     packet_sender: Sender<PacketBatch>,
     packet_receiver: AsyncReceiver<PacketAccumulator>,
     exit: Arc<AtomicBool>,
@@ -692,7 +694,7 @@ async fn packet_batch_sender(
             {
                 let len = packet_batch.len();
 
-                track_streamer_fetch_packet_performance(&packet_perf_measure, &stats).await;
+                track_streamer_fetch_packet_performance(name, &packet_perf_measure, &stats).await;
 
                 if let Err(e) = packet_sender.send(packet_batch) {
                     stats
@@ -748,7 +750,7 @@ async fn packet_batch_sender(
                         packet_perf_measure.push((*signature, packet_accumulator.start_time));
                         // we set the PERF_TRACK_PACKET on
                         packet_batch[i].meta_mut().set_track_performance(true);
-                        info!("Received ping packets from {:?}", packet_batch[i].meta().addr);
+                        info!("Received ping packets from {:?} tpu:{name}", packet_batch[i].meta().addr);
                     }
                 }
                 stats
@@ -794,6 +796,7 @@ fn reset_throttling_params_if_needed(last_instant: &mut tokio::time::Instant) ->
 }
 
 async fn track_streamer_fetch_packet_performance(
+    name: &'static str,
     packet_perf_measure: &[([u8; 64], Instant)],
     stats: &Arc<StreamStats>,
 ) {
@@ -806,7 +809,7 @@ async fn track_streamer_fetch_packet_performance(
     for (signature, start_time) in packet_perf_measure.iter() {
         let duration = Instant::now().duration_since(*start_time);
         info!(
-            "QUIC streamer fetch stage took {duration:?} for transaction {:?}",
+            "QUIC streamer fetch stage took {duration:?} for transaction {:?} tpu: {name}",
             Signature::from(*signature)
         );
         process_sampled_packets_us_hist
