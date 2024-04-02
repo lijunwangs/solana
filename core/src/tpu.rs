@@ -57,8 +57,8 @@ pub struct TpuSockets {
     pub transaction_forwards: Vec<UdpSocket>,
     pub vote: Vec<UdpSocket>,
     pub broadcast: Vec<UdpSocket>,
-    pub transactions_quic: UdpSocket,
-    pub transactions_forwards_quic: UdpSocket,
+    pub transactions_quic: Vec<UdpSocket>,
+    pub transactions_forwards_quic: Vec<UdpSocket>,
 }
 
 pub struct Tpu {
@@ -149,7 +149,7 @@ impl Tpu {
         let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
         let SpawnServerResult {
-            endpoint: _,
+            endpoints: _,
             thread: tpu_quic_t,
             key_updater,
         } = spawn_server(
@@ -169,7 +169,7 @@ impl Tpu {
         .unwrap();
 
         let SpawnServerResult {
-            endpoint: _,
+            endpoints: _,
             thread: tpu_forwards_quic_t,
             key_updater: forwards_key_updater,
         } = spawn_server(

@@ -12,6 +12,7 @@ use {
     },
     bytes::Bytes,
     crossbeam_channel::Sender,
+    futures::FutureExt as _,
     indexmap::map::{Entry, IndexMap},
     percentage::Percentage,
     quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
@@ -74,6 +75,7 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
+#[derive(Debug)]
 struct PacketChunk {
     pub bytes: Bytes,
     // The offset of these bytes in the Quic stream
@@ -91,6 +93,7 @@ struct PacketChunk {
 // packet metadata. We use this accumulator to avoid
 // multiple copies of the Bytes (when building up
 // the Packet and then when copying the Packet into a PacketBatch)
+#[derive(Debug)]
 struct PacketAccumulator {
     pub meta: Meta,
     pub chunks: Vec<PacketChunk>,
@@ -122,20 +125,60 @@ pub fn spawn_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
-    info!("Start {name} quic server on {sock:?}");
-    let (config, _cert) = configure_server(keypair)?;
-
-    let endpoint = Endpoint::new(
-        EndpointConfig::default(),
-        Some(config),
-        sock,
-        Arc::new(TokioRuntime),
+    spawn_server_multi(
+        name,
+        vec![sock],
+        keypair,
+        packet_sender,
+        exit,
+        max_connections_per_peer,
+        staked_nodes,
+        max_staked_connections,
+        max_unstaked_connections,
+        wait_for_chunk_timeout,
+        coalesce,
     )
-    .map_err(QuicServerError::EndpointFailed)?;
+    .map(|(mut endpoints, stats, handle)| (endpoints.remove(0), stats, handle))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn spawn_server_multi(
+    name: &'static str,
+    sockets: Vec<UdpSocket>,
+    keypair: &Keypair,
+    packet_sender: Sender<PacketBatch>,
+    exit: Arc<AtomicBool>,
+    max_connections_per_peer: usize,
+    staked_nodes: Arc<RwLock<StakedNodes>>,
+    max_staked_connections: usize,
+    max_unstaked_connections: usize,
+    wait_for_chunk_timeout: Duration,
+    coalesce: Duration,
+) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
+    info!("Start {name} quic server on {sockets:?}");
+    let (config, _cert) = configure_server(
+        keypair,
+        max_staked_connections,
+        max_unstaked_connections,
+        sockets.len(),
+    )?;
+
+    let endpoints = sockets
+        .into_iter()
+        .map(|sock| {
+            Endpoint::new(
+                EndpointConfig::default(),
+                Some(config.clone()),
+                sock,
+                Arc::new(TokioRuntime),
+            )
+            .map_err(QuicServerError::EndpointFailed)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
-        endpoint.clone(),
+        endpoints.clone(),
         packet_sender,
         exit,
         max_connections_per_peer,
@@ -146,13 +189,13 @@ pub fn spawn_server(
         wait_for_chunk_timeout,
         coalesce,
     ));
-    Ok((endpoint, stats, handle))
+    Ok((endpoints, stats, handle))
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn run_server(
     name: &'static str,
-    incoming: Endpoint,
+    incoming: Vec<Endpoint>,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
     max_connections_per_peer: usize,
@@ -183,7 +226,12 @@ async fn run_server(
         coalesce,
     ));
     while !exit.load(Ordering::Relaxed) {
-        let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
+        let futures = incoming.iter().map(|incoming| Box::pin(incoming.accept()));
+        let incoming = futures::future::select_all(futures).map(|(fut, _i, _)| {
+            // eprintln!("accept on {i}");
+            fut
+        });
+        let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming).await;
 
         if last_datapoint.elapsed().as_secs() >= 5 {
             stats.report(name);
@@ -688,12 +736,17 @@ async fn packet_batch_sender(
                 break;
             }
 
-            let timeout_res = timeout(Duration::from_micros(250), packet_receiver.recv()).await;
+            let timeout_res = timeout(
+                coalesce.saturating_sub(Instant::now() - batch_start_time),
+                packet_receiver.recv(),
+            )
+            .await;
 
             if let Ok(Ok(packet_accumulator)) = timeout_res {
                 // Start the timeout from when the packet batch first becomes non-empty
                 if packet_batch.is_empty() {
                     batch_start_time = Instant::now();
+                } else {
                 }
 
                 unsafe {
@@ -778,12 +831,19 @@ async fn handle_connection(
                             .clamp(Duration::from_millis(10), Duration::from_secs(1));
                         let mut start = Instant::now();
                         while !stream_exit.load(Ordering::Relaxed) {
-                            if let Ok(chunk) = tokio::time::timeout(
+                            let res = tokio::time::timeout(
                                 exit_check_interval,
                                 stream.read_chunk(PACKET_DATA_SIZE, false),
                             )
-                            .await
-                            {
+                            .await;
+                            // XXX: here: read_chunk stops returning chunks,
+                            // so we don't feed packet_sender
+                            if let ConnectionPeerType::Staked(_) = params.peer_type {
+                                if res.is_err() {
+                                    log::error!("TIMEOUT");
+                                }
+                            }
+                            if let Ok(chunk) = res {
                                 if handle_chunk(
                                     chunk,
                                     &mut maybe_batch,
@@ -817,7 +877,6 @@ async fn handle_connection(
             }
         }
     }
-
     let removed_connection_count = connection_table.lock().await.remove_connection(
         ConnectionTableKey::new(remote_addr.ip(), params.remote_pubkey),
         remote_addr.port(),
@@ -1168,13 +1227,18 @@ pub mod test {
         async_channel::unbounded as async_unbounded,
         crossbeam_channel::{unbounded, Receiver},
         quinn::{ClientConfig, IdleTimeout, TransportConfig},
+        socket2,
         solana_sdk::{
             net::DEFAULT_TPU_COALESCE,
             quic::{QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT},
             signature::Keypair,
             signer::Signer,
         },
-        std::collections::HashMap,
+        std::{
+            collections::HashMap,
+            os::fd::{FromRawFd, IntoRawFd},
+            str::FromStr as _,
+        },
         tokio::time::sleep,
     };
 
@@ -1233,15 +1297,29 @@ pub mod test {
         SocketAddr,
         Arc<StreamStats>,
     ) {
-        let s = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let sockets = (0..10)
+            .map(|_| {
+                let sock = socket2::Socket::new(
+                    socket2::Domain::IPV4,
+                    socket2::Type::DGRAM,
+                    Some(socket2::Protocol::UDP),
+                )
+                .unwrap();
+                sock.set_reuse_port(true).unwrap();
+                sock.bind(&SocketAddr::from_str("127.0.0.1:42069").unwrap().into())
+                    .unwrap();
+                unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
+            })
+            .collect::<Vec<_>>();
+
         let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
-        let server_address = s.local_addr().unwrap();
+        let server_address = sockets[0].local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
-        let (_, stats, t) = spawn_server(
-            "quic_streamer_test",
-            s,
+        let (_, stats, t) = spawn_server_multi(
+            "one-million-sol",
+            sockets,
             &keypair,
             sender,
             exit.clone(),

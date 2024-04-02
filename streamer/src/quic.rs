@@ -37,7 +37,7 @@ impl SkipClientVerification {
 }
 
 pub struct SpawnServerResult {
-    pub endpoint: Endpoint,
+    pub endpoints: Vec<Endpoint>,
     pub thread: thread::JoinHandle<()>,
     pub key_updater: Arc<EndpointKeyUpdater>,
 }
@@ -61,6 +61,9 @@ impl rustls::server::ClientCertVerifier for SkipClientVerification {
 #[allow(clippy::field_reassign_with_default)] // https://github.com/rust-lang/rust-clippy/issues/6527
 pub(crate) fn configure_server(
     identity_keypair: &Keypair,
+    max_staked_connections: usize,
+    max_unstaked_connections: usize,
+    n_endpoints: usize,
 ) -> Result<(ServerConfig, String), QuicServerError> {
     let (cert, priv_key) = new_dummy_x509_certificate(identity_keypair);
     let cert_chain_pem_parts = vec![Pem {
@@ -77,6 +80,11 @@ pub(crate) fn configure_server(
 
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
     server_config.use_retry(true);
+    server_config.concurrent_connections(
+        (max_staked_connections as u32 + max_unstaked_connections as u32)
+            .div_ceil(n_endpoints as u32),
+    );
+
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
     // QUIC_MAX_CONCURRENT_STREAMS doubled, which was found to improve reliability
@@ -117,13 +125,22 @@ pub enum QuicServerError {
 }
 
 pub struct EndpointKeyUpdater {
-    endpoint: Endpoint,
+    endpoints: Vec<Endpoint>,
+    max_staked_connections: usize,
+    max_unstaked_connections: usize,
 }
 
 impl NotifyKeyUpdate for EndpointKeyUpdater {
     fn update_key(&self, key: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
-        let (config, _) = configure_server(key)?;
-        self.endpoint.set_server_config(Some(config));
+        let (config, _) = configure_server(
+            key,
+            self.max_staked_connections,
+            self.max_unstaked_connections,
+            self.endpoints.len(),
+        )?;
+        for endpoint in &self.endpoints {
+            endpoint.set_server_config(Some(config.clone()));
+        }
         Ok(())
     }
 }
@@ -433,7 +450,7 @@ impl StreamStats {
 pub fn spawn_server(
     thread_name: &'static str,
     metrics_name: &'static str,
-    sock: UdpSocket,
+    sockets: Vec<UdpSocket>,
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
@@ -445,11 +462,11 @@ pub fn spawn_server(
     coalesce: Duration,
 ) -> Result<SpawnServerResult, QuicServerError> {
     let runtime = rt(format!("{thread_name}Rt"));
-    let (endpoint, _stats, task) = {
+    let (endpoints, _stats, task) = {
         let _guard = runtime.enter();
-        crate::nonblocking::quic::spawn_server(
+        crate::nonblocking::quic::spawn_server_multi(
             metrics_name,
-            sock,
+            sockets,
             keypair,
             packet_sender,
             exit,
@@ -470,10 +487,12 @@ pub fn spawn_server(
         })
         .unwrap();
     let updater = EndpointKeyUpdater {
-        endpoint: endpoint.clone(),
+        endpoints: endpoints.clone(),
+        max_staked_connections,
+        max_unstaked_connections,
     };
     Ok(SpawnServerResult {
-        endpoint,
+        endpoints,
         thread: handle,
         key_updater: Arc::new(updater),
     })
@@ -502,13 +521,13 @@ mod test {
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let SpawnServerResult {
-            endpoint: _,
+            endpoints: _,
             thread: t,
             key_updater: _,
         } = spawn_server(
             "solQuicTest",
             "quic_streamer_test",
-            s,
+            vec![s],
             &keypair,
             sender,
             exit.clone(),
@@ -561,13 +580,13 @@ mod test {
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let SpawnServerResult {
-            endpoint: _,
+            endpoints: _,
             thread: t,
             key_updater: _,
         } = spawn_server(
             "solQuicTest",
             "quic_streamer_test",
-            s,
+            vec![s],
             &keypair,
             sender,
             exit.clone(),
@@ -607,13 +626,13 @@ mod test {
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let SpawnServerResult {
-            endpoint: _,
+            endpoints: _,
             thread: t,
             key_updater: _,
         } = spawn_server(
             "solQuicTest",
             "quic_streamer_test",
-            s,
+            vec![s],
             &keypair,
             sender,
             exit.clone(),

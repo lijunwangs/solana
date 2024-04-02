@@ -13,12 +13,14 @@
 //!
 //! Bank needs to provide an interface for us to query the stake weight
 
+use solana_net_utils::{bind_more_reuseport, bind_two_in_range_with_offset_reuseport};
 #[deprecated(
     since = "1.10.6",
     note = "Please use `solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE}` instead"
 )]
 #[allow(deprecated)]
 pub use solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE};
+use solana_sdk::quic::QUIC_ENDPOINTS;
 use {
     crate::{
         cluster_info_metrics::{
@@ -2782,8 +2784,8 @@ pub struct Sockets {
     pub serve_repair: UdpSocket,
     pub serve_repair_quic: UdpSocket,
     pub ancestor_hashes_requests: UdpSocket,
-    pub tpu_quic: UdpSocket,
-    pub tpu_forwards_quic: UdpSocket,
+    pub tpu_quic: Vec<UdpSocket>,
+    pub tpu_forwards_quic: Vec<UdpSocket>,
 }
 
 #[derive(Debug)]
@@ -2805,6 +2807,7 @@ impl Node {
 
         let ((_tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
             bind_two_in_range_with_offset(localhost_ip_addr, port_range, QUIC_PORT_OFFSET).unwrap();
+        let tpu_quic = bind_more_reuseport(tpu_quic, QUIC_ENDPOINTS);
         let (gossip_port, (gossip, ip_echo)) =
             bind_common_in_range(localhost_ip_addr, port_range).unwrap();
         let gossip_addr = SocketAddr::new(localhost_ip_addr, gossip_port);
@@ -2812,6 +2815,7 @@ impl Node {
         let tvu_quic = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let ((_tpu_forwards_port, tpu_forwards), (_tpu_forwards_quic_port, tpu_forwards_quic)) =
             bind_two_in_range_with_offset(localhost_ip_addr, port_range, QUIC_PORT_OFFSET).unwrap();
+        let tpu_forwards_quic = bind_more_reuseport(tpu_forwards_quic, QUIC_ENDPOINTS);
         let tpu_vote = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let repair = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let rpc_port = find_available_port_in_range(localhost_ip_addr, port_range).unwrap();
@@ -2889,7 +2893,7 @@ impl Node {
         if gossip_addr.port() != 0 {
             (
                 gossip_addr.port(),
-                bind_common(bind_ip_addr, gossip_addr.port(), false).unwrap_or_else(|e| {
+                bind_common(bind_ip_addr, gossip_addr.port(), false, false).unwrap_or_else(|e| {
                     panic!("gossip_addr bind_to port {}: {}", gossip_addr.port(), e)
                 }),
             )
@@ -2912,9 +2916,23 @@ impl Node {
         let (tvu_port, tvu) = Self::bind(bind_ip_addr, port_range);
         let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range);
         let ((tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
-            bind_two_in_range_with_offset(bind_ip_addr, port_range, QUIC_PORT_OFFSET).unwrap();
+            bind_two_in_range_with_offset_reuseport(
+                bind_ip_addr,
+                port_range,
+                QUIC_PORT_OFFSET,
+                (false, true),
+            )
+            .unwrap();
+        let tpu_quic = bind_more_reuseport(tpu_quic, QUIC_ENDPOINTS);
         let ((tpu_forwards_port, tpu_forwards), (_tpu_forwards_quic_port, tpu_forwards_quic)) =
-            bind_two_in_range_with_offset(bind_ip_addr, port_range, QUIC_PORT_OFFSET).unwrap();
+            bind_two_in_range_with_offset_reuseport(
+                bind_ip_addr,
+                port_range,
+                QUIC_PORT_OFFSET,
+                (false, true),
+            )
+            .unwrap();
+        let tpu_forwards_quic = bind_more_reuseport(tpu_forwards_quic, QUIC_ENDPOINTS);
         let (tpu_vote_port, tpu_vote) = Self::bind(bind_ip_addr, port_range);
         let (_, retransmit_socket) = Self::bind(bind_ip_addr, port_range);
         let (_, repair) = Self::bind(bind_ip_addr, port_range);
@@ -2999,6 +3017,7 @@ impl Node {
             bind_ip_addr,
             (tpu_port + QUIC_PORT_OFFSET, tpu_port + QUIC_PORT_OFFSET + 1),
         );
+        let tpu_quic = bind_more_reuseport(tpu_quic, QUIC_ENDPOINTS);
 
         let (tpu_forwards_port, tpu_forwards_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 8).expect("tpu_forwards multi_bind");
@@ -3010,6 +3029,7 @@ impl Node {
                 tpu_forwards_port + QUIC_PORT_OFFSET + 1,
             ),
         );
+        let tpu_forwards_quic = bind_more_reuseport(tpu_forwards_quic, QUIC_ENDPOINTS);
 
         let (tpu_vote_port, tpu_vote_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 1).expect("tpu_vote multi_bind");
