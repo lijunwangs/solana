@@ -668,10 +668,13 @@ async fn packet_batch_sender(
     trace!("enter packet_batch_sender");
     let mut batch_start_time = Instant::now();
 
-    // The RPC node is 136.144.48.141
-    let ping_server = IpAddr::V4(Ipv4Addr::new(136, 144, 48, 141));
-    // Could be 145.40.114.251?
-    let ping_server2 = IpAddr::V4(Ipv4Addr::new(145, 40, 114, 251));
+    // The RPC node is 136.144.48.141, 145.40.114.251, 136.144.48.165, 139.178.86.103
+    let ping_servers = [
+        IpAddr::V4(Ipv4Addr::new(136, 144, 48, 141)),
+        IpAddr::V4(Ipv4Addr::new(145, 40, 114, 251)),
+        IpAddr::V4(Ipv4Addr::new(136, 144, 48, 165)),
+        IpAddr::V4(Ipv4Addr::new(139, 178, 86, 103)),
+    ];
     loop {
         let mut packet_perf_measure: Vec<([u8; 64], std::time::Instant)> = Vec::default();
         let mut packet_batch = PacketBatch::with_capacity(PACKETS_PER_BATCH);
@@ -744,13 +747,16 @@ async fn packet_batch_sender(
                 // if let Some(signature) = signature_if_should_track_packet(&packet_batch[i])
                 //     .ok()
                 //     .flatten()
-                if packet_batch[i].meta().addr == ping_server || packet_batch[i].meta().addr == ping_server2 {
+                if ping_servers.contains(&packet_batch[i].meta().addr) {
                     let signature = get_signature_from_packet(&packet_batch[i]);
                     if let Ok(signature) = signature {
                         packet_perf_measure.push((*signature, packet_accumulator.start_time));
                         // we set the PERF_TRACK_PACKET on
                         packet_batch[i].meta_mut().set_track_performance(true);
-                        info!("Received ping packets from {:?} tpu:{name}", packet_batch[i].meta().addr);
+                        info!(
+                            "Received ping packets from {:?} tpu:{name}",
+                            packet_batch[i].meta().addr
+                        );
                     }
                 }
                 stats
