@@ -59,6 +59,9 @@ impl rustls::server::ClientCertVerifier for SkipClientVerification {
 pub(crate) fn configure_server(
     identity_keypair: &Keypair,
     gossip_host: IpAddr,
+    max_staked_connections: usize,
+    max_unstaked_connections: usize,
+    n_endpoints: usize,
 ) -> Result<(ServerConfig, String), QuicServerError> {
     let (cert, priv_key) = new_self_signed_tls_certificate(identity_keypair, gossip_host)?;
     let cert_chain_pem_parts = vec![Pem {
@@ -75,6 +78,11 @@ pub(crate) fn configure_server(
 
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
     server_config.use_retry(true);
+    server_config.concurrent_connections(
+        (max_staked_connections as u32 + max_unstaked_connections as u32)
+            .div_ceil(n_endpoints as u32),
+    );
+
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
     // QUIC_MAX_CONCURRENT_STREAMS doubled, which was found to improve reliability
@@ -624,7 +632,7 @@ impl StreamStats {
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
-    sock: UdpSocket,
+    sockets: Vec<UdpSocket>,
     keypair: &Keypair,
     gossip_host: IpAddr,
     packet_sender: Sender<PacketBatch>,
@@ -635,13 +643,13 @@ pub fn spawn_server(
     max_unstaked_connections: usize,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
-) -> Result<(Endpoint, thread::JoinHandle<()>), QuicServerError> {
+) -> Result<(Vec<Endpoint>, thread::JoinHandle<()>), QuicServerError> {
     let runtime = rt();
-    let (endpoint, _stats, task) = {
+    let (endpoints, _stats, task) = {
         let _guard = runtime.enter();
-        crate::nonblocking::quic::spawn_server(
+        crate::nonblocking::quic::spawn_server_multi(
             name,
-            sock,
+            sockets,
             keypair,
             gossip_host,
             packet_sender,
@@ -662,7 +670,7 @@ pub fn spawn_server(
             }
         })
         .unwrap();
-    Ok((endpoint, handle))
+    Ok((endpoints, handle))
 }
 
 #[cfg(test)]
@@ -690,7 +698,7 @@ mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, t) = spawn_server(
             "quic_streamer_test",
-            s,
+            vec![s],
             &keypair,
             ip,
             sender,
@@ -746,7 +754,7 @@ mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, t) = spawn_server(
             "quic_streamer_test",
-            s,
+            vec![s],
             &keypair,
             ip,
             sender,
@@ -789,7 +797,7 @@ mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, t) = spawn_server(
             "quic_streamer_test",
-            s,
+            vec![s],
             &keypair,
             ip,
             sender,

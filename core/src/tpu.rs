@@ -57,8 +57,8 @@ pub struct TpuSockets {
     pub transaction_forwards: Vec<UdpSocket>,
     pub vote: Vec<UdpSocket>,
     pub broadcast: Vec<UdpSocket>,
-    pub transactions_quic: UdpSocket,
-    pub transactions_forwards_quic: UdpSocket,
+    pub transactions_quic: Vec<UdpSocket>,
+    pub transactions_forwards_quic: Vec<UdpSocket>,
 }
 
 pub struct Tpu {
