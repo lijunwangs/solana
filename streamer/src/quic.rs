@@ -78,10 +78,10 @@ pub(crate) fn configure_server(
 
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
     server_config.use_retry(true);
-    server_config.concurrent_connections(
-        (max_staked_connections as u32 + max_unstaked_connections as u32)
-            .div_ceil(n_endpoints as u32),
-    );
+    // server_config.concurrent_connections(
+    //     (max_staked_connections as u32 + max_unstaked_connections as u32)
+    //         .div_ceil(n_endpoints as u32),
+    // );
 
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
