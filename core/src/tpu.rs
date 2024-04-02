@@ -34,7 +34,9 @@ use {
     solana_sdk::{clock::Slot, pubkey::Pubkey, quic::NotifyKeyUpdate, signature::Keypair},
     solana_streamer::{
         nonblocking::quic::{DEFAULT_MAX_STREAMS_PER_MS, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
-        quic::{spawn_server, SpawnServerResult, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
+        quic::{
+            spawn_server_multi, SpawnServerResult, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS,
+        },
         streamer::StakedNodes,
     },
     solana_turbine::broadcast_stage::{BroadcastStage, BroadcastStageType},
@@ -57,8 +59,8 @@ pub struct TpuSockets {
     pub transaction_forwards: Vec<UdpSocket>,
     pub vote: Vec<UdpSocket>,
     pub broadcast: Vec<UdpSocket>,
-    pub transactions_quic: UdpSocket,
-    pub transactions_forwards_quic: UdpSocket,
+    pub transactions_quic: Vec<UdpSocket>,
+    pub transactions_forwards_quic: Vec<UdpSocket>,
 }
 
 pub struct Tpu {
@@ -152,7 +154,7 @@ impl Tpu {
             endpoint: _,
             thread: tpu_quic_t,
             key_updater,
-        } = spawn_server(
+        } = spawn_server_multi(
             "quic_streamer_tpu",
             transactions_quic_sockets,
             keypair,
@@ -177,7 +179,7 @@ impl Tpu {
             endpoint: _,
             thread: tpu_forwards_quic_t,
             key_updater: forwards_key_updater,
-        } = spawn_server(
+        } = spawn_server_multi(
             "quic_streamer_tpu_forwards",
             transactions_forwards_quic_sockets,
             keypair,
