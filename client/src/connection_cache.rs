@@ -245,28 +245,29 @@ mod tests {
 
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
 
-        let (response_recv_endpoint, response_recv_thread) = solana_streamer::quic::spawn_server(
-            "quic_streamer_test",
-            response_recv_socket,
-            &keypair2,
-            response_recv_ip,
-            sender2,
-            response_recv_exit.clone(),
-            1,
-            staked_nodes,
-            10,
-            10,
-            DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
-            DEFAULT_TPU_COALESCE,
-        )
-        .unwrap();
+        let (mut response_recv_endpoint, response_recv_thread) =
+            solana_streamer::quic::spawn_server(
+                "quic_streamer_test",
+                vec![response_recv_socket],
+                &keypair2,
+                response_recv_ip,
+                sender2,
+                response_recv_exit.clone(),
+                1,
+                staked_nodes,
+                10,
+                10,
+                DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
+                DEFAULT_TPU_COALESCE,
+            )
+            .unwrap();
 
         let connection_cache = ConnectionCache::new_with_client_options(
             "connection_cache_test",
-            1,                            // connection_pool_size
-            Some(response_recv_endpoint), // client_endpoint
-            None,                         // cert_info
-            None,                         // stake_info
+            1,                                      // connection_pool_size
+            Some(response_recv_endpoint.remove(0)), // client_endpoint
+            None,                                   // cert_info
+            None,                                   // stake_info
         );
 
         // server port 1:

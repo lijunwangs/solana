@@ -1214,21 +1214,25 @@ impl ConnectionTable {
 #[cfg(test)]
 pub mod test {
     use {
-        super::*, crate::{
+        super::*,
+        crate::{
             nonblocking::quic::compute_max_allowed_uni_streams,
             quic::{MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
             tls_certificates::new_self_signed_tls_certificate,
-        }, assert_matches::assert_matches, async_channel::unbounded as async_unbounded, crossbeam_channel::{unbounded, Receiver}, quinn::{ClientConfig, IdleTimeout, TransportConfig}, socket2, solana_net_utils::{bind_more_reuseport, bind_to}, solana_sdk::{
+        },
+        assert_matches::assert_matches,
+        async_channel::unbounded as async_unbounded,
+        crossbeam_channel::{unbounded, Receiver},
+        quinn::{ClientConfig, IdleTimeout, TransportConfig},
+        solana_net_utils::{bind_more_reuseport, bind_to},
+        solana_sdk::{
             net::DEFAULT_TPU_COALESCE,
             quic::{QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT},
             signature::Keypair,
             signer::Signer,
-        }, std::{
-            collections::HashMap,
-            net::Ipv4Addr,
-            os::fd::{FromRawFd, IntoRawFd},
-            str::FromStr as _,
-        }, tokio::time::sleep
+        },
+        std::{collections::HashMap, net::Ipv4Addr},
+        tokio::time::sleep,
     };
 
     struct SkipServerVerification;
@@ -1288,7 +1292,8 @@ pub mod test {
         SocketAddr,
         Arc<StreamStats>,
     ) {
-        let tpu_quic = bind_to(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 42069, false, true).unwrap();
+        let tpu_quic =
+            bind_to(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 42069, false, true).unwrap();
         let sockets = bind_more_reuseport(tpu_quic, 10);
 
         let exit = Arc::new(AtomicBool::new(false));

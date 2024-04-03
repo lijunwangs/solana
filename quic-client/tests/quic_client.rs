@@ -70,7 +70,7 @@ mod tests {
         let (s, exit, keypair, ip) = server_args();
         let (_, t) = solana_streamer::quic::spawn_server(
             "quic_streamer_test",
-            s.try_clone().unwrap(),
+            vec![s.try_clone().unwrap()],
             &keypair,
             ip,
             sender,
@@ -208,7 +208,7 @@ mod tests {
         let (request_recv_socket, request_recv_exit, keypair, request_recv_ip) = server_args();
         let (request_recv_endpoint, request_recv_thread) = solana_streamer::quic::spawn_server(
             "quic_streamer_test",
-            request_recv_socket.try_clone().unwrap(),
+            vec![request_recv_socket.try_clone().unwrap()],
             &keypair,
             request_recv_ip,
             sender,
@@ -230,21 +230,22 @@ mod tests {
         let addr = response_recv_socket.local_addr().unwrap().ip();
         let port = response_recv_socket.local_addr().unwrap().port();
         let server_addr = SocketAddr::new(addr, port);
-        let (response_recv_endpoint, response_recv_thread) = solana_streamer::quic::spawn_server(
-            "quic_streamer_test",
-            response_recv_socket,
-            &keypair2,
-            response_recv_ip,
-            sender2,
-            response_recv_exit.clone(),
-            1,
-            staked_nodes,
-            10,
-            10,
-            DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
-            DEFAULT_TPU_COALESCE,
-        )
-        .unwrap();
+        let (mut response_recv_endpoint, response_recv_thread) =
+            solana_streamer::quic::spawn_server(
+                "quic_streamer_test",
+                vec![response_recv_socket],
+                &keypair2,
+                response_recv_ip,
+                sender2,
+                response_recv_exit.clone(),
+                1,
+                staked_nodes,
+                10,
+                10,
+                DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
+                DEFAULT_TPU_COALESCE,
+            )
+            .unwrap();
 
         // Request Sender, it uses the same endpoint as the response receiver:
         let addr = request_recv_socket.local_addr().unwrap().ip();
@@ -260,8 +261,10 @@ mod tests {
             key: priv_key,
         });
 
-        let endpoint =
-            QuicLazyInitializedEndpoint::new(client_certificate, Some(response_recv_endpoint));
+        let endpoint = QuicLazyInitializedEndpoint::new(
+            client_certificate,
+            Some(response_recv_endpoint.remove(0)),
+        );
         let request_sender =
             QuicClientConnection::new(Arc::new(endpoint), tpu_addr, connection_cache_stats);
         // Send a full size packet with single byte writes as a request.
