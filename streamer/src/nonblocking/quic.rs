@@ -1214,30 +1214,21 @@ impl ConnectionTable {
 #[cfg(test)]
 pub mod test {
     use {
-        super::*,
-        crate::{
+        super::*, crate::{
             nonblocking::quic::compute_max_allowed_uni_streams,
             quic::{MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
             tls_certificates::new_self_signed_tls_certificate,
-        },
-        assert_matches::assert_matches,
-        async_channel::unbounded as async_unbounded,
-        crossbeam_channel::{unbounded, Receiver},
-        quinn::{ClientConfig, IdleTimeout, TransportConfig},
-        socket2,
-        solana_sdk::{
+        }, assert_matches::assert_matches, async_channel::unbounded as async_unbounded, crossbeam_channel::{unbounded, Receiver}, quinn::{ClientConfig, IdleTimeout, TransportConfig}, socket2, solana_net_utils::{bind_more_reuseport, bind_to}, solana_sdk::{
             net::DEFAULT_TPU_COALESCE,
             quic::{QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT},
             signature::Keypair,
             signer::Signer,
-        },
-        std::{
+        }, std::{
             collections::HashMap,
             net::Ipv4Addr,
             os::fd::{FromRawFd, IntoRawFd},
             str::FromStr as _,
-        },
-        tokio::time::sleep,
+        }, tokio::time::sleep
     };
 
     struct SkipServerVerification;
@@ -1297,24 +1288,13 @@ pub mod test {
         SocketAddr,
         Arc<StreamStats>,
     ) {
-        let sockets = (0..10)
-            .map(|_| {
-                let sock = socket2::Socket::new(
-                    socket2::Domain::IPV4,
-                    socket2::Type::DGRAM,
-                    Some(socket2::Protocol::UDP),
-                )
-                .unwrap();
-                sock.set_reuse_port(true).unwrap();
-                sock.bind(&SocketAddr::from_str("127.0.0.1:42069").unwrap().into())
-                    .unwrap();
-                unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
-            })
-            .collect::<Vec<_>>();
+        let tpu_quic = bind_to(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 42069, false, true).unwrap();
+        let sockets = bind_more_reuseport(tpu_quic, 10);
 
         let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
+        let ip = "127.0.0.1".parse().unwrap();
         let server_address = sockets[0].local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
         let (_, stats, t) = spawn_server_multi(

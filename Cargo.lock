@@ -7216,6 +7216,7 @@ dependencies = [
  "socket2 0.5.5",
  "solana-logger",
  "solana-metrics",
+ "solana-net-utils",
  "solana-perf",
  "solana-sdk",
  "thiserror",
