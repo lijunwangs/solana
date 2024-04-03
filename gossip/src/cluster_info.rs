@@ -13,7 +13,9 @@
 //!
 //! Bank needs to provide an interface for us to query the stake weight
 
-use solana_net_utils::{bind_more_reuseport, bind_two_in_range_with_offset_reuseport};
+use solana_net_utils::{
+    bind_in_range_reuseport, bind_more_reuseport, bind_two_in_range_with_offset_reuseport,
+};
 #[deprecated(
     since = "1.10.6",
     note = "Please use `solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE}` instead"
@@ -2934,8 +2936,8 @@ impl Node {
             bind_common_in_range(bind_ip_addr, port_range).expect("Failed to bind")
         }
     }
-    fn bind(bind_ip_addr: IpAddr, port_range: PortRange) -> (u16, UdpSocket) {
-        bind_in_range(bind_ip_addr, port_range).expect("Failed to bind")
+    fn bind(bind_ip_addr: IpAddr, port_range: PortRange, reuseport: bool) -> (u16, UdpSocket) {
+        bind_in_range_reuseport(bind_ip_addr, port_range, reuseport).expect("Failed to bind")
     }
 
     pub fn new_single_bind(
@@ -2946,8 +2948,8 @@ impl Node {
     ) -> Self {
         let (gossip_port, (gossip, ip_echo)) =
             Self::get_gossip_port(gossip_addr, port_range, bind_ip_addr);
-        let (tvu_port, tvu) = Self::bind(bind_ip_addr, port_range);
-        let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range);
+        let (tvu_port, tvu) = Self::bind(bind_ip_addr, port_range, false);
+        let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range, false);
         let ((tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
             bind_two_in_range_with_offset_reuseport(
                 bind_ip_addr,
@@ -2966,13 +2968,14 @@ impl Node {
             )
             .unwrap();
         let tpu_forwards_quic = bind_more_reuseport(tpu_forwards_quic, QUIC_ENDPOINTS);
-        let (tpu_vote_port, tpu_vote) = Self::bind(bind_ip_addr, port_range);
-        let (_, retransmit_socket) = Self::bind(bind_ip_addr, port_range);
-        let (_, repair) = Self::bind(bind_ip_addr, port_range);
-        let (serve_repair_port, serve_repair) = Self::bind(bind_ip_addr, port_range);
-        let (serve_repair_quic_port, serve_repair_quic) = Self::bind(bind_ip_addr, port_range);
-        let (_, broadcast) = Self::bind(bind_ip_addr, port_range);
-        let (_, ancestor_hashes_requests) = Self::bind(bind_ip_addr, port_range);
+        let (tpu_vote_port, tpu_vote) = Self::bind(bind_ip_addr, port_range, false);
+        let (_, retransmit_socket) = Self::bind(bind_ip_addr, port_range, false);
+        let (_, repair) = Self::bind(bind_ip_addr, port_range, false);
+        let (serve_repair_port, serve_repair) = Self::bind(bind_ip_addr, port_range, false);
+        let (serve_repair_quic_port, serve_repair_quic) =
+            Self::bind(bind_ip_addr, port_range, false);
+        let (_, broadcast) = Self::bind(bind_ip_addr, port_range, false);
+        let (_, ancestor_hashes_requests) = Self::bind(bind_ip_addr, port_range, false);
 
         let rpc_port = find_available_port_in_range(bind_ip_addr, port_range).unwrap();
         let rpc_pubsub_port = find_available_port_in_range(bind_ip_addr, port_range).unwrap();
@@ -3042,13 +3045,14 @@ impl Node {
 
         let (tvu_port, tvu_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 8).expect("tvu multi_bind");
-        let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range);
+        let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range, false);
         let (tpu_port, tpu_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 32).expect("tpu multi_bind");
 
         let (_tpu_port_quic, tpu_quic) = Self::bind(
             bind_ip_addr,
             (tpu_port + QUIC_PORT_OFFSET, tpu_port + QUIC_PORT_OFFSET + 1),
+            true,
         );
         let tpu_quic = bind_more_reuseport(tpu_quic, QUIC_ENDPOINTS);
 
@@ -3061,6 +3065,7 @@ impl Node {
                 tpu_forwards_port + QUIC_PORT_OFFSET,
                 tpu_forwards_port + QUIC_PORT_OFFSET + 1,
             ),
+            true,
         );
         let tpu_forwards_quic = bind_more_reuseport(tpu_forwards_quic, QUIC_ENDPOINTS);
 
@@ -3070,14 +3075,15 @@ impl Node {
         let (_, retransmit_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 8).expect("retransmit multi_bind");
 
-        let (_, repair) = Self::bind(bind_ip_addr, port_range);
-        let (serve_repair_port, serve_repair) = Self::bind(bind_ip_addr, port_range);
-        let (serve_repair_quic_port, serve_repair_quic) = Self::bind(bind_ip_addr, port_range);
+        let (_, repair) = Self::bind(bind_ip_addr, port_range, false);
+        let (serve_repair_port, serve_repair) = Self::bind(bind_ip_addr, port_range, false);
+        let (serve_repair_quic_port, serve_repair_quic) =
+            Self::bind(bind_ip_addr, port_range, false);
 
         let (_, broadcast) =
             multi_bind_in_range(bind_ip_addr, port_range, 4).expect("broadcast multi_bind");
 
-        let (_, ancestor_hashes_requests) = Self::bind(bind_ip_addr, port_range);
+        let (_, ancestor_hashes_requests) = Self::bind(bind_ip_addr, port_range, false);
 
         let mut info = ContactInfo::new(
             *pubkey,

@@ -430,7 +430,15 @@ pub fn bind_common_in_range(
 }
 
 pub fn bind_in_range(ip_addr: IpAddr, range: PortRange) -> io::Result<(u16, UdpSocket)> {
-    let sock = udp_socket(false, false)?;
+    bind_in_range_reuseport(ip_addr, range, false)
+}
+
+pub fn bind_in_range_reuseport(
+    ip_addr: IpAddr,
+    range: PortRange,
+    reuseport: bool,
+) -> io::Result<(u16, UdpSocket)> {
+    let sock = udp_socket(false, reuseport)?;
 
     for port in range.0..range.1 {
         let addr = SocketAddr::new(ip_addr, port);
