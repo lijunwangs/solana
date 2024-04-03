@@ -57,8 +57,8 @@ use {
     },
 };
 
-/// Limit to 500K PPS
-const MAX_STREAMS_PER_100MS: u64 = 500_000 / 10;
+/// Limit to 250K PPS
+const MAX_STREAMS_PER_100MS: u64 = 250_000 / 10;
 const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
 const STREAM_THROTTLING_INTERVAL: Duration = Duration::from_millis(100);
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
