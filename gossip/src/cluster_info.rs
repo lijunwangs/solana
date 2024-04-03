@@ -2827,7 +2827,13 @@ impl Node {
         let port_range = (1024, 65535);
 
         let ((_tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
-            bind_two_in_range_with_offset(localhost_ip_addr, port_range, QUIC_PORT_OFFSET).unwrap();
+            bind_two_in_range_with_offset_reuseport(
+                localhost_ip_addr,
+                port_range,
+                QUIC_PORT_OFFSET,
+                (false, true),
+            )
+            .unwrap();
         let tpu_quic = bind_more_reuseport(tpu_quic, QUIC_ENDPOINTS);
         let (gossip_port, (gossip, ip_echo)) =
             bind_common_in_range(localhost_ip_addr, port_range).unwrap();
@@ -2835,7 +2841,13 @@ impl Node {
         let tvu = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let tvu_quic = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let ((_tpu_forwards_port, tpu_forwards), (_tpu_forwards_quic_port, tpu_forwards_quic)) =
-            bind_two_in_range_with_offset(localhost_ip_addr, port_range, QUIC_PORT_OFFSET).unwrap();
+            bind_two_in_range_with_offset_reuseport(
+                localhost_ip_addr,
+                port_range,
+                QUIC_PORT_OFFSET,
+                (false, true),
+            )
+            .unwrap();
         let tpu_forwards_quic = bind_more_reuseport(tpu_forwards_quic, QUIC_ENDPOINTS);
         let tpu_vote = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let repair = UdpSocket::bind(&localhost_bind_addr).unwrap();
