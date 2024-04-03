@@ -13,16 +13,12 @@
 //!
 //! Bank needs to provide an interface for us to query the stake weight
 
-use solana_net_utils::{
-    bind_in_range_reuseport, bind_more_reuseport, bind_two_in_range_with_offset_reuseport,
-};
 #[deprecated(
     since = "1.10.6",
     note = "Please use `solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE}` instead"
 )]
 #[allow(deprecated)]
 pub use solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE};
-use solana_sdk::quic::QUIC_ENDPOINTS;
 use {
     crate::{
         cluster_info_metrics::{
@@ -56,8 +52,9 @@ use {
     solana_ledger::shred::Shred,
     solana_measure::measure::Measure,
     solana_net_utils::{
-        bind_common, bind_common_in_range, bind_in_range,
-        find_available_port_in_range, multi_bind_in_range, PortRange,
+        bind_common, bind_common_in_range, bind_in_range, bind_in_range_reuseport,
+        bind_more_reuseport, bind_two_in_range_with_offset_reuseport, find_available_port_in_range,
+        multi_bind_in_range, PortRange,
     },
     solana_perf::{
         data_budget::DataBudget,
@@ -70,7 +67,7 @@ use {
         feature_set::FeatureSet,
         hash::Hash,
         pubkey::Pubkey,
-        quic::QUIC_PORT_OFFSET,
+        quic::{QUIC_ENDPOINTS, QUIC_PORT_OFFSET},
         sanitize::{Sanitize, SanitizeError},
         signature::{Keypair, Signable, Signature, Signer},
         timing::timestamp,
