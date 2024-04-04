@@ -33,10 +33,6 @@ impl SanitizedVersionedTransaction {
         &self.message
     }
 
-    pub fn get_signatures(&self) -> &Vec<Signature> {
-        &self.signatures
-    }
-
     /// Consumes the SanitizedVersionedTransaction, returning the fields individually.
     pub fn destruct(self) -> (Vec<Signature>, SanitizedVersionedMessage) {
         (self.signatures, self.message)
