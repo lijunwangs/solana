@@ -969,7 +969,7 @@ async fn handle_chunk(
                                     .total_unstaked_packets_sent_for_batching
                                     .fetch_add(1, Ordering::Relaxed);
                             }
-                            ConnectionPeerType::Staked => {
+                            ConnectionPeerType::Staked(_) => {
                                 stats
                                     .total_staked_packets_sent_for_batching
                                     .fetch_add(1, Ordering::Relaxed);
