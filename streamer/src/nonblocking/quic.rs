@@ -763,13 +763,13 @@ async fn handle_connection(
                         >= max_streams_per_throttling_interval
                     {
                         stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        match peer_type {
+                        match params.peer_type {
                             ConnectionPeerType::Unstaked => {
                                 stats
                                     .throttled_unstaked_streams
                                     .fetch_add(1, Ordering::Relaxed);
                             }
-                            ConnectionPeerType::Staked => {
+                            ConnectionPeerType::Staked(_) => {
                                 stats
                                     .throttled_staked_streams
                                     .fetch_add(1, Ordering::Relaxed);
@@ -953,7 +953,7 @@ async fn handle_chunk(
                                     .total_unstaked_packets_sent_for_batching
                                     .fetch_add(1, Ordering::Relaxed);
                             }
-                            ConnectionPeerType::Staked => {
+                            ConnectionPeerType::Staked(_) => {
                                 stats
                                     .total_staked_packets_sent_for_batching
                                     .fetch_add(1, Ordering::Relaxed);
