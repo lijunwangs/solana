@@ -436,7 +436,6 @@ impl StreamStats {
                 i64
             ),
             (
-
                 "stream_load_ema",
                 self.stream_load_ema.load(Ordering::Relaxed),
                 i64
