@@ -56,7 +56,7 @@ use {
     solana_ledger::shred::Shred,
     solana_measure::measure::Measure,
     solana_net_utils::{
-        bind_common, bind_common_in_range, bind_in_range, bind_two_in_range_with_offset,
+        bind_common, bind_common_in_range, bind_in_range,
         find_available_port_in_range, multi_bind_in_range, PortRange,
     },
     solana_perf::{
