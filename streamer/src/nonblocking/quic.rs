@@ -1256,12 +1256,7 @@ pub mod test {
             signature::Keypair,
             signer::Signer,
         },
-        std::{
-            collections::HashMap,
-            net::Ipv4Addr,
-            os::fd::{FromRawFd, IntoRawFd},
-            str::FromStr as _,
-        },
+        std::{collections::HashMap, net::Ipv4Addr},
         tokio::time::sleep,
     };
 
@@ -1323,7 +1318,7 @@ pub mod test {
         Arc<StreamStats>,
     ) {
         let sockets = {
-            #[cfg(not(target_os = "windows"))]
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
             {
                 use std::{
                     os::fd::{FromRawFd, IntoRawFd},
@@ -1344,7 +1339,7 @@ pub mod test {
                     })
                     .collect::<Vec<_>>()
             }
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 vec![UdpSocket::bind("127.0.0.1:0").unwrap()]
             }
