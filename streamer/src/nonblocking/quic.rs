@@ -234,7 +234,7 @@ async fn run_server(
                 endpoint: i,
             })
         })
-        .collect::<FuturesUnordered<_>>();    
+        .collect::<FuturesUnordered<_>>();
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = select! {
             ready = accepts.next() => {
@@ -1403,7 +1403,8 @@ pub mod test {
             signer::Signer,
         },
         std::{
-            collections::HashMap, net::Ipv4Addr,
+            collections::HashMap,
+            net::Ipv4Addr,
             os::fd::{FromRawFd, IntoRawFd},
             str::FromStr as _,
         },

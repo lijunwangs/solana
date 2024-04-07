@@ -107,9 +107,12 @@ pub(crate) fn configure_server(
     Ok((server_config, cert_chain_pem))
 }
 
+const MAX_WORKER_THREADS_COUNT: usize = 4;
+
 fn rt() -> Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .thread_name("quic-server")
+        .worker_threads(MAX_WORKER_THREADS_COUNT)
         .enable_all()
         .build()
         .unwrap()
