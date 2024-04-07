@@ -54,9 +54,13 @@ impl StakedStreamLoadEMA {
                 500
             });
 
-        let max_unstaked_load_in_throttling_window = Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT)
-            .apply_to(MAX_STREAMS_PER_MS * STREAM_THROTTLING_INTERVAL_MS)
-            .saturating_div(max_num_unstaked_connections);
+        let max_unstaked_load_in_throttling_window = if allow_unstaked_streams {
+            Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT)
+                .apply_to(MAX_STREAMS_PER_MS * STREAM_THROTTLING_INTERVAL_MS)
+                .saturating_div(max_num_unstaked_connections)
+        } else {
+            0
+        };
 
         Self {
             current_load_ema: AtomicU64::default(),
