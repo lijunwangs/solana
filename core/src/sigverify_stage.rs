@@ -52,7 +52,7 @@ pub enum SigVerifyServiceError<SendType> {
 type Result<T, SendType> = std::result::Result<T, SigVerifyServiceError<SendType>>;
 
 pub struct SigVerifyStage {
-    thread_hdl: JoinHandle<()>,
+    thread_hdls: Vec<JoinHandle<()>>,
 }
 
 pub trait SigVerifier {
@@ -261,13 +261,17 @@ impl SigVerifier for DisabledSigVerifier {
 }
 
 impl SigVerifyStage {
-    pub fn new<T: SigVerifier + 'static + Send>(
+    pub fn new<T: SigVerifier + 'static + Clone + Send>(
         packet_receiver: Receiver<PacketBatch>,
         verifier: T,
         name: &'static str,
     ) -> Self {
-        let thread_hdl = Self::verifier_services(packet_receiver, verifier, name);
-        Self { thread_hdl }
+        let mut thread_hdls = Vec::default();
+        for _ in 0..4 {
+            let hdl = Self::verifier_services(packet_receiver.clone(), verifier.clone(), name);
+            thread_hdls.push(hdl);
+        }
+        Self { thread_hdls }
     }
 
     pub fn discard_excess_packets(
@@ -518,7 +522,10 @@ impl SigVerifyStage {
     }
 
     pub fn join(self) -> thread::Result<()> {
-        self.thread_hdl.join()
+        for hdl in self.thread_hdls {
+            hdl.join()?;
+        }
+        Ok(())
     }
 }
 
