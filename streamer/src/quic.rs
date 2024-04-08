@@ -1,6 +1,6 @@
 use {
     crate::{
-        nonblocking::quic::{ConnectionPeerType, ALPN_TPU_PROTOCOL_ID},
+        nonblocking::quic::{ConnectionPeerType, ALPN_TPU_PROTOCOL_ID, MAX_STREAMS_PER_100MS},
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate,
     },
@@ -647,6 +647,7 @@ pub fn spawn_server(
         staked_nodes,
         max_staked_connections,
         max_unstaked_connections,
+        MAX_STREAMS_PER_100MS,
         wait_for_chunk_timeout,
         coalesce,
     )
@@ -665,6 +666,7 @@ pub fn spawn_server_multi(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    max_streams_per_100ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<(Vec<Endpoint>, thread::JoinHandle<()>), QuicServerError> {
@@ -682,6 +684,7 @@ pub fn spawn_server_multi(
             staked_nodes,
             max_staked_connections,
             max_unstaked_connections,
+            max_streams_per_100ms,
             wait_for_chunk_timeout,
             coalesce,
         )
