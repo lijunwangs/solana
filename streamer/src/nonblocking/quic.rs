@@ -60,8 +60,8 @@ use {
     },
 };
 
-/// Limit to 500K PPS
-const MAX_STREAMS_PER_100MS: u64 = 500_000 / 10;
+/// Limit to 25K PPS
+pub const MAX_STREAMS_PER_100MS: u64 = 25_000 / 10;
 const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
 const STREAM_THROTTLING_INTERVAL: Duration = Duration::from_millis(100);
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
@@ -107,6 +107,7 @@ struct PacketAccumulator {
     pub start_time: Instant,
 }
 
+/// This is used for testing now.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
@@ -124,6 +125,7 @@ pub fn spawn_server(
 ) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
     spawn_server_multi(
         name,
+        TpuType::Regular,
         vec![sock],
         keypair,
         gossip_host,
@@ -133,15 +135,23 @@ pub fn spawn_server(
         staked_nodes,
         max_staked_connections,
         max_unstaked_connections,
+        MAX_STREAMS_PER_100MS,
         wait_for_chunk_timeout,
         coalesce,
     )
     .map(|(mut endpoints, stats, handle)| (endpoints.remove(0), stats, handle))
 }
 
+#[derive(Copy, Clone)]
+pub enum TpuType {
+    Regular,
+    Staked,
+}
+
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub fn spawn_server_multi(
     name: &'static str,
+    tpu_type: TpuType,
     sockets: Vec<UdpSocket>,
     keypair: &Keypair,
     gossip_host: IpAddr,
@@ -151,6 +161,7 @@ pub fn spawn_server_multi(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    max_streams_per_100ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
@@ -172,6 +183,7 @@ pub fn spawn_server_multi(
     let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
+        tpu_type,
         endpoints.clone(),
         packet_sender,
         exit,
@@ -179,6 +191,7 @@ pub fn spawn_server_multi(
         staked_nodes,
         max_staked_connections,
         max_unstaked_connections,
+        max_streams_per_100ms,
         stats.clone(),
         wait_for_chunk_timeout,
         coalesce,
@@ -189,6 +202,7 @@ pub fn spawn_server_multi(
 #[allow(clippy::too_many_arguments)]
 async fn run_server(
     name: &'static str,
+    tpu_type: TpuType,
     incoming: Vec<Endpoint>,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
@@ -196,6 +210,7 @@ async fn run_server(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    max_streams_per_100ms: u64,
     stats: Arc<StreamStats>,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
@@ -256,6 +271,7 @@ async fn run_server(
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
             tokio::spawn(setup_connection(
+                tpu_type,
                 connection,
                 unstaked_connection_table.clone(),
                 staked_connection_table.clone(),
@@ -266,6 +282,7 @@ async fn run_server(
                 max_unstaked_connections,
                 stats.clone(),
                 wait_for_chunk_timeout,
+                max_streams_per_100ms,
             ));
         } else {
             debug!("accept(): Timed out waiting for connection");
@@ -394,11 +411,13 @@ impl NewConnectionHandlerParams {
 }
 
 fn handle_and_cache_new_connection(
+    tpu_type: TpuType,
     connection: Connection,
     mut connection_table_l: MutexGuard<ConnectionTable>,
     connection_table: Arc<Mutex<ConnectionTable>>,
     params: &NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
+    max_streams_per_100ms: u64,
 ) -> Result<(), ConnectionHandlerError> {
     if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
         connection_table_l.peer_type,
@@ -441,6 +460,7 @@ fn handle_and_cache_new_connection(
             let peer_type = connection_table_l.peer_type;
             drop(connection_table_l);
             tokio::spawn(handle_connection(
+                tpu_type,
                 connection,
                 remote_addr,
                 last_update,
@@ -449,6 +469,7 @@ fn handle_and_cache_new_connection(
                 params.clone(),
                 peer_type,
                 wait_for_chunk_timeout,
+                max_streams_per_100ms,
             ));
             Ok(())
         } else {
@@ -472,11 +493,13 @@ fn handle_and_cache_new_connection(
 }
 
 async fn prune_unstaked_connections_and_add_new_connection(
+    tpu_type: TpuType,
     connection: Connection,
     connection_table: Arc<Mutex<ConnectionTable>>,
     max_connections: usize,
     params: &NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
+    max_streams_per_100ms: u64,
 ) -> Result<(), ConnectionHandlerError> {
     let stats = params.stats.clone();
     if max_connections > 0 {
@@ -484,11 +507,13 @@ async fn prune_unstaked_connections_and_add_new_connection(
         let mut connection_table = connection_table.lock().await;
         prune_unstaked_connection_table(&mut connection_table, max_connections, stats);
         handle_and_cache_new_connection(
+            tpu_type,
             connection,
             connection_table,
             connection_table_clone,
             params,
             wait_for_chunk_timeout,
+            max_streams_per_100ms,
         )
     } else {
         connection.close(
@@ -545,6 +570,7 @@ fn compute_recieve_window(
 
 #[allow(clippy::too_many_arguments)]
 async fn setup_connection(
+    tpu_type: TpuType,
     connecting: Connecting,
     unstaked_connection_table: Arc<Mutex<ConnectionTable>>,
     staked_connection_table: Arc<Mutex<ConnectionTable>>,
@@ -555,6 +581,7 @@ async fn setup_connection(
     max_unstaked_connections: usize,
     stats: Arc<StreamStats>,
     wait_for_chunk_timeout: Duration,
+    max_streams_per_100ms: u64,
 ) {
     const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
     let from = connecting.remote_address();
@@ -583,6 +610,35 @@ async fn setup_connection(
                     },
                 );
 
+                if matches!(tpu_type, TpuType::Staked) {
+                    if max_streams_per_100ms == 0 {
+                        // On Staked port, rejecting connections when its stake ratio is too small.
+                        info!(
+                            "Rejecting connection from {} key {:?} stake: {}  as max PPS is 0",
+                            new_connection.remote_address(),
+                            params.remote_pubkey,
+                            params.stake
+                        );
+                        stats
+                            .rejected_low_staked_connections_on_staked_port
+                            .fetch_add(1, Ordering::Relaxed);
+                        return;
+                    }
+
+                    let min_ratio = 1_f64 / max_streams_per_100ms as f64;
+                    let stake_ratio = params.stake as f64 / params.total_stake as f64;
+
+                    if stake_ratio < min_ratio {
+                        // On Staked port, rejecting connections when its stake ratio is too small.
+                        info!("Rejecting connection from {} key {:?} stake: {} ratio: {stake_ratio} threshold: {min_ratio}",
+                            new_connection.remote_address(), params.remote_pubkey, params.stake);
+                        stats
+                            .rejected_low_staked_connections_on_staked_port
+                            .fetch_add(1, Ordering::Relaxed);
+                        return;
+                    }
+                }
+
                 if params.stake > 0 {
                     let mut connection_table_l = staked_connection_table.lock().await;
 
@@ -594,11 +650,13 @@ async fn setup_connection(
 
                     if connection_table_l.total_size < max_staked_connections {
                         if let Ok(()) = handle_and_cache_new_connection(
+                            tpu_type,
                             new_connection,
                             connection_table_l,
                             staked_connection_table.clone(),
                             &params,
                             wait_for_chunk_timeout,
+                            max_streams_per_100ms,
                         ) {
                             stats
                                 .connection_added_from_staked_peer
@@ -609,11 +667,13 @@ async fn setup_connection(
                         // put this connection in the unstaked connection table. If needed, prune a
                         // connection from the unstaked connection table.
                         if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
+                            tpu_type,
                             new_connection,
                             unstaked_connection_table.clone(),
                             max_unstaked_connections,
                             &params,
                             wait_for_chunk_timeout,
+                            max_streams_per_100ms,
                         )
                         .await
                         {
@@ -630,11 +690,13 @@ async fn setup_connection(
                         }
                     }
                 } else if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
+                    tpu_type,
                     new_connection,
                     unstaked_connection_table.clone(),
                     max_unstaked_connections,
                     &params,
                     wait_for_chunk_timeout,
+                    max_streams_per_100ms,
                 )
                 .await
                 {
@@ -791,20 +853,39 @@ async fn packet_batch_sender(
 }
 
 fn max_streams_for_connection_in_100ms(
+    tpu_type: TpuType,
     connection_type: ConnectionPeerType,
     stake: u64,
     total_stake: u64,
+    max_streams_per_100ms: u64,
 ) -> u64 {
-    if matches!(connection_type, ConnectionPeerType::Unstaked) || stake == 0 {
+    if max_streams_per_100ms == 0 {
+        return 0;
+    }
+
+    let super_low_staked_on_regular_port = if matches!(tpu_type, TpuType::Regular)
+        && matches!(connection_type, ConnectionPeerType::Staked)
+    {
+        let min_ratio = 1_f64 / max_streams_per_100ms as f64;
+        let stake_ratio = stake as f64 / total_stake as f64;
+        stake_ratio < min_ratio
+    } else {
+        false
+    };
+
+    if matches!(connection_type, ConnectionPeerType::Unstaked)
+        || stake == 0
+        || super_low_staked_on_regular_port
+    {
         Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT)
-            .apply_to(MAX_STREAMS_PER_100MS)
+            .apply_to(max_streams_per_100ms)
             .saturating_div(MAX_UNSTAKED_CONNECTIONS as u64)
     } else {
-        const MIN_STAKED_STREAMS: u64 = 8;
-        let max_total_staked_streams: u64 = MAX_STREAMS_PER_100MS
-            - Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT).apply_to(MAX_STREAMS_PER_100MS);
+        const MIN_STAKED_STREAMS_PER_100MS: u64 = 1;
+        let max_total_staked_streams: u64 = max_streams_per_100ms
+            - Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT).apply_to(max_streams_per_100ms);
         std::cmp::max(
-            MIN_STAKED_STREAMS,
+            MIN_STAKED_STREAMS_PER_100MS,
             ((max_total_staked_streams as f64 / total_stake as f64) * stake as f64) as u64,
         )
     }
@@ -846,6 +927,7 @@ async fn track_streamer_fetch_packet_performance(
 }
 
 async fn handle_connection(
+    tpu_type: TpuType,
     connection: Connection,
     remote_addr: SocketAddr,
     last_update: Arc<AtomicU64>,
@@ -854,6 +936,7 @@ async fn handle_connection(
     params: NewConnectionHandlerParams,
     peer_type: ConnectionPeerType,
     wait_for_chunk_timeout: Duration,
+    max_streams_per_100ms: u64,
 ) {
     let stats = params.stats;
     debug!(
@@ -864,8 +947,13 @@ async fn handle_connection(
     );
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
-    let max_streams_per_100ms =
-        max_streams_for_connection_in_100ms(peer_type, params.stake, params.total_stake);
+    let max_streams_per_100ms = max_streams_for_connection_in_100ms(
+        tpu_type,
+        peer_type,
+        params.stake,
+        params.total_stake,
+        max_streams_per_100ms,
+    );
     let mut last_throttling_instant = tokio::time::Instant::now();
     let mut streams_in_current_interval = 0;
     let peer = ConnectionTableKey::new(remote_addr.ip(), params.remote_pubkey);
@@ -1479,6 +1567,7 @@ pub mod test {
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
         let (_, stats, t) = spawn_server_multi(
             "one-million-sol",
+            TpuType::Regular,
             sockets,
             &keypair,
             ip,
@@ -1488,6 +1577,7 @@ pub mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_100MS,
             Duration::from_secs(2),
             DEFAULT_TPU_COALESCE,
         )
@@ -2298,41 +2388,77 @@ pub mod test {
     fn test_max_streams_for_connection_in_100ms() {
         // 50K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
-            max_streams_for_connection_in_100ms(ConnectionPeerType::Unstaked, 0, 10000),
+            max_streams_for_connection_in_100ms(
+                TpuType::Regular,
+                ConnectionPeerType::Unstaked,
+                0,
+                10000,
+                MAX_STREAMS_PER_100MS,
+            ),
             20
         );
 
         // 50K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
-            max_streams_for_connection_in_100ms(ConnectionPeerType::Unstaked, 10, 10000),
+            max_streams_for_connection_in_100ms(
+                TpuType::Regular,
+                ConnectionPeerType::Unstaked,
+                10,
+                10000,
+                MAX_STREAMS_PER_100MS,
+            ),
             20
         );
 
         // If stake is 0, same limits as unstaked connections will apply.
         // 50K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
-            max_streams_for_connection_in_100ms(ConnectionPeerType::Staked, 0, 10000),
+            max_streams_for_connection_in_100ms(
+                TpuType::Regular,
+                ConnectionPeerType::Staked,
+                0,
+                10000,
+                MAX_STREAMS_PER_100MS,
+            ),
             20
         );
 
         // max staked streams = 50K packets per ms * 80% = 40K
         // function = 40K * stake / total_stake
         assert_eq!(
-            max_streams_for_connection_in_100ms(ConnectionPeerType::Staked, 15, 10000),
+            max_streams_for_connection_in_100ms(
+                TpuType::Regular,
+                ConnectionPeerType::Staked,
+                15,
+                10000,
+                MAX_STREAMS_PER_100MS,
+            ),
             60
         );
 
         // max staked streams = 50K packets per ms * 80% = 40K
         // function = 40K * stake / total_stake
         assert_eq!(
-            max_streams_for_connection_in_100ms(ConnectionPeerType::Staked, 1000, 10000),
+            max_streams_for_connection_in_100ms(
+                TpuType::Regular,
+                ConnectionPeerType::Staked,
+                1000,
+                10000,
+                MAX_STREAMS_PER_100MS,
+            ),
             4000
         );
 
         // max staked streams = 50K packets per ms * 80% = 40K
         // minimum staked streams.
         assert_eq!(
-            max_streams_for_connection_in_100ms(ConnectionPeerType::Staked, 1, 50000),
+            max_streams_for_connection_in_100ms(
+                TpuType::Regular,
+                ConnectionPeerType::Staked,
+                1,
+                50000,
+                MAX_STREAMS_PER_100MS,
+            ),
             8
         );
     }
