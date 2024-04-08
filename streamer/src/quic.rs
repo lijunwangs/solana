@@ -1,6 +1,6 @@
 use {
     crate::{
-        nonblocking::quic::{ConnectionPeerType, ALPN_TPU_PROTOCOL_ID},
+        nonblocking::quic::{ConnectionPeerType, ALPN_TPU_PROTOCOL_ID, MAX_STREAMS_PER_100MS},
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate,
     },
@@ -650,6 +650,7 @@ pub fn spawn_server(
             staked_nodes,
             max_staked_connections,
             max_unstaked_connections,
+            max_streams_per_100ms,
             wait_for_chunk_timeout,
             coalesce,
         )
