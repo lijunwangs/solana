@@ -227,7 +227,11 @@ mod tests {
         crossbeam_channel::unbounded,
         solana_sdk::{net::DEFAULT_TPU_COALESCE, signature::Keypair},
         solana_streamer::{
-            nonblocking::quic::DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, quic::SpawnServerResult,
+            nonblocking::{
+                quic::{TpuType, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
+                stream_throttle::MAX_STREAMS_PER_MS,
+            },
+            quic::SpawnServerResult,
             streamer::StakedNodes,
         },
         std::{
@@ -262,6 +266,7 @@ mod tests {
         } = solana_streamer::quic::spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Regular,
             response_recv_socket,
             &keypair2,
             sender2,
@@ -270,6 +275,7 @@ mod tests {
             staked_nodes,
             10,
             10,
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )

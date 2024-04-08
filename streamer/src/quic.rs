@@ -1,6 +1,7 @@
 use {
     crate::{
-        nonblocking::quic::ALPN_TPU_PROTOCOL_ID, streamer::StakedNodes,
+        nonblocking::quic::{TpuType, ALPN_TPU_PROTOCOL_ID},
+        streamer::StakedNodes,
         tls_certificates::new_dummy_x509_certificate,
     },
     crossbeam_channel::Sender,
@@ -181,6 +182,7 @@ pub struct StreamStats {
     pub(crate) total_unstaked_packets_sent_for_batching: AtomicUsize,
     pub(crate) throttled_staked_streams: AtomicUsize,
     pub(crate) throttled_unstaked_streams: AtomicUsize,
+    pub(crate) rejected_low_staked_connections_on_staked_port: AtomicUsize,
 }
 
 impl StreamStats {
@@ -492,14 +494,22 @@ impl StreamStats {
                 self.perf_track_overhead_us.swap(0, Ordering::Relaxed),
                 i64
             ),
+            (
+                "rejected_low_staked_connections_on_staked_port",
+                self.rejected_low_staked_connections_on_staked_port
+                    .swap(0, Ordering::Relaxed),
+                i64
+            ),
         );
     }
 }
 
+/// This is used for testing only
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     thread_name: &'static str,
     metrics_name: &'static str,
+    tpu_tpye: TpuType,
     sock: UdpSocket,
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
@@ -508,6 +518,7 @@ pub fn spawn_server(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    max_streams_per_100ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<SpawnServerResult, QuicServerError> {
@@ -516,6 +527,7 @@ pub fn spawn_server(
         let _guard = runtime.enter();
         crate::nonblocking::quic::spawn_server(
             metrics_name,
+            tpu_tpye,
             sock,
             keypair,
             packet_sender,
@@ -524,6 +536,7 @@ pub fn spawn_server(
             staked_nodes,
             max_staked_connections,
             max_unstaked_connections,
+            max_streams_per_100ms,
             wait_for_chunk_timeout,
             coalesce,
         )
@@ -550,7 +563,10 @@ pub fn spawn_server(
 mod test {
     use {
         super::*,
-        crate::nonblocking::quic::{test::*, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
+        crate::nonblocking::{
+            quic::{test::*, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
+            stream_throttle::MAX_STREAMS_PER_MS,
+        },
         crossbeam_channel::unbounded,
         solana_sdk::net::DEFAULT_TPU_COALESCE,
         std::net::SocketAddr,
@@ -575,6 +591,7 @@ mod test {
         } = spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             sender,
@@ -583,6 +600,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -634,6 +652,7 @@ mod test {
         } = spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             sender,
@@ -642,6 +661,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -680,6 +700,7 @@ mod test {
         } = spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Staked,
             s,
             &keypair,
             sender,
@@ -688,6 +709,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             0, // Do not allow any connection from unstaked clients/nodes
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )

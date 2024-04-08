@@ -33,7 +33,7 @@ use {
     solana_runtime::{bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache},
     solana_sdk::{clock::Slot, pubkey::Pubkey, quic::NotifyKeyUpdate, signature::Keypair},
     solana_streamer::{
-        nonblocking::quic::DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
+        nonblocking::quic::{TpuType, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
         quic::{spawn_server, SpawnServerResult, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
         streamer::StakedNodes,
     },
@@ -148,6 +148,8 @@ impl Tpu {
 
         let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
+        const MAX_STREAMS_PER_100MS_TPU: u64 = 25_000 / 10;
+
         let SpawnServerResult {
             endpoint: _,
             thread: tpu_quic_t,
@@ -155,6 +157,7 @@ impl Tpu {
         } = spawn_server(
             "solQuicTpu",
             "quic_streamer_tpu",
+            TpuType::Regular,
             transactions_quic_sockets,
             keypair,
             packet_sender,
@@ -163,11 +166,13 @@ impl Tpu {
             staked_nodes.clone(),
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_100MS_TPU,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             tpu_coalesce,
         )
         .unwrap();
 
+        const MAX_STREAMS_PER_100MS_TPU_FWD: u64 = 5_000 / 10;
         let SpawnServerResult {
             endpoint: _,
             thread: tpu_forwards_quic_t,
@@ -175,6 +180,7 @@ impl Tpu {
         } = spawn_server(
             "solQuicTpuFwd",
             "quic_streamer_tpu_forwards",
+            TpuType::Staked,
             transactions_forwards_quic_sockets,
             keypair,
             forwarded_packet_sender,
@@ -183,6 +189,7 @@ impl Tpu {
             staked_nodes.clone(),
             MAX_STAKED_CONNECTIONS.saturating_add(MAX_UNSTAKED_CONNECTIONS),
             0, // Prevent unstaked nodes from forwarding transactions
+            MAX_STREAMS_PER_100MS_TPU_FWD,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             tpu_coalesce,
         )

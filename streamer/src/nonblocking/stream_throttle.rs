@@ -1,4 +1,5 @@
 use {
+    super::quic::TpuType,
     crate::{
         nonblocking::quic::ConnectionPeerType,
         quic::{StreamStats, MAX_UNSTAKED_CONNECTIONS},
@@ -15,7 +16,7 @@ use {
 };
 
 /// Limit to 250K PPS
-const MAX_STREAMS_PER_MS: u64 = 250;
+pub const MAX_STREAMS_PER_MS: u64 = 250;
 const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
 const STREAM_THROTTLING_INTERVAL_MS: u64 = 100;
 pub const STREAM_STOP_CODE_THROTTLING: u32 = 15;
@@ -145,9 +146,22 @@ impl StakedStreamLoadEMA {
 
     pub(crate) fn available_load_capacity_in_throttling_duration(
         &self,
+        tpu_type: TpuType,
         peer_type: ConnectionPeerType,
         total_stake: u64,
+        max_streams_per_100ms: u64,
     ) -> u64 {
+        // If it is a staked connection with ultra low stake ratio
+        if matches!(tpu_type, TpuType::Regular) {
+            if let ConnectionPeerType::Staked(stake) = &peer_type {
+                let min_ratio = 1_f64 / max_streams_per_100ms as f64;
+                let stake_ratio = *stake as f64 / total_stake as f64;
+                if stake_ratio < min_ratio {
+                    return self.max_unstaked_load_in_throttling_window;
+                }
+            }
+        }
+
         match peer_type {
             ConnectionPeerType::Unstaked => self.max_unstaked_load_in_throttling_window,
             ConnectionPeerType::Staked(stake) => {
@@ -241,8 +255,10 @@ pub mod test {
         // 25K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Unstaked,
                 10000,
+                MAX_STREAMS_PER_MS,
             ),
             10
         );
@@ -268,8 +284,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((10K * 10K) / 10K) * 15 / 10K  = 30
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(15),
                 10000,
+                MAX_STREAMS_PER_MS,
             ),
             30
         );
@@ -278,8 +296,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((10K * 10K) / 10K) * 1K / 10K  = 2K
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1000),
                 10000,
+                MAX_STREAMS_PER_MS,
             ),
             2000
         );
@@ -289,8 +309,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((10K * 10K) / 2.5K) * 15 / 10K  = 120
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(15),
                 10000,
+                MAX_STREAMS_PER_MS,
             ),
             120
         );
@@ -299,8 +321,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((10K * 10K) / 2.5K) * 1K / 10K  = 8000
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1000),
                 10000,
+                MAX_STREAMS_PER_MS,
             ),
             8000
         );
@@ -311,8 +335,10 @@ pub mod test {
         // function = ((10K * 10K) / 25% of 10K) * stake / total_stake
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(15),
                 10000,
+                MAX_STREAMS_PER_MS,
             ),
             120
         );
@@ -320,8 +346,10 @@ pub mod test {
         // function = ((10K * 10K) / 25% of 10K) * stake / total_stake
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1000),
                 10000,
+                MAX_STREAMS_PER_MS
             ),
             8000
         );
@@ -330,8 +358,10 @@ pub mod test {
         // max_unstaked_load_in_throttling_window + 1 streams.
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1),
                 40000,
+                MAX_STREAMS_PER_MS,
             ),
             load_ema
                 .max_unstaked_load_in_throttling_window
@@ -359,8 +389,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((12.5K * 12.5K) / 10K) * 15 / 10K  = 46.875
         assert!(
             (46u64..=47).contains(&load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(15),
-                10000
+                10000,
+                MAX_STREAMS_PER_MS,
             ))
         );
 
@@ -368,8 +400,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((12.5K * 12.5K) / 10K) * 1K / 10K  = 3125
         assert!((3124u64..=3125).contains(
             &load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1000),
-                10000
+                10000,
+                MAX_STREAMS_PER_MS,
             )
         ));
 
@@ -378,8 +412,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((12.5K * 12.5K) / 5K) * 15 / 10K  = 93.75
         assert!(
             (92u64..=94).contains(&load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(15),
-                10000
+                10000,
+                MAX_STREAMS_PER_MS,
             ))
         );
 
@@ -387,8 +423,10 @@ pub mod test {
         // max_streams in 100ms (throttling window) = 2 * ((12.5K * 12.5K) / 5K) * 1K / 10K  = 6250
         assert!((6248u64..=6250).contains(
             &load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1000),
-                10000
+                10000,
+                MAX_STREAMS_PER_MS,
             )
         ));
 
@@ -398,8 +436,10 @@ pub mod test {
         // function = ((10K * 10K) / 25% of 12.5K) * stake / total_stake
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(15),
-                10000
+                10000,
+                MAX_STREAMS_PER_MS,
             ),
             150
         );
@@ -407,8 +447,10 @@ pub mod test {
         // function = ((12.5K * 12.5K) / 25% of 12.5K) * stake / total_stake
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1000),
-                10000
+                10000,
+                MAX_STREAMS_PER_MS,
             ),
             10000
         );
@@ -417,8 +459,10 @@ pub mod test {
         // max_unstaked_load_in_throttling_window + 1 streams.
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
+                TpuType::Regular,
                 ConnectionPeerType::Staked(1),
-                40000
+                40000,
+                MAX_STREAMS_PER_MS,
             ),
             load_ema
                 .max_unstaked_load_in_throttling_window

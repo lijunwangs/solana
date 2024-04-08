@@ -10,8 +10,13 @@ mod tests {
         },
         solana_sdk::{net::DEFAULT_TPU_COALESCE, packet::PACKET_DATA_SIZE, signature::Keypair},
         solana_streamer::{
-            nonblocking::quic::DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, quic::SpawnServerResult,
-            streamer::StakedNodes, tls_certificates::new_dummy_x509_certificate,
+            nonblocking::{
+                quic::{TpuType, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
+                stream_throttle::MAX_STREAMS_PER_MS,
+            },
+            quic::SpawnServerResult,
+            streamer::StakedNodes,
+            tls_certificates::new_dummy_x509_certificate,
         },
         std::{
             net::{SocketAddr, UdpSocket},
@@ -74,6 +79,7 @@ mod tests {
         } = solana_streamer::quic::spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Regular,
             s.try_clone().unwrap(),
             &keypair,
             sender,
@@ -82,6 +88,7 @@ mod tests {
             staked_nodes,
             10,
             10,
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -153,6 +160,7 @@ mod tests {
         let (s, exit, keypair) = server_args();
         let (_, _, t) = solana_streamer::nonblocking::quic::spawn_server(
             "quic_streamer_test",
+            TpuType::Regular,
             s.try_clone().unwrap(),
             &keypair,
             sender,
@@ -161,6 +169,7 @@ mod tests {
             staked_nodes,
             10,
             10,
+            MAX_STREAMS_PER_MS,
             Duration::from_secs(1), // wait_for_chunk_timeout
             DEFAULT_TPU_COALESCE,
         )
@@ -215,6 +224,7 @@ mod tests {
         } = solana_streamer::quic::spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Regular,
             request_recv_socket.try_clone().unwrap(),
             &keypair,
             sender,
@@ -223,6 +233,7 @@ mod tests {
             staked_nodes.clone(),
             10,
             10,
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -243,6 +254,7 @@ mod tests {
         } = solana_streamer::quic::spawn_server(
             "solQuicTest",
             "quic_streamer_test",
+            TpuType::Regular,
             response_recv_socket,
             &keypair2,
             sender2,
@@ -251,6 +263,7 @@ mod tests {
             staked_nodes,
             10,
             10,
+            MAX_STREAMS_PER_MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
