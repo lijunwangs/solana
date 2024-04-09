@@ -881,11 +881,11 @@ fn max_streams_for_connection_in_100ms(
             .apply_to(max_streams_per_100ms)
             .saturating_div(MAX_UNSTAKED_CONNECTIONS as u64)
     } else {
-        const MIN_STAKED_STREAMS: u64 = 8;
+        const MIN_STAKED_STREAMS_PER_100MS: u64 = 1;
         let max_total_staked_streams: u64 = max_streams_per_100ms
             - Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT).apply_to(max_streams_per_100ms);
         std::cmp::max(
-            MIN_STAKED_STREAMS,
+            MIN_STAKED_STREAMS_PER_100MS,
             ((max_total_staked_streams as f64 / total_stake as f64) * stake as f64) as u64,
         )
     }
