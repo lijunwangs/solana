@@ -1,6 +1,8 @@
 use {
     crate::{
-        nonblocking::quic::{ConnectionPeerType, ALPN_TPU_PROTOCOL_ID, MAX_STREAMS_PER_100MS},
+        nonblocking::quic::{
+            ConnectionPeerType, TpuType, ALPN_TPU_PROTOCOL_ID, MAX_STREAMS_PER_100MS,
+        },
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate,
     },
@@ -170,6 +172,7 @@ pub struct StreamStats {
     pub(crate) received_unstaked_streams: AtomicUsize,
     pub(crate) received_staked_streams: AtomicUsize,
     pub(crate) peer_stats: PeerStatsRecorder,
+    pub(crate) rejected_low_staked_connections_on_staked_port: AtomicUsize,
 }
 
 /// Stats per peer
@@ -543,6 +546,12 @@ impl StreamStats {
                 self.received_staked_streams.swap(0, Ordering::Relaxed),
                 i64
             ),
+            (
+                "rejected_low_staked_connections_on_staked_port",
+                self.rejected_low_staked_connections_on_staked_port
+                    .swap(0, Ordering::Relaxed),
+                i64
+            ),
         );
         process_sampled_packets_us_hist.clear();
         self.report_peer_stats().await;
@@ -621,6 +630,7 @@ impl StreamStats {
     }
 }
 
+/// This is used for testing only
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
@@ -638,6 +648,7 @@ pub fn spawn_server(
 ) -> Result<(Endpoint, thread::JoinHandle<()>), QuicServerError> {
     spawn_server_multi(
         name,
+        TpuType::Regular,
         vec![sock],
         keypair,
         gossip_host,
@@ -657,6 +668,7 @@ pub fn spawn_server(
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server_multi(
     name: &'static str,
+    tpu_type: TpuType,
     sockets: Vec<UdpSocket>,
     keypair: &Keypair,
     gossip_host: IpAddr,
@@ -675,6 +687,7 @@ pub fn spawn_server_multi(
         let _guard = runtime.enter();
         crate::nonblocking::quic::spawn_server_multi(
             name,
+            tpu_type,
             sockets,
             keypair,
             gossip_host,
