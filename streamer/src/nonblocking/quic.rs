@@ -170,7 +170,10 @@ async fn run_server(
     let mut last_datapoint = Instant::now();
     let unstaked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
-    let stream_load_ema = Arc::new(StakedStreamLoadEMA::new(stats.clone()));
+    let stream_load_ema = Arc::new(StakedStreamLoadEMA::new(
+        stats.clone(),
+        max_unstaked_connections,
+    ));
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
     let (sender, receiver) = async_unbounded();
