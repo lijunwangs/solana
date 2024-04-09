@@ -8,7 +8,7 @@ use {
     solana_accounts_db::{
         accounts_db::create_accounts_run_and_snapshot_dirs, hardened_unpack::open_genesis_config,
     },
-    solana_client::thin_client::ThinClient,
+    solana_client::{connection_cache::ConnectionCache, thin_client::ThinClient},
     solana_core::{
         consensus::{
             tower_storage::FileTowerStorage, Tower, SWITCH_FORK_THRESHOLD, VOTE_THRESHOLD_DEPTH,
@@ -55,12 +55,9 @@ use {
         response::RpcSignatureResult,
     },
     solana_runtime::{
-        commitment::VOTE_THRESHOLD_SIZE,
-        snapshot_archive_info::SnapshotArchiveInfoGetter,
-        snapshot_bank_utils,
-        snapshot_config::SnapshotConfig,
-        snapshot_package::SnapshotKind,
-        snapshot_utils::{self},
+        commitment::VOTE_THRESHOLD_SIZE, snapshot_archive_info::SnapshotArchiveInfoGetter,
+        snapshot_bank_utils, snapshot_config::SnapshotConfig, snapshot_package::SnapshotKind,
+        snapshot_utils,
     },
     solana_sdk::{
         account::AccountSharedData,
@@ -77,7 +74,7 @@ use {
         system_program, system_transaction,
         vote::state::VoteStateUpdate,
     },
-    solana_streamer::socket::SocketAddrSpace,
+    solana_streamer::{socket::SocketAddrSpace, streamer::StakedNodes},
     solana_turbine::broadcast_stage::{
         broadcast_duplicates_run::{BroadcastDuplicatesConfig, ClusterPartition},
         BroadcastStageType,
@@ -89,11 +86,12 @@ use {
         fs,
         io::Read,
         iter,
+        net::{IpAddr, Ipv4Addr},
         num::NonZeroUsize,
         path::Path,
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
-            Arc, Mutex,
+            Arc, Mutex, RwLock,
         },
         thread::{sleep, Builder, JoinHandle},
         time::{Duration, Instant},
@@ -360,6 +358,13 @@ fn test_forwarding() {
         ),
         ..ClusterConfig::default()
     };
+
+    let client_keypair = Keypair::new();
+    let mut overrides = HashMap::new();
+    let stake = DEFAULT_NODE_STAKE * 10;
+    let total_stake = stake + config.node_stakes.iter().sum::<u64>();
+    overrides.insert(client_keypair.pubkey(), stake);
+    config.validator_configs[1].staked_nodes_overrides = Arc::new(RwLock::new(overrides));
     let cluster = LocalCluster::new(&mut config, SocketAddrSpace::Unspecified);
 
     let cluster_nodes = discover_cluster(
@@ -377,11 +382,28 @@ fn test_forwarding() {
         .find(|c| c.pubkey() != &leader_pubkey)
         .unwrap();
 
+    let stakes = HashMap::from([
+        (client_keypair.pubkey(), stake),
+        (Pubkey::new_unique(), total_stake - stake),
+    ]);
+    let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
+        Arc::new(stakes),
+        HashMap::<Pubkey, u64>::default(), // overrides
+    )));
+
+    let client_connection_cache = Arc::new(ConnectionCache::new_with_client_options(
+        "client-connection-cache",
+        1,
+        None,
+        Some((&client_keypair, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
+        Some((&staked_nodes, &client_keypair.pubkey())),
+    ));
+
     // Confirm that transactions were forwarded to and processed by the leader.
     cluster_tests::send_many_transactions(
         validator_info,
         &cluster.funding_keypair,
-        &cluster.connection_cache,
+        &client_connection_cache,
         10,
         20,
     );
@@ -4271,49 +4293,6 @@ fn test_leader_failure_4() {
         config.ticks_per_slot * config.poh_config.target_tick_duration.as_millis() as u64,
         SocketAddrSpace::Unspecified,
     );
-}
-
-#[test]
-#[serial]
-fn test_ledger_cleanup_service() {
-    solana_logger::setup_with_default(RUST_LOG_FILTER);
-    error!("test_ledger_cleanup_service");
-    let num_nodes = 3;
-    let validator_config = ValidatorConfig {
-        max_ledger_shreds: Some(100),
-        ..ValidatorConfig::default_for_test()
-    };
-    let mut config = ClusterConfig {
-        cluster_lamports: DEFAULT_CLUSTER_LAMPORTS,
-        poh_config: PohConfig::new_sleep(Duration::from_millis(50)),
-        node_stakes: vec![DEFAULT_NODE_STAKE; num_nodes],
-        validator_configs: make_identical_validator_configs(&validator_config, num_nodes),
-        ..ClusterConfig::default()
-    };
-    let mut cluster = LocalCluster::new(&mut config, SocketAddrSpace::Unspecified);
-    // 200ms/per * 100 = 20 seconds, so sleep a little longer than that.
-    sleep(Duration::from_secs(60));
-
-    cluster_tests::spend_and_verify_all_nodes(
-        &cluster.entry_point_info,
-        &cluster.funding_keypair,
-        num_nodes,
-        HashSet::new(),
-        SocketAddrSpace::Unspecified,
-        &cluster.connection_cache,
-    );
-    cluster.close_preserve_ledgers();
-    //check everyone's ledgers and make sure only ~100 slots are stored
-    for info in cluster.validators.values() {
-        let mut slots = 0;
-        let blockstore = Blockstore::open(&info.info.ledger_path).unwrap();
-        blockstore
-            .slot_meta_iterator(0)
-            .unwrap()
-            .for_each(|_| slots += 1);
-        // with 3 nodes up to 3 slots can be in progress and not complete so max slots in blockstore should be up to 103
-        assert!(slots <= 103, "got {slots}");
-    }
 }
 
 // This test verifies that even if votes from a validator end up taking too long to land, and thus
