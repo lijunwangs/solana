@@ -418,12 +418,12 @@ pub mod test {
             10000
         );
 
-        // At 1/40000 stake weight, and minimum load, it should still allow
+        // At 1/400000 stake weight, and minimum load, it should still allow
         // max_unstaked_load_in_throttling_window + 1 streams.
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1),
-                40000
+                400000
             ),
             load_ema
                 .max_unstaked_load_in_throttling_window
