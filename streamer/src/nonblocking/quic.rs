@@ -330,6 +330,7 @@ impl NewConnectionHandlerParams {
 }
 
 fn handle_and_cache_new_connection(
+    tpu_type: TpuType,
     connection: Connection,
     mut connection_table_l: MutexGuard<ConnectionTable>,
     connection_table: Arc<Mutex<ConnectionTable>>,
@@ -378,6 +379,7 @@ fn handle_and_cache_new_connection(
             let peer_type = connection_table_l.peer_type;
             drop(connection_table_l);
             tokio::spawn(handle_connection(
+                tpu_type,
                 connection,
                 remote_addr,
                 last_update,
@@ -410,6 +412,7 @@ fn handle_and_cache_new_connection(
 }
 
 async fn prune_unstaked_connections_and_add_new_connection(
+    tpu_type: TpuType,
     connection: Connection,
     connection_table: Arc<Mutex<ConnectionTable>>,
     max_connections: usize,
@@ -423,6 +426,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
         let mut connection_table = connection_table.lock().await;
         prune_unstaked_connection_table(&mut connection_table, max_connections, stats);
         handle_and_cache_new_connection(
+            tpu_type,
             connection,
             connection_table,
             connection_table_clone,
@@ -565,6 +569,7 @@ async fn setup_connection(
 
                     if connection_table_l.total_size < max_staked_connections {
                         if let Ok(()) = handle_and_cache_new_connection(
+                            tpu_type,
                             new_connection,
                             connection_table_l,
                             staked_connection_table.clone(),
@@ -581,6 +586,7 @@ async fn setup_connection(
                         // put this connection in the unstaked connection table. If needed, prune a
                         // connection from the unstaked connection table.
                         if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
+                            tpu_type,
                             new_connection,
                             unstaked_connection_table.clone(),
                             max_unstaked_connections,
@@ -603,6 +609,7 @@ async fn setup_connection(
                         }
                     }
                 } else if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
+                    tpu_type,
                     new_connection,
                     unstaked_connection_table.clone(),
                     max_unstaked_connections,
@@ -765,6 +772,7 @@ async fn packet_batch_sender(
 }
 
 fn max_streams_for_connection_in_100ms(
+    tpu_type: TpuType,
     connection_type: ConnectionPeerType,
     stake: u64,
     total_stake: u64,
@@ -773,7 +781,21 @@ fn max_streams_for_connection_in_100ms(
     if max_streams_per_100ms == 0 {
         return 0;
     }
-    if matches!(connection_type, ConnectionPeerType::Unstaked) || stake == 0 {
+
+    let super_low_staked_on_regular_port = if matches!(tpu_type, TpuType::Regular)
+        && matches!(connection_type, ConnectionPeerType::Staked)
+    {
+        let min_ratio = 1_f64 / max_streams_per_100ms as f64;
+        let stake_ratio = stake as f64 / total_stake as f64;
+        stake_ratio < min_ratio
+    } else {
+        false
+    };
+
+    if matches!(connection_type, ConnectionPeerType::Unstaked)
+        || stake == 0
+        || super_low_staked_on_regular_port
+    {
         Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT)
             .apply_to(max_streams_per_100ms)
             .saturating_div(MAX_UNSTAKED_CONNECTIONS as u64)
@@ -824,6 +846,7 @@ async fn track_streamer_fetch_packet_performance(
 }
 
 async fn handle_connection(
+    tpu_type: TpuType,
     connection: Connection,
     remote_addr: SocketAddr,
     last_update: Arc<AtomicU64>,
@@ -844,6 +867,7 @@ async fn handle_connection(
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
     let max_streams_per_100ms = max_streams_for_connection_in_100ms(
+        tpu_type,
         peer_type,
         params.stake,
         params.total_stake,
@@ -2238,10 +2262,11 @@ pub mod test {
         // 50K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
             max_streams_for_connection_in_100ms(
+                TpuType::Regular,
                 ConnectionPeerType::Unstaked,
                 0,
                 10000,
-                MAX_STREAMS_PER_100MS
+                MAX_STREAMS_PER_100MS,
             ),
             20
         );
@@ -2249,10 +2274,11 @@ pub mod test {
         // 50K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
             max_streams_for_connection_in_100ms(
+                TpuType::Regular,
                 ConnectionPeerType::Unstaked,
                 10,
                 10000,
-                MAX_STREAMS_PER_100MS
+                MAX_STREAMS_PER_100MS,
             ),
             20
         );
@@ -2261,10 +2287,11 @@ pub mod test {
         // 50K packets per ms * 20% / 500 max unstaked connections
         assert_eq!(
             max_streams_for_connection_in_100ms(
+                TpuType::Regular,
                 ConnectionPeerType::Staked,
                 0,
                 10000,
-                MAX_STREAMS_PER_100MS
+                MAX_STREAMS_PER_100MS,
             ),
             20
         );
@@ -2273,10 +2300,11 @@ pub mod test {
         // function = 40K * stake / total_stake
         assert_eq!(
             max_streams_for_connection_in_100ms(
+                TpuType::Regular,
                 ConnectionPeerType::Staked,
                 15,
                 10000,
-                MAX_STREAMS_PER_100MS
+                MAX_STREAMS_PER_100MS,
             ),
             60
         );
@@ -2285,10 +2313,11 @@ pub mod test {
         // function = 40K * stake / total_stake
         assert_eq!(
             max_streams_for_connection_in_100ms(
+                TpuType::Regular,
                 ConnectionPeerType::Staked,
                 1000,
                 10000,
-                MAX_STREAMS_PER_100MS
+                MAX_STREAMS_PER_100MS,
             ),
             4000
         );
@@ -2297,10 +2326,11 @@ pub mod test {
         // minimum staked streams.
         assert_eq!(
             max_streams_for_connection_in_100ms(
+                TpuType::Regular,
                 ConnectionPeerType::Staked,
                 1,
                 50000,
-                MAX_STREAMS_PER_100MS
+                MAX_STREAMS_PER_100MS,
             ),
             8
         );
