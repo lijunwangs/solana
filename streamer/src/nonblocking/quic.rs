@@ -103,6 +103,7 @@ struct PacketAccumulator {
     pub start_time: Instant,
 }
 
+/// This is used for testing now.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
@@ -118,7 +119,6 @@ pub fn spawn_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
-    info!("Start {name} quic server on {sock:?}");
     let (config, _cert) = configure_server(keypair, gossip_host)?;
 
     let endpoint = Endpoint::new(
@@ -131,7 +131,8 @@ pub fn spawn_server(
     let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
-        endpoint.clone(),
+        tpu_type,
+        endpoints.clone(),
         packet_sender,
         exit,
         max_connections_per_peer,
@@ -149,6 +150,7 @@ pub fn spawn_server(
 #[allow(clippy::too_many_arguments)]
 async fn run_server(
     name: &'static str,
+    tpu_type: TpuType,
     incoming: Endpoint,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
@@ -188,6 +190,7 @@ async fn run_server(
         if let Ok(Some(connection)) = timeout_connection {
             info!("Got a connection {:?}", connection.remote_address());
             tokio::spawn(setup_connection(
+                tpu_type,
                 connection,
                 unstaked_connection_table.clone(),
                 staked_connection_table.clone(),
@@ -482,6 +485,7 @@ fn compute_recieve_window(
 
 #[allow(clippy::too_many_arguments)]
 async fn setup_connection(
+    tpu_type: TpuType,
     connecting: Connecting,
     unstaked_connection_table: Arc<Mutex<ConnectionTable>>,
     staked_connection_table: Arc<Mutex<ConnectionTable>>,
@@ -520,6 +524,35 @@ async fn setup_connection(
                         }
                     },
                 );
+
+                if matches!(tpu_type, TpuType::Staked) {
+                    if max_streams_per_100ms == 0 {
+                        // On Staked port, rejecting connections when its stake ratio is too small.
+                        info!(
+                            "Rejecting connection from {} key {:?} stake: {}  as max PPS is 0",
+                            new_connection.remote_address(),
+                            params.remote_pubkey,
+                            params.stake
+                        );
+                        stats
+                            .rejected_low_staked_connections_on_staked_port
+                            .fetch_add(1, Ordering::Relaxed);
+                        return;
+                    }
+
+                    let min_ratio = 1_f64 / max_streams_per_100ms as f64;
+                    let stake_ratio = params.stake as f64 / params.total_stake as f64;
+
+                    if stake_ratio < min_ratio {
+                        // On Staked port, rejecting connections when its stake ratio is too small.
+                        info!("Rejecting connection from {} key {:?} stake: {} ratio: {stake_ratio} threshold: {min_ratio}",
+                            new_connection.remote_address(), params.remote_pubkey, params.stake);
+                        stats
+                            .rejected_low_staked_connections_on_staked_port
+                            .fetch_add(1, Ordering::Relaxed);
+                        return;
+                    }
+                }
 
                 if params.stake > 0 {
                     let mut connection_table_l = staked_connection_table.lock().await;
@@ -1383,6 +1416,7 @@ pub mod test {
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
         let (_, stats, t) = spawn_server(
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             ip,

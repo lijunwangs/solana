@@ -33,7 +33,7 @@ use {
     solana_runtime::{bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache},
     solana_sdk::{clock::Slot, pubkey::Pubkey, signature::Keypair},
     solana_streamer::{
-        nonblocking::quic::DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
+        nonblocking::quic::{TpuType, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
         quic::{spawn_server, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
         streamer::StakedNodes,
     },
@@ -152,6 +152,7 @@ impl Tpu {
         const MAX_STREAMS_PER_100MS_TPU: u64 = 25_000 / 10;
         let (_, tpu_quic_t) = spawn_server(
             "quic_streamer_tpu",
+            TpuType::Regular,
             transactions_quic_sockets,
             keypair,
             cluster_info
@@ -174,6 +175,7 @@ impl Tpu {
         const MAX_STREAMS_PER_100MS_TPU_FWD: u64 = 5_000 / 10;
         let (_, tpu_forwards_quic_t) = spawn_server(
             "quic_streamer_tpu_forwards",
+            TpuType::Staked,
             transactions_forwards_quic_sockets,
             keypair,
             cluster_info
