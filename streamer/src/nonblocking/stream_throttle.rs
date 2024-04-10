@@ -38,7 +38,6 @@ impl StakedStreamLoadEMA {
         max_unstaked_connections: usize,
         max_streams_per_ms: u64,
     ) -> Self {
-        let max_streams_per_ms = max_streams_per_ms;
         let allow_unstaked_streams = max_unstaked_connections > 0;
         let max_staked_load_in_ema_window = if allow_unstaked_streams {
             (max_streams_per_ms
