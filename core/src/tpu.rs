@@ -69,6 +69,7 @@ pub struct Tpu {
     cluster_info_vote_listener: ClusterInfoVoteListener,
     broadcast_stage: BroadcastStage,
     tpu_quic_t: thread::JoinHandle<()>,
+    tpu_forwards_quic_t: thread::JoinHandle<()>,
     tpu_entry_notifier: Option<TpuEntryNotifier>,
     staked_nodes_updater_service: StakedNodesUpdaterService,
     tracer_thread_hdl: TracerThread,
@@ -117,7 +118,7 @@ impl Tpu {
             vote: tpu_vote_sockets,
             broadcast: broadcast_sockets,
             transactions_quic: transactions_quic_sockets,
-            transactions_forwards_quic: _transactions_forwards_quic_sockets,
+            transactions_forwards_quic: transactions_forwards_quic_sockets,
         } = sockets;
 
         let (packet_sender, packet_receiver) = unbounded();
@@ -193,7 +194,6 @@ impl Tpu {
             tpu_coalesce,
         )
         .unwrap();
-
 
         let sigverify_stage = {
             let verifier = TransactionSigVerifier::new(non_vote_sender);
@@ -274,6 +274,7 @@ impl Tpu {
             cluster_info_vote_listener,
             broadcast_stage,
             tpu_quic_t,
+            tpu_forwards_quic_t,
             tpu_entry_notifier,
             staked_nodes_updater_service,
             tracer_thread_hdl,
@@ -289,6 +290,7 @@ impl Tpu {
             self.banking_stage.join(),
             self.staked_nodes_updater_service.join(),
             self.tpu_quic_t.join(),
+            self.tpu_forwards_quic_t.join(),
         ];
         let broadcast_result = self.broadcast_stage.join();
         for result in results {
