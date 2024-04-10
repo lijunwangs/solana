@@ -11,8 +11,8 @@ use {
     },
 };
 
-/// Limit to 250K PPS
-const MAX_STREAMS_PER_MS: u64 = 250;
+/// Limit to 25K PPS
+const MAX_STREAMS_PER_MS: u64 = 25;
 const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
 const STREAM_THROTTLING_INTERVAL_MS: u64 = 100;
 pub const STREAM_STOP_CODE_THROTTLING: u32 = 15;
