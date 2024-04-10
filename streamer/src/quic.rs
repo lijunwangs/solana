@@ -182,9 +182,15 @@ pub struct StreamStats {
     pub(crate) total_unstaked_packets_sent_for_batching: AtomicUsize,
     pub(crate) throttled_staked_streams: AtomicUsize,
     pub(crate) throttled_unstaked_streams: AtomicUsize,
+<<<<<<< HEAD
     pub(crate) stream_load_ema: AtomicUsize,
     pub(crate) stream_load_ema_overflow: AtomicUsize,
     pub(crate) stream_load_capacity_overflow: AtomicUsize,
+=======
+    pub(crate) received_streams: AtomicUsize,
+    pub(crate) received_unstaked_streams: AtomicUsize,
+    pub(crate) received_staked_streams: AtomicUsize,
+>>>>>>> c6f7f06a05 (Stall busy clients)
 }
 
 impl StreamStats {
@@ -443,6 +449,7 @@ impl StreamStats {
                 i64
             ),
             (
+<<<<<<< HEAD
                 "stream_load_ema",
                 self.stream_load_ema.load(Ordering::Relaxed),
                 i64
@@ -455,6 +462,20 @@ impl StreamStats {
             (
                 "stream_load_capacity_overflow",
                 self.stream_load_capacity_overflow.load(Ordering::Relaxed),
+=======
+                "received_streams",
+                self.received_streams.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "received_unstaked_streams",
+                self.received_unstaked_streams.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "received_staked_streams",
+                self.received_staked_streams.swap(0, Ordering::Relaxed),
+>>>>>>> c6f7f06a05 (Stall busy clients)
                 i64
             ),
         );
