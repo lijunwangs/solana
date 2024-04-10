@@ -501,17 +501,14 @@ async fn setup_connection(
                         stats.clone(),
                     ),
                     |(pubkey, stake, total_stake, max_stake, min_stake)| {
-                        let peer_type = if stake > 0 {
+                        // At least 1 stream out of the all streams allowed in 100 ms window
+                        let min_ratio = 1_f64 / (MAX_STREAMS_PER_MS * 100) as f64;
+                        let stake_ratio = stake as f64 / total_stake as f64;
+                        let peer_type = if stake_ratio < min_ratio {
                             // If it is a staked connection with ultra low stake ratio, treat it as unstaked.
-                            let min_ratio = 1_f64 / (MAX_STREAMS_PER_MS * 100) as f64;
-                            let stake_ratio = stake as f64 / total_stake as f64;
-                            if stake_ratio < min_ratio {
-                                ConnectionPeerType::Unstaked
-                            } else {
-                                ConnectionPeerType::Staked(stake)
-                            }
-                        } else {
                             ConnectionPeerType::Unstaked
+                        } else {
+                            ConnectionPeerType::Staked(stake)
                         };
                         NewConnectionHandlerParams {
                             packet_sender,
