@@ -10,14 +10,17 @@ mod tests {
         },
         solana_sdk::{net::DEFAULT_TPU_COALESCE, packet::PACKET_DATA_SIZE, signature::Keypair},
         solana_streamer::{
-            nonblocking::quic::{TpuType, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, MAX_STREAMS_PER_100MS}, streamer::StakedNodes,
+            nonblocking::quic::{TpuType, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, MAX_STREAMS_PER_100MS},
+            streamer::StakedNodes,
             tls_certificates::new_self_signed_tls_certificate,
         },
         std::{
-            net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket}, sync::{
+            net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+            sync::{
                 atomic::{AtomicBool, Ordering},
                 Arc, RwLock,
-            }, time::{Duration, Instant}
+            },
+            time::{Duration, Instant},
         },
         tokio::time::sleep,
     };

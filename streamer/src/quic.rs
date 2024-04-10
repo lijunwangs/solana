@@ -1,8 +1,6 @@
 use {
     crate::{
-        nonblocking::quic::{
-            ConnectionPeerType, TpuType, ALPN_TPU_PROTOCOL_ID,
-        },
+        nonblocking::quic::{ConnectionPeerType, TpuType, ALPN_TPU_PROTOCOL_ID},
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate,
     },
@@ -683,7 +681,9 @@ pub fn spawn_server(
 mod test {
     use {
         super::*,
-        crate::nonblocking::quic::{test::*, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, MAX_STREAMS_PER_100MS},
+        crate::nonblocking::quic::{
+            test::*, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, MAX_STREAMS_PER_100MS,
+        },
         crossbeam_channel::unbounded,
         solana_sdk::net::DEFAULT_TPU_COALESCE,
         std::net::SocketAddr,
