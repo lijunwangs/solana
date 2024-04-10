@@ -1,7 +1,8 @@
 use {
     crate::{
         nonblocking::stream_throttle::{
-            ConnectionStreamCounter, StakedStreamLoadEMA, STREAM_STOP_CODE_THROTTLING,
+            ConnectionStreamCounter, StakedStreamLoadEMA, MAX_STREAMS_PER_MS,
+            STREAM_STOP_CODE_THROTTLING,
         },
         quic::{configure_server, QuicServerError, StreamStats},
         streamer::StakedNodes,
@@ -501,7 +502,14 @@ async fn setup_connection(
                     ),
                     |(pubkey, stake, total_stake, max_stake, min_stake)| {
                         let peer_type = if stake > 0 {
-                            ConnectionPeerType::Staked(stake)
+                            // If it is a staked connection with ultra low stake ratio, treat it as unstaked.
+                            let min_ratio = 1_f64 / (MAX_STREAMS_PER_MS * 100) as f64;
+                            let stake_ratio = stake as f64 / total_stake as f64;
+                            if stake_ratio < min_ratio {
+                                ConnectionPeerType::Unstaked
+                            } else {
+                                ConnectionPeerType::Staked(stake)
+                            }
                         } else {
                             ConnectionPeerType::Unstaked
                         };
