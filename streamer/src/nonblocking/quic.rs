@@ -56,12 +56,12 @@ use {
         select,
         sync::{Mutex, MutexGuard},
         task::JoinHandle,
-        time::timeout,
+        time::{sleep, timeout},
     },
 };
 
-/// Limit to 25K PPS
-pub const MAX_STREAMS_PER_100MS: u64 = 25_000 / 10;
+/// Limit to 500K PPS
+pub const MAX_STREAMS_PER_100MS: u64 = 500_000 / 10;
 const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
 const STREAM_THROTTLING_INTERVAL: Duration = Duration::from_millis(100);
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
@@ -80,7 +80,9 @@ const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] = b"exceed_max_stre
 
 const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
-const STREAM_STOP_CODE_THROTTLING: u32 = 15;
+// const STREAM_STOP_CODE_THROTTLING: u32 = 15;
+
+const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -418,6 +420,7 @@ fn handle_and_cache_new_connection(
     params: &NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
     max_streams_per_100ms: u64,
+    receive_window: Option<VarInt>,
 ) -> Result<(), ConnectionHandlerError> {
     if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
         connection_table_l.peer_type,
@@ -426,17 +429,6 @@ fn handle_and_cache_new_connection(
     ) as u64)
     {
         connection.set_max_concurrent_uni_streams(max_uni_streams);
-        let receive_window = compute_recieve_window(
-            params.max_stake,
-            params.min_stake,
-            connection_table_l.peer_type,
-            params.stake,
-        );
-
-        if let Ok(receive_window) = receive_window {
-            connection.set_receive_window(receive_window);
-        }
-
         let remote_addr = connection.remote_address();
 
         debug!(
@@ -470,6 +462,7 @@ fn handle_and_cache_new_connection(
                 peer_type,
                 wait_for_chunk_timeout,
                 max_streams_per_100ms,
+                receive_window,
             ));
             Ok(())
         } else {
@@ -500,6 +493,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
     params: &NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
     max_streams_per_100ms: u64,
+    receive_window: Option<VarInt>,
 ) -> Result<(), ConnectionHandlerError> {
     let stats = params.stats.clone();
     if max_connections > 0 {
@@ -514,6 +508,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
             params,
             wait_for_chunk_timeout,
             max_streams_per_100ms,
+            receive_window,
         )
     } else {
         connection.close(
@@ -613,7 +608,7 @@ async fn setup_connection(
                 if matches!(tpu_type, TpuType::Staked) {
                     if max_streams_per_100ms == 0 {
                         // On Staked port, rejecting connections when its stake ratio is too small.
-                        info!(
+                        debug!(
                             "Rejecting connection from {} key {:?} stake: {}  as max PPS is 0",
                             new_connection.remote_address(),
                             params.remote_pubkey,
@@ -630,7 +625,7 @@ async fn setup_connection(
 
                     if stake_ratio < min_ratio {
                         // On Staked port, rejecting connections when its stake ratio is too small.
-                        info!("Rejecting connection from {} key {:?} stake: {} ratio: {stake_ratio} threshold: {min_ratio}",
+                        debug!("Rejecting connection from {} key {:?} stake: {} ratio: {stake_ratio} threshold: {min_ratio}",
                             new_connection.remote_address(), params.remote_pubkey, params.stake);
                         stats
                             .rejected_low_staked_connections_on_staked_port
@@ -649,6 +644,16 @@ async fn setup_connection(
                     }
 
                     if connection_table_l.total_size < max_staked_connections {
+                        let receive_window = compute_recieve_window(
+                            params.max_stake,
+                            params.min_stake,
+                            connection_table_l.peer_type,
+                            params.stake,
+                        );
+
+                        if let Ok(receive_window) = receive_window {
+                            new_connection.set_receive_window(receive_window);
+                        }
                         if let Ok(()) = handle_and_cache_new_connection(
                             tpu_type,
                             new_connection,
@@ -657,6 +662,7 @@ async fn setup_connection(
                             &params,
                             wait_for_chunk_timeout,
                             max_streams_per_100ms,
+                            receive_window.ok(),
                         ) {
                             stats
                                 .connection_added_from_staked_peer
@@ -666,6 +672,17 @@ async fn setup_connection(
                         // If we couldn't prune a connection in the staked connection table, let's
                         // put this connection in the unstaked connection table. If needed, prune a
                         // connection from the unstaked connection table.
+
+                        let receive_window = compute_recieve_window(
+                            params.max_stake,
+                            params.min_stake,
+                            ConnectionPeerType::Staked,
+                            params.stake,
+                        );
+
+                        if let Ok(receive_window) = receive_window {
+                            new_connection.set_receive_window(receive_window);
+                        }
                         if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
                             tpu_type,
                             new_connection,
@@ -674,6 +691,7 @@ async fn setup_connection(
                             &params,
                             wait_for_chunk_timeout,
                             max_streams_per_100ms,
+                            receive_window.ok(),
                         )
                         .await
                         {
@@ -689,24 +707,37 @@ async fn setup_connection(
                                 .fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                } else if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
-                    tpu_type,
-                    new_connection,
-                    unstaked_connection_table.clone(),
-                    max_unstaked_connections,
-                    &params,
-                    wait_for_chunk_timeout,
-                    max_streams_per_100ms,
-                )
-                .await
-                {
-                    stats
-                        .connection_added_from_unstaked_peer
-                        .fetch_add(1, Ordering::Relaxed);
                 } else {
-                    stats
-                        .connection_add_failed_unstaked_node
-                        .fetch_add(1, Ordering::Relaxed);
+                    let receive_window = compute_recieve_window(
+                        params.max_stake,
+                        params.min_stake,
+                        ConnectionPeerType::Unstaked,
+                        params.stake,
+                    );
+
+                    if let Ok(receive_window) = receive_window {
+                        new_connection.set_receive_window(receive_window);
+                    }
+                    if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
+                        tpu_type,
+                        new_connection,
+                        unstaked_connection_table.clone(),
+                        max_unstaked_connections,
+                        &params,
+                        wait_for_chunk_timeout,
+                        max_streams_per_100ms,
+                        receive_window.ok(),
+                    )
+                    .await
+                    {
+                        stats
+                            .connection_added_from_unstaked_peer
+                            .fetch_add(1, Ordering::Relaxed);
+                    } else {
+                        stats
+                            .connection_add_failed_unstaked_node
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
                 }
             }
             Err(e) => {
@@ -937,6 +968,7 @@ async fn handle_connection(
     peer_type: ConnectionPeerType,
     wait_for_chunk_timeout: Duration,
     max_streams_per_100ms: u64,
+    receive_window: Option<VarInt>,
 ) {
     let stats = params.stats;
     debug!(
@@ -982,29 +1014,55 @@ async fn handle_connection(
                     }
                     peer_stat.received_streams.fetch_add(1, Ordering::Relaxed);
 
-                    if reset_throttling_params_if_needed(&mut last_throttling_instant) {
-                        streams_in_current_interval = 0;
-                    } else if streams_in_current_interval >= max_streams_per_100ms {
-                        stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        match peer_type {
-                            ConnectionPeerType::Unstaked => {
-                                stats
-                                    .throttled_unstaked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
+                    let mut check_throttle = true;
+                    let mut done_throttle = false;
+                    let mut new_receive_window = receive_window;
+                    while check_throttle {
+                        if reset_throttling_params_if_needed(&mut last_throttling_instant) {
+                            streams_in_current_interval = 0;
+                            check_throttle = false;
+                        } else if streams_in_current_interval >= max_streams_per_100ms {
+                            if !done_throttle {
+                                done_throttle = true;
+                                stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                                match peer_type {
+                                    ConnectionPeerType::Unstaked => {
+                                        stats
+                                            .throttled_unstaked_streams
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    ConnectionPeerType::Staked => {
+                                        stats
+                                            .throttled_staked_streams
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                                peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                                debug!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
+                                    params.stake, params.total_stake);
+                                update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
                             }
-                            ConnectionPeerType::Staked => {
-                                stats
-                                    .throttled_staked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
+
+                            // slash the receive window by half?
+                            if let Some(t_receive_window) = new_receive_window {
+                                let t_receive_window =
+                                    (t_receive_window.into_inner() as u32 / 2).into();
+                                connection.set_receive_window(t_receive_window);
+                                new_receive_window = Some(t_receive_window);
                             }
+                            sleep(STREAM_THROTTLE_SLEEP_INTERVAL).await;
+                        } else {
+                            check_throttle = false;
                         }
-                        peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        info!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
-                            params.stake, params.total_stake);
-                        let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
-                        update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
-                        continue;
                     }
+
+                    // resume the original receive window
+                    if done_throttle {
+                        if let Some(receive_window) = receive_window {
+                            connection.set_receive_window(receive_window);
+                        }
+                    }
+
                     streams_in_current_interval = streams_in_current_interval.saturating_add(1);
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
