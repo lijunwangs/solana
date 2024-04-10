@@ -608,7 +608,7 @@ async fn setup_connection(
                 if matches!(tpu_type, TpuType::Staked) {
                     if max_streams_per_100ms == 0 {
                         // On Staked port, rejecting connections when its stake ratio is too small.
-                        info!(
+                        debug!(
                             "Rejecting connection from {} key {:?} stake: {}  as max PPS is 0",
                             new_connection.remote_address(),
                             params.remote_pubkey,
@@ -625,7 +625,7 @@ async fn setup_connection(
 
                     if stake_ratio < min_ratio {
                         // On Staked port, rejecting connections when its stake ratio is too small.
-                        info!("Rejecting connection from {} key {:?} stake: {} ratio: {stake_ratio} threshold: {min_ratio}",
+                        debug!("Rejecting connection from {} key {:?} stake: {} ratio: {stake_ratio} threshold: {min_ratio}",
                             new_connection.remote_address(), params.remote_pubkey, params.stake);
                         stats
                             .rejected_low_staked_connections_on_staked_port
@@ -1031,7 +1031,7 @@ async fn handle_connection(
                             }
                         }
                         peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        info!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
+                        debug!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
                             params.stake, params.total_stake);
                         // let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
 
