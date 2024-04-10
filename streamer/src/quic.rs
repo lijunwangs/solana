@@ -1,7 +1,7 @@
 use {
     crate::{
         nonblocking::quic::{
-            ConnectionPeerType, TpuType, ALPN_TPU_PROTOCOL_ID, MAX_STREAMS_PER_100MS,
+            ConnectionPeerType, TpuType, ALPN_TPU_PROTOCOL_ID,
         },
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate,
@@ -634,6 +634,7 @@ impl StreamStats {
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
+    tpu_type: TpuType,
     sock: UdpSocket,
     keypair: &Keypair,
     gossip_host: IpAddr,
@@ -643,6 +644,7 @@ pub fn spawn_server(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    max_streams_per_100ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<(Endpoint, thread::JoinHandle<()>), QuicServerError> {
@@ -653,7 +655,6 @@ pub fn spawn_server(
             name,
             tpu_type,
             sock,
-            sockets,
             keypair,
             gossip_host,
             packet_sender,
@@ -682,7 +683,7 @@ pub fn spawn_server(
 mod test {
     use {
         super::*,
-        crate::nonblocking::quic::{test::*, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
+        crate::nonblocking::quic::{test::*, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT, MAX_STREAMS_PER_100MS},
         crossbeam_channel::unbounded,
         solana_sdk::net::DEFAULT_TPU_COALESCE,
         std::net::SocketAddr,
@@ -703,6 +704,7 @@ mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, t) = spawn_server(
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             ip,
@@ -712,6 +714,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_100MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -759,6 +762,7 @@ mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, t) = spawn_server(
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             ip,
@@ -768,6 +772,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_100MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -802,6 +807,7 @@ mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, t) = spawn_server(
             "quic_streamer_test",
+            TpuType::Staked,
             s,
             &keypair,
             ip,
@@ -811,6 +817,7 @@ mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             0, // Do not allow any connection from unstaked clients/nodes
+            MAX_STREAMS_PER_100MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )

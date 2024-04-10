@@ -103,10 +103,17 @@ struct PacketAccumulator {
     pub start_time: Instant,
 }
 
+#[derive(Copy, Clone)]
+pub enum TpuType {
+    Regular,
+    Staked,
+}
+
 /// This is used for testing now.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
+    tpu_type: TpuType,
     sock: UdpSocket,
     keypair: &Keypair,
     gossip_host: IpAddr,
@@ -116,6 +123,7 @@ pub fn spawn_server(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
+    max_streams_per_100ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
@@ -132,7 +140,7 @@ pub fn spawn_server(
     let handle = tokio::spawn(run_server(
         name,
         tpu_type,
-        endpoints.clone(),
+        endpoint.clone(),
         packet_sender,
         exit,
         max_connections_per_peer,
@@ -1879,6 +1887,7 @@ pub mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, _, t) = spawn_server(
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             ip,
@@ -1888,6 +1897,7 @@ pub mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             0, // Do not allow any connection from unstaked clients/nodes
+            MAX_STREAMS_PER_100MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -1910,6 +1920,7 @@ pub mod test {
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (_, stats, t) = spawn_server(
             "quic_streamer_test",
+            TpuType::Regular,
             s,
             &keypair,
             ip,
@@ -1919,6 +1930,7 @@ pub mod test {
             staked_nodes,
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_100MS,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
