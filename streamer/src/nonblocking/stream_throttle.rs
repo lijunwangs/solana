@@ -243,13 +243,13 @@ pub mod test {
             Arc::new(StreamStats::default()),
             MAX_UNSTAKED_CONNECTIONS,
         ));
-        // 25K packets per ms * 20% / 500 max unstaked connections
+        // 2500 packets per 100 ms * 20% / 500 max unstaked connections
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Unstaked,
                 10000,
             ),
-            10
+            1
         );
     }
 
