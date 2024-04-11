@@ -33,7 +33,7 @@ use {
     solana_runtime::{bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache},
     solana_sdk::{clock::Slot, pubkey::Pubkey, quic::NotifyKeyUpdate, signature::Keypair},
     solana_streamer::{
-        nonblocking::quic::DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
+        nonblocking::quic::{DEFAULT_MAX_STREAMS_PER_MS, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
         quic::{spawn_server, SpawnServerResult, MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
         streamer::StakedNodes,
     },
@@ -148,8 +148,7 @@ impl Tpu {
 
         let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
-        // 25K PPS
-        const MAX_STREAMS_PER_MS_TPU: u64 = 25;
+        const MAX_STREAMS_PER_MS_TPU: u64 = DEFAULT_MAX_STREAMS_PER_MS;
 
         let SpawnServerResult {
             endpoint: _,
@@ -172,8 +171,7 @@ impl Tpu {
         )
         .unwrap();
 
-        // 5K PPS
-        const MAX_STREAMS_PER_MS_TPU_FORWARD: u64 = 5;
+        const MAX_STREAMS_PER_MS_TPU_FORWARD: u64 = DEFAULT_MAX_STREAMS_PER_MS;
 
         let SpawnServerResult {
             endpoint: _,
