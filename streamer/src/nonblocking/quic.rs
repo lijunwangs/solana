@@ -19,6 +19,7 @@ use {
     quinn_proto::VarIntBoundsExceeded,
     rand::{thread_rng, Rng},
     smallvec::SmallVec,
+    solana_measure::measure::Measure,
     solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
     solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
@@ -96,6 +97,7 @@ struct PacketChunk {
 struct PacketAccumulator {
     pub meta: Meta,
     pub chunks: SmallVec<[PacketChunk; 2]>,
+    pub start_time: Instant,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -907,6 +909,7 @@ async fn handle_chunk(
                     *packet_accum = Some(PacketAccumulator {
                         meta,
                         chunks: SmallVec::new(),
+                        start_time: Instant::now(),
                     });
                 }
 

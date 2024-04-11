@@ -6242,6 +6242,7 @@ dependencies = [
  "rcgen",
  "rustls",
  "smallvec",
+ "solana-measure",
  "solana-metrics",
  "solana-perf",
  "solana-sdk",
