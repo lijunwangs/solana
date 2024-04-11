@@ -148,6 +148,9 @@ impl Tpu {
 
         let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
+        // 25K PPS
+        const MAX_STREAMS_PER_MS_TPU: u64 = 25;
+
         let SpawnServerResult {
             endpoint: _,
             thread: tpu_quic_t,
@@ -163,10 +166,14 @@ impl Tpu {
             staked_nodes.clone(),
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
+            MAX_STREAMS_PER_MS_TPU,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             tpu_coalesce,
         )
         .unwrap();
+
+        // 5K PPS
+        const MAX_STREAMS_PER_MS_TPU_FORWARD: u64 = 5;
 
         let SpawnServerResult {
             endpoint: _,
@@ -183,6 +190,7 @@ impl Tpu {
             staked_nodes.clone(),
             MAX_STAKED_CONNECTIONS.saturating_add(MAX_UNSTAKED_CONNECTIONS),
             0, // Prevent unstaked nodes from forwarding transactions
+            MAX_STREAMS_PER_MS_TPU_FORWARD,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             tpu_coalesce,
         )
