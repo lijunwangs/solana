@@ -1014,42 +1014,55 @@ async fn handle_connection(
                     }
                     peer_stat.received_streams.fetch_add(1, Ordering::Relaxed);
 
-                    if reset_throttling_params_if_needed(&mut last_throttling_instant) {
-                        streams_in_current_interval = 0;
-                    } else if streams_in_current_interval >= max_streams_per_100ms {
-                        stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        match peer_type {
-                            ConnectionPeerType::Unstaked => {
-                                stats
-                                    .throttled_unstaked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
+                    let mut check_throttle = true;
+                    let mut done_throttle = false;
+                    let mut new_receive_window = receive_window;
+                    while check_throttle {
+                        if reset_throttling_params_if_needed(&mut last_throttling_instant) {
+                            streams_in_current_interval = 0;
+                            check_throttle = false;
+                        } else if streams_in_current_interval >= max_streams_per_100ms {
+                            if !done_throttle {
+                                done_throttle = true;
+                                stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                                match peer_type {
+                                    ConnectionPeerType::Unstaked => {
+                                        stats
+                                            .throttled_unstaked_streams
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                    ConnectionPeerType::Staked => {
+                                        stats
+                                            .throttled_staked_streams
+                                            .fetch_add(1, Ordering::Relaxed);
+                                    }
+                                }
+                                peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                                debug!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
+                                    params.stake, params.total_stake);
+                                update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
                             }
-                            ConnectionPeerType::Staked => {
-                                stats
-                                    .throttled_staked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
+
+                            // slash the receive window by half?
+                            if let Some(t_receive_window) = new_receive_window {
+                                let t_receive_window =
+                                    (t_receive_window.into_inner() as u32 / 2).into();
+                                connection.set_receive_window(t_receive_window);
+                                new_receive_window = Some(t_receive_window);
                             }
+                            sleep(STREAM_THROTTLE_SLEEP_INTERVAL).await;
+                        } else {
+                            check_throttle = false;
                         }
-                        peer_stat.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        debug!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
-                            params.stake, params.total_stake);
-                        // let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
+                    }
 
-                        // slash the receive window from the original one, maybe set it to 0?
-                        if let Some(receive_window) = receive_window {
-                            let new_receive_window: u32 = receive_window.into_inner() as u32 / 2;
-                            connection.set_receive_window(new_receive_window.into());
-                        }
-
-                        sleep(STREAM_THROTTLE_SLEEP_INTERVAL).await;
-                        // resume the receive window
+                    // resume the original receive window
+                    if done_throttle {
                         if let Some(receive_window) = receive_window {
                             connection.set_receive_window(receive_window);
                         }
-
-                        update_peer_stats(&params.remote_pubkey, &stats, &peer_stat).await;
-                        continue;
                     }
+
                     streams_in_current_interval = streams_in_current_interval.saturating_add(1);
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
