@@ -148,7 +148,7 @@ impl Tpu {
 
         let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
-        const MAX_STREAMS_PER_100MS_TPU: u64 = 25_000 / 10;
+        const MAX_STREAMS_PER_100MS_TPU: u64 = 500_000 / 10;
         let (_, tpu_quic_t) = spawn_server_multi(
             "quic_streamer_tpu",
             TpuType::Regular,
@@ -171,7 +171,7 @@ impl Tpu {
         )
         .unwrap();
 
-        const MAX_STREAMS_PER_100MS_TPU_FWD: u64 = 5_000 / 10;
+        const MAX_STREAMS_PER_100MS_TPU_FWD: u64 = 500_000 / 10;
 
         let (_, tpu_forwards_quic_t) = spawn_server_multi(
             "quic_streamer_tpu_forwards",
