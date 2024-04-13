@@ -1,10 +1,17 @@
 use {
     crate::{
+<<<<<<< HEAD
         nonblocking::stream_throttle::{
             ConnectionStreamCounter, StakedStreamLoadEMA, STREAM_STOP_CODE_THROTTLING,
             STREAM_THROTTLING_INTERVAL_MS,
         },
         quic::{configure_server, QuicServerError, StreamStats},
+=======
+        nonblocking::connection_rate_limiter::ConnectionRateLimiter,
+        quic::{
+            configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS,
+        },
+>>>>>>> 8609a86bb3 (use rate limit on connectings)
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
     },
@@ -86,6 +93,8 @@ pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
 
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 >>>>>>> c6f7f06a05 (Stall busy clients)
+
+const CONNECTIONS_LIMIT_PER_SECOND: u32 = 16;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -221,6 +230,7 @@ async fn run_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) {
+    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_SECOND);
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
@@ -279,7 +289,17 @@ async fn run_server(
         }
 
         if let Ok(Some(connection)) = timeout_connection {
-            info!("Got a connection {:?}", connection.remote_address());
+            let remote_address = connection.remote_address();
+            info!("Got a connection {remote_address:?}");
+            let do_rate_limiting = true;
+            if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
+                debug!(
+                    "Reject connection from {:?} -- rate limiting exceeded",
+                    remote_address
+                );
+                stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
             tokio::spawn(setup_connection(
                 connection,
                 unstaked_connection_table.clone(),
