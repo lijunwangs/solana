@@ -1,5 +1,6 @@
 use {
     crate::{
+        nonblocking::connection_rate_limiter::ConnectionRateLimiter,
         quic::{
             configure_server, PeerStats, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS,
         },
@@ -83,6 +84,8 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 // const STREAM_STOP_CODE_THROTTLING: u32 = 15;
 
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
+
+const CONNECTIONS_LIMIT_PER_SECOND: u32 = 16;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -217,6 +220,7 @@ async fn run_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) {
+    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_SECOND);
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
@@ -271,7 +275,17 @@ async fn run_server(
         }
 
         if let Ok(Some(connection)) = timeout_connection {
-            info!("Got a connection {:?}", connection.remote_address());
+            let remote_address = connection.remote_address();
+            info!("Got a connection {remote_address:?}");
+            let do_rate_limiting = true;
+            if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
+                debug!(
+                    "Reject connection from {:?} -- rate limiting exceeded",
+                    remote_address
+                );
+                stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
             tokio::spawn(setup_connection(
                 tpu_type,
                 connection,
