@@ -68,6 +68,13 @@ use {
     },
 };
 
+<<<<<<< HEAD
+=======
+/// Limit to 50K PPS
+const MAX_STREAMS_PER_100MS: u64 = 50_000 / 10;
+const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
+const STREAM_THROTTLING_INTERVAL: Duration = Duration::from_millis(100);
+>>>>>>> c18ae50d62 (change to 50K PPS)
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
 pub const DEFAULT_WAIT_FOR_CHUNK_TIMEOUT: Duration = Duration::from_secs(10);
 
