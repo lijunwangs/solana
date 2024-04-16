@@ -101,7 +101,7 @@ pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 >>>>>>> c6f7f06a05 (Stall busy clients)
 
-const CONNECTIONS_LIMIT_PER_SECOND: u32 = 16;
+const CONNECTIONS_LIMIT_PER_SECOND: u32 = 4;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
