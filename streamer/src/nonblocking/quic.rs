@@ -1,9 +1,7 @@
 use {
     crate::{
         nonblocking::connection_rate_limiter::ConnectionRateLimiter,
-        quic::{
-            configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS,
-        },
+        quic::{configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS},
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
     },
@@ -158,7 +156,9 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
-    let (config, _cert) = configure_server(keypair, gossip_host)?;
+    let concurrent_connections = max_staked_connections + max_unstaked_connections;
+    let max_concurrent_connections = (concurrent_connections + concurrent_connections / 4) as u32;
+    let (config, _cert) = configure_server(keypair, gossip_host, max_concurrent_connections)?;
 
     let endpoints = sockets
         .into_iter()
