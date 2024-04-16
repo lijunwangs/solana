@@ -62,6 +62,7 @@ impl rustls::server::ClientCertVerifier for SkipClientVerification {
 pub(crate) fn configure_server(
     identity_keypair: &Keypair,
     gossip_host: IpAddr,
+    max_concurrent_connections: u32,
 ) -> Result<(ServerConfig, String), QuicServerError> {
     let (cert, priv_key) = new_self_signed_tls_certificate(identity_keypair, gossip_host)?;
     let cert_chain_pem_parts = vec![Pem {
@@ -77,6 +78,7 @@ pub(crate) fn configure_server(
     server_tls_config.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec()];
 
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
+    server_config.concurrent_connections(max_concurrent_connections);
     server_config.use_retry(true);
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
@@ -85,11 +87,7 @@ pub(crate) fn configure_server(
         (QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS.saturating_mul(2)) as u32;
     config.max_concurrent_uni_streams(MAX_CONCURRENT_UNI_STREAMS.into());
     config.stream_receive_window((PACKET_DATA_SIZE as u32).into());
-    config.receive_window(
-        (PACKET_DATA_SIZE as u32)
-            .saturating_mul(MAX_CONCURRENT_UNI_STREAMS)
-            .into(),
-    );
+    config.receive_window((PACKET_DATA_SIZE as u32).into());
     let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
     config.max_idle_timeout(Some(timeout));
 
@@ -104,6 +102,7 @@ pub(crate) fn configure_server(
 fn rt() -> Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .thread_name("quic-server")
+        .worker_threads(10)
         .enable_all()
         .build()
         .unwrap()

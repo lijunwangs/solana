@@ -1,6 +1,7 @@
 use {
     crate::{
 <<<<<<< HEAD
+<<<<<<< HEAD
         nonblocking::stream_throttle::{
             ConnectionStreamCounter, StakedStreamLoadEMA, STREAM_STOP_CODE_THROTTLING,
             STREAM_THROTTLING_INTERVAL_MS,
@@ -12,6 +13,10 @@ use {
             configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS,
         },
 >>>>>>> 8609a86bb3 (use rate limit on connectings)
+=======
+        nonblocking::connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter},
+        quic::{configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS},
+>>>>>>> f6863fe072 (max concurrent connections)
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
     },
@@ -101,7 +106,8 @@ pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 >>>>>>> c6f7f06a05 (Stall busy clients)
 
-const CONNECTIONS_LIMIT_PER_SECOND: u32 = 4;
+const CONNECTIONS_LIMIT_PER_MINUTE: u32 = 8;
+const TOTAL_CONNECTIONS_PER_SECOND: u32 = 2500;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -190,7 +196,10 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
-    let (config, _cert) = configure_server(keypair, gossip_host)?;
+    let concurrent_connections =
+        (max_staked_connections + max_unstaked_connections).div_ceil(sockets.len());
+    let max_concurrent_connections = (concurrent_connections + concurrent_connections / 4) as u32;
+    let (config, _cert) = configure_server(keypair, gossip_host, max_concurrent_connections)?;
 
     let endpoints = sockets
         .into_iter()
@@ -237,7 +246,10 @@ async fn run_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) {
-    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_SECOND);
+    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_MINUTE);
+    let overall_connection_rate_limiter =
+        TotalConnectionRateLimiter::new(TOTAL_CONNECTIONS_PER_SECOND);
+
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
@@ -297,6 +309,13 @@ async fn run_server(
 
         if let Ok(Some(connection)) = timeout_connection {
             let remote_address = connection.remote_address();
+
+            // first check overall connection rate limit:
+            if !overall_connection_rate_limiter.check(&remote_address.ip()) {
+                stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+
             info!("Got a connection {remote_address:?}");
             let do_rate_limiting = true;
             if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
@@ -455,6 +474,7 @@ fn handle_and_cache_new_connection(
         params.total_stake,
     ) as u64)
     {
+<<<<<<< HEAD
         connection.set_max_concurrent_uni_streams(max_uni_streams);
 <<<<<<< HEAD
         let receive_window =
@@ -466,6 +486,8 @@ fn handle_and_cache_new_connection(
 
 =======
 >>>>>>> c6f7f06a05 (Stall busy clients)
+=======
+>>>>>>> f6863fe072 (max concurrent connections)
         let remote_addr = connection.remote_address();
 
         debug!(
@@ -488,6 +510,10 @@ fn handle_and_cache_new_connection(
             )
         {
             drop(connection_table_l);
+            if let Some(receive_window) = receive_window {
+                connection.set_receive_window(receive_window);
+            }
+            connection.set_max_concurrent_uni_streams(max_uni_streams);
             tokio::spawn(handle_connection(
                 connection,
                 remote_addr,
@@ -721,9 +747,6 @@ async fn setup_connection(
                             params.stake,
                         );
 
-                        if let Ok(receive_window) = receive_window {
-                            new_connection.set_receive_window(receive_window);
-                        }
                         if let Ok(()) = handle_and_cache_new_connection(
                             new_connection,
                             connection_table_l,
@@ -749,10 +772,13 @@ async fn setup_connection(
                             params.stake,
                         );
 
+<<<<<<< HEAD
                         if let Ok(receive_window) = receive_window {
                             new_connection.set_receive_window(receive_window);
                         }
 >>>>>>> c6f7f06a05 (Stall busy clients)
+=======
+>>>>>>> f6863fe072 (max concurrent connections)
                         if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
                             new_connection,
                             unstaked_connection_table.clone(),
@@ -786,9 +812,6 @@ async fn setup_connection(
                         params.stake,
                     );
 
-                    if let Ok(receive_window) = receive_window {
-                        new_connection.set_receive_window(receive_window);
-                    }
                     if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
                         new_connection,
                         unstaked_connection_table.clone(),

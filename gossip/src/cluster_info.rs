@@ -2808,6 +2808,7 @@ pub struct Sockets {
     pub tpu_forwards_quic: Vec<UdpSocket>,
 }
 
+/// Count of quic-server Endpoints
 const QUIC_ENDPOINTS: usize = 10;
 
 #[derive(Debug)]
