@@ -2808,7 +2808,7 @@ pub struct Sockets {
     pub tpu_forwards_quic: Vec<UdpSocket>,
 }
 
-const QUIC_ENDPOINTS: usize = 4;
+const QUIC_ENDPOINTS: usize = 10;
 
 #[derive(Debug)]
 pub struct Node {
