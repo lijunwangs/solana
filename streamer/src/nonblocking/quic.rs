@@ -84,7 +84,7 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 
-const CONNECTIONS_LIMIT_PER_SECOND: u32 = 16;
+const CONNECTIONS_LIMIT_PER_SECOND: u32 = 4;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
