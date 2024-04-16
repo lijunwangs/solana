@@ -1,12 +1,28 @@
 use {
-    super::stream_throttle::ConnectionStreamCounter, crate::{
-        nonblocking::{connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter}, stream_throttle::{StakedStreamLoadEMA, STREAM_THROTTLING_INTERVAL_MS}},
-        quic::{configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS},
+    super::stream_throttle::ConnectionStreamCounter,
+    crate::{
+        nonblocking::{
+            connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter},
+            stream_throttle::{StakedStreamLoadEMA, STREAM_THROTTLING_INTERVAL_MS},
+        },
+        quic::{configure_server, QuicServerError, StreamStats},
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
-    }, async_channel::{
+    },
+    async_channel::{
         unbounded as async_unbounded, Receiver as AsyncReceiver, Sender as AsyncSender,
-    }, bytes::Bytes, crossbeam_channel::Sender, futures::{stream::FuturesUnordered, Future, StreamExt as _}, indexmap::map::{Entry, IndexMap}, percentage::Percentage, quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt}, quinn_proto::VarIntBoundsExceeded, rand::{thread_rng, Rng}, smallvec::SmallVec, solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH}, solana_sdk::{
+    },
+    bytes::Bytes,
+    crossbeam_channel::Sender,
+    futures::{stream::FuturesUnordered, Future, StreamExt as _},
+    indexmap::map::{Entry, IndexMap},
+    percentage::Percentage,
+    quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
+    quinn_proto::VarIntBoundsExceeded,
+    rand::{thread_rng, Rng},
+    smallvec::SmallVec,
+    solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
+    solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
         pubkey::Pubkey,
         quic::{
@@ -17,7 +33,8 @@ use {
         },
         signature::Keypair,
         timing,
-    }, std::{
+    },
+    std::{
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
         pin::Pin,
@@ -28,7 +45,8 @@ use {
         },
         task::Poll,
         time::{Duration, Instant},
-    }, tokio::{
+    },
+    tokio::{
         // CAUTION: It's kind of sketch that we're mixing async and sync locks (see the RwLock above).
         // This is done so that sync code can also access the stake table.
         // Make sure we don't hold a sync lock across an await - including the await to
@@ -41,7 +59,7 @@ use {
         sync::{Mutex, MutexGuard},
         task::JoinHandle,
         time::{sleep, timeout},
-    }
+    },
 };
 
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
@@ -121,7 +139,15 @@ pub fn spawn_server(
     max_streams_per_ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
-) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
+) -> Result<
+    (
+        Endpoint,
+        Arc<StreamStats>,
+        JoinHandle<()>,
+        u32, /* max_concurrent_connections */
+    ),
+    QuicServerError,
+> {
     spawn_server_multi(
         name,
         vec![sock],
@@ -137,7 +163,16 @@ pub fn spawn_server(
         wait_for_chunk_timeout,
         coalesce,
     )
-    .map(|(mut endpoints, stats, handle)| (endpoints.remove(0), stats, handle))
+    .map(
+        |(mut endpoints, stats, handle, max_concurrent_connections)| {
+            (
+                endpoints.remove(0),
+                stats,
+                handle,
+                max_concurrent_connections,
+            )
+        },
+    )
 }
 
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
@@ -155,7 +190,7 @@ pub fn spawn_server_multi(
     max_streams_per_ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
-) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
+) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>, u32), QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
     let concurrent_connections =
         (max_staked_connections + max_unstaked_connections).div_ceil(sockets.len());
@@ -189,7 +224,7 @@ pub fn spawn_server_multi(
         wait_for_chunk_timeout,
         coalesce,
     ));
-    Ok((endpoints, stats, handle))
+    Ok((endpoints, stats, handle, max_concurrent_connections))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -857,11 +892,11 @@ async fn handle_connection(
                     let mut check_throttle = true;
                     let mut done_throttle = false;
                     while check_throttle {
-
                         stream_counter.reset_throttling_params_if_needed();
-                        
+
                         if stream_counter.stream_count.load(Ordering::Relaxed)
-                            < max_streams_per_throttling_interval  {
+                            < max_streams_per_throttling_interval
+                        {
                             check_throttle = false;
                         } else {
                             if !done_throttle {
@@ -1432,7 +1467,7 @@ pub mod test {
         let server_address = sockets[0].local_addr().unwrap();
         let ip = server_address.ip();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
-        let (_, stats, t) = spawn_server_multi(
+        let (_, stats, t, _) = spawn_server_multi(
             "one-million-sol",
             sockets,
             &keypair,
@@ -1869,7 +1904,7 @@ pub mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (_, _, t) = spawn_server(
+        let (_, _, t, _) = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
@@ -1901,7 +1936,7 @@ pub mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (_, stats, t) = spawn_server(
+        let (_, stats, t, _) = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,

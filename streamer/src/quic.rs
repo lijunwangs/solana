@@ -121,11 +121,12 @@ pub enum QuicServerError {
 pub struct EndpointKeyUpdater {
     endpoints: Vec<Endpoint>,
     gossip_host: IpAddr,
+    max_concurrent_connections: u32,
 }
 
 impl NotifyKeyUpdate for EndpointKeyUpdater {
     fn update_key(&self, key: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
-        let (config, _) = configure_server(key, self.gossip_host)?;
+        let (config, _) = configure_server(key, self.gossip_host, self.max_concurrent_connections)?;
         for endpoint in &self.endpoints {
             endpoint.set_server_config(Some(config.clone()));
         }
@@ -534,7 +535,7 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<SpawnServerResult, QuicServerError> {
     let runtime = rt();
-    let (endpoints, _stats, task) = {
+    let (endpoints, _stats, task, max_concurrent_connections) = {
         let _guard = runtime.enter();
         crate::nonblocking::quic::spawn_server_multi(
             name,
@@ -564,6 +565,7 @@ pub fn spawn_server_multi(
     let updater = EndpointKeyUpdater {
         endpoints,
         gossip_host,
+        max_concurrent_connections,
     };
     Ok(SpawnServerResult {
         endpoint,
