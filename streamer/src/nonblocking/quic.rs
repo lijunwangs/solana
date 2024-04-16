@@ -130,17 +130,28 @@ pub fn spawn_server(
     max_streams_per_ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
-) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
+) -> Result<
+    (
+        Endpoint,
+        Arc<StreamStats>,
+        JoinHandle<()>,
+        u32, /* max_concurrent_connections */
+    ),
+    QuicServerError,
+> {
     info!("Start {name} quic server on {sock:?}");
-    let (config, _cert) = configure_server(keypair)?;
+    let concurrent_connections = max_staked_connections + max_unstaked_connections;
+    let max_concurrent_connections = (concurrent_connections + concurrent_connections / 4) as u32;
+    let (config, _cert) = configure_server(keypair, max_concurrent_connections)?;
 
     let endpoint = Endpoint::new(
         EndpointConfig::default(),
-        Some(config),
+        Some(config.clone()),
         sock,
         Arc::new(TokioRuntime),
     )
-    .map_err(QuicServerError::EndpointFailed)?;
+    .unwrap();
+
     let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
@@ -156,7 +167,7 @@ pub fn spawn_server(
         wait_for_chunk_timeout,
         coalesce,
     ));
-    Ok((endpoint, stats, handle))
+    Ok((endpoint, stats, handle, max_concurrent_connections))
 }
 
 #[allow(clippy::too_many_arguments)]

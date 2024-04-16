@@ -61,6 +61,7 @@ impl rustls::server::ClientCertVerifier for SkipClientVerification {
 #[allow(clippy::field_reassign_with_default)] // https://github.com/rust-lang/rust-clippy/issues/6527
 pub(crate) fn configure_server(
     identity_keypair: &Keypair,
+    max_concurrent_connections: u32,
 ) -> Result<(ServerConfig, String), QuicServerError> {
     let (cert, priv_key) = new_dummy_x509_certificate(identity_keypair);
     let cert_chain_pem_parts = vec![Pem {
@@ -76,6 +77,7 @@ pub(crate) fn configure_server(
     server_tls_config.alpn_protocols = vec![ALPN_TPU_PROTOCOL_ID.to_vec()];
 
     let mut server_config = ServerConfig::with_crypto(Arc::new(server_tls_config));
+    server_config.concurrent_connections(max_concurrent_connections);
     server_config.use_retry(true);
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
@@ -118,11 +120,12 @@ pub enum QuicServerError {
 
 pub struct EndpointKeyUpdater {
     endpoint: Endpoint,
+    max_concurrent_connections: u32,
 }
 
 impl NotifyKeyUpdate for EndpointKeyUpdater {
     fn update_key(&self, key: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
-        let (config, _) = configure_server(key)?;
+        let (config, _) = configure_server(key, self.max_concurrent_connections)?;
         self.endpoint.set_server_config(Some(config));
         Ok(())
     }
@@ -513,7 +516,7 @@ pub fn spawn_server(
     coalesce: Duration,
 ) -> Result<SpawnServerResult, QuicServerError> {
     let runtime = rt(format!("{thread_name}Rt"));
-    let (endpoint, _stats, task) = {
+    let (endpoint, _stats, task, max_concurrent_connections) = {
         let _guard = runtime.enter();
         crate::nonblocking::quic::spawn_server(
             metrics_name,
@@ -540,6 +543,7 @@ pub fn spawn_server(
         .unwrap();
     let updater = EndpointKeyUpdater {
         endpoint: endpoint.clone(),
+        max_concurrent_connections,
     };
     Ok(SpawnServerResult {
         endpoint,
