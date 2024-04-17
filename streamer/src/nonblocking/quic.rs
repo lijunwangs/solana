@@ -146,7 +146,7 @@ pub fn spawn_server(
 
     let endpoint = Endpoint::new(
         EndpointConfig::default(),
-        Some(config.clone()),
+        Some(config),
         sock,
         Arc::new(TokioRuntime),
     )
