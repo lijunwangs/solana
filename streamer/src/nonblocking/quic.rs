@@ -445,6 +445,10 @@ fn handle_and_cache_new_connection(
         ) {
             let peer_type = connection_table_l.peer_type;
             drop(connection_table_l);
+            if let Some(receive_window) = receive_window {
+                connection.set_receive_window(receive_window);
+            }
+            connection.set_max_concurrent_uni_streams(max_uni_streams);
             tokio::spawn(handle_connection(
                 connection,
                 remote_addr,
@@ -620,9 +624,6 @@ async fn setup_connection(
                             params.stake,
                         );
 
-                        if let Ok(receive_window) = receive_window {
-                            new_connection.set_receive_window(receive_window);
-                        }
                         if let Ok(()) = handle_and_cache_new_connection(
                             new_connection,
                             connection_table_l,
@@ -648,9 +649,6 @@ async fn setup_connection(
                             params.stake,
                         );
 
-                        if let Ok(receive_window) = receive_window {
-                            new_connection.set_receive_window(receive_window);
-                        }
                         if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
                             new_connection,
                             unstaked_connection_table.clone(),
@@ -681,9 +679,6 @@ async fn setup_connection(
                         params.stake,
                     );
 
-                    if let Ok(receive_window) = receive_window {
-                        new_connection.set_receive_window(receive_window);
-                    }
                     if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
                         new_connection,
                         unstaked_connection_table.clone(),
