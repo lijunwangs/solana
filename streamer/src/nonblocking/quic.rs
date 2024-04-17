@@ -156,7 +156,7 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
-    let concurrent_connections = max_staked_connections + max_unstaked_connections;
+    let concurrent_connections = (max_staked_connections + max_unstaked_connections).div_ceil(sockets.len());
     let max_concurrent_connections = (concurrent_connections + concurrent_connections / 4) as u32;
     let (config, _cert) = configure_server(keypair, gossip_host, max_concurrent_connections)?;
 
