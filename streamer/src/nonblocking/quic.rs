@@ -82,7 +82,7 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 /// Limit to 250K PPS
 pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
 
-const CONNECTIONS_LIMIT_PER_SECOND: u32 = 16;
+const CONNECTIONS_LIMIT_PER_MINUTE: u32 = 8;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -194,7 +194,7 @@ async fn run_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) {
-    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_SECOND);
+    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_MINUTE);
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
