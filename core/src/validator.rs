@@ -1,7 +1,6 @@
 //! The `validator` module hosts all the validator microservices.
 
 pub use solana_perf::report_target_features;
-
 use {
     crate::{
         accounts_hash_verifier::AccountsHashVerifier,
@@ -987,15 +986,15 @@ impl Validator {
                     )),
                     Some((&staked_nodes, &identity_keypair.pubkey())),
                 );
-                
+
                 (Arc::new(connection_cache), Arc::new(connection_cache_fwd))
             }
             false => {
                 let connection_cache = Arc::new(ConnectionCache::with_udp(
-                "connection_cache_tpu_udp",
-                tpu_connection_pool_size,
+                    "connection_cache_tpu_udp",
+                    tpu_connection_pool_size,
                 ));
-                (connection_cache.clone(), connection_cache)    
+                (connection_cache.clone(), connection_cache)
             }
         };
 
