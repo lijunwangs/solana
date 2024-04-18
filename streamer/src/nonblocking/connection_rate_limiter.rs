@@ -8,8 +8,8 @@ pub struct ConnectionRateLimiter {
 }
 
 impl ConnectionRateLimiter {
-    pub fn new(limit_per_second: u32) -> Self {
-        let quota = Quota::per_second(NonZeroU32::new(limit_per_second).unwrap()); // Adjust the rate limit as needed
+    pub fn new(limit_per_minute: u32) -> Self {
+        let quota = Quota::per_minute(NonZeroU32::new(limit_per_minute).unwrap()); // Adjust the rate limit as needed
         Self {
             limiter: DefaultKeyedRateLimiter::keyed(quota),
         }
