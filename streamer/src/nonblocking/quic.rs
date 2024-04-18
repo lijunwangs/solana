@@ -19,7 +19,6 @@ use {
     quinn_proto::VarIntBoundsExceeded,
     rand::{thread_rng, Rng},
     smallvec::SmallVec,
-    solana_measure::measure::Measure,
     solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
     solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
@@ -100,7 +99,6 @@ struct PacketChunk {
 struct PacketAccumulator {
     pub meta: Meta,
     pub chunks: SmallVec<[PacketChunk; 2]>,
-    pub start_time: Instant,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -110,7 +108,7 @@ pub enum ConnectionPeerType {
 }
 
 impl ConnectionPeerType {
-    fn is_staked(&self) -> bool {
+    pub(crate) fn is_staked(&self) -> bool {
         matches!(self, ConnectionPeerType::Staked(_))
     }
 }
@@ -746,7 +744,6 @@ async fn handle_connection(
     stream_exit: Arc<AtomicBool>,
     params: NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
-    max_unstaked_connections: usize,
     stream_load_ema: Arc<StakedStreamLoadEMA>,
     stream_counter: Arc<ConnectionStreamCounter>,
 ) {
@@ -759,25 +756,17 @@ async fn handle_connection(
     );
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
-    let mut max_streams_per_throttling_interval =
-        stream_throttle::max_streams_for_connection_in_throttling_duration(
-            params.peer_type,
-            params.total_stake,
-            stream_load_ema.clone(),
-        );
     while !stream_exit.load(Ordering::Relaxed) {
         if let Ok(stream) =
             tokio::time::timeout(WAIT_FOR_STREAM_TIMEOUT, connection.accept_uni()).await
         {
             match stream {
                 Ok(mut stream) => {
-                    if let ConnectionPeerType::Staked(peer_stake) = params.peer_type {
-                        max_streams_per_throttling_interval = stream_load_ema
-                            .available_load_capacity_in_throttling_duration(
-                                peer_stake,
-                                params.total_stake,
-                            );
-                    }
+                    let max_streams_per_throttling_interval = stream_load_ema
+                        .available_load_capacity_in_throttling_duration(
+                            params.peer_type,
+                            params.total_stake,
+                        );
 
                     stream_counter.reset_throttling_params_if_needed();
                     if stream_counter.stream_count.load(Ordering::Relaxed)
@@ -799,9 +788,7 @@ async fn handle_connection(
                         let _ = stream.stop(VarInt::from_u32(STREAM_STOP_CODE_THROTTLING));
                         continue;
                     }
-                    if params.peer_type.is_staked() {
-                        stream_load_ema.increment_load();
-                    }
+                    stream_load_ema.increment_load(params.peer_type);
                     stream_counter.stream_count.fetch_add(1, Ordering::Relaxed);
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
@@ -850,9 +837,7 @@ async fn handle_connection(
                             }
                         }
                         stats.total_streams.fetch_sub(1, Ordering::Relaxed);
-                        if params.peer_type.is_staked() {
-                            stream_load_ema.update_ema_if_needed();
-                        }
+                        stream_load_ema.update_ema_if_needed();
                     });
                 }
                 Err(e) => {
@@ -914,11 +899,10 @@ async fn handle_chunk(
                 if packet_accum.is_none() {
                     let mut meta = Meta::default();
                     meta.set_socket_addr(remote_addr);
-                    meta.set_from_staked_node(matches!(peer_type, ConnectionPeerType::Staked));
+                    meta.set_from_staked_node(matches!(peer_type, ConnectionPeerType::Staked(_)));
                     *packet_accum = Some(PacketAccumulator {
                         meta,
                         chunks: SmallVec::new(),
-                        start_time: Instant::now(),
                     });
                 }
 
