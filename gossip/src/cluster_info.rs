@@ -2809,7 +2809,7 @@ pub struct Sockets {
 }
 
 /// Count of quic-server Endpoints
-const QUIC_ENDPOINTS: usize = 1;
+const QUIC_ENDPOINTS: usize = 10;
 
 #[derive(Debug)]
 pub struct Node {
