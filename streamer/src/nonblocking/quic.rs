@@ -1,6 +1,6 @@
 use {
     crate::{
-        nonblocking::connection_rate_limiter::ConnectionRateLimiter,
+        nonblocking::connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter},
         quic::{configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS},
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
@@ -83,6 +83,7 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
 
 const CONNECTIONS_LIMIT_PER_MINUTE: u32 = 8;
+const TOTAL_CONNECTIONS_PER_SECOND: u32 = 2500;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -205,6 +206,9 @@ async fn run_server(
     coalesce: Duration,
 ) {
     let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_MINUTE);
+    let overall_connection_rate_limiter =
+        TotalConnectionRateLimiter::new(TOTAL_CONNECTIONS_PER_SECOND);
+
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
     debug!("spawn quic server");
     let mut last_datapoint = Instant::now();
@@ -260,6 +264,13 @@ async fn run_server(
 
         if let Ok(Some(connection)) = timeout_connection {
             let remote_address = connection.remote_address();
+
+            // first check overall connection rate limit:
+            if !overall_connection_rate_limiter.check(&remote_address.ip()) {
+                stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
+                continue;
+            }
+
             info!("Got a connection {remote_address:?}");
             let do_rate_limiting = true;
             if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
