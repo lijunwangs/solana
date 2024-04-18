@@ -1,6 +1,7 @@
 //! The `validator` module hosts all the validator microservices.
 
 pub use solana_perf::report_target_features;
+
 use {
     crate::{
         accounts_hash_verifier::AccountsHashVerifier,
@@ -957,7 +958,7 @@ impl Validator {
 
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
 
-        let connection_cache = match use_quic {
+        let (tpu_connection_cache, tpu_fwd_connection_cache) = match use_quic {
             true => {
                 let connection_cache = ConnectionCache::new_with_client_options(
                     "connection_cache_tpu_quic",
@@ -972,12 +973,30 @@ impl Validator {
                     )),
                     Some((&staked_nodes, &identity_keypair.pubkey())),
                 );
-                Arc::new(connection_cache)
+
+                let connection_cache_fwd = ConnectionCache::new_with_client_options(
+                    "connection_cache_tpu_fwd_quic",
+                    1,
+                    None,
+                    Some((
+                        &identity_keypair,
+                        node.info
+                            .tpu(Protocol::UDP)
+                            .map_err(|err| format!("Invalid TPU address: {err:?}"))?
+                            .ip(),
+                    )),
+                    Some((&staked_nodes, &identity_keypair.pubkey())),
+                );
+                
+                (Arc::new(connection_cache), Arc::new(connection_cache_fwd))
             }
-            false => Arc::new(ConnectionCache::with_udp(
+            false => {
+                let connection_cache = Arc::new(ConnectionCache::with_udp(
                 "connection_cache_tpu_udp",
                 tpu_connection_pool_size,
-            )),
+                ));
+                (connection_cache.clone(), connection_cache)    
+            }
         };
 
         let rpc_override_health_check =
@@ -1024,7 +1043,7 @@ impl Validator {
                 config.send_transaction_service_config.clone(),
                 max_slots.clone(),
                 leader_schedule_cache.clone(),
-                connection_cache.clone(),
+                tpu_connection_cache.clone(),
                 max_complete_transaction_status_slot,
                 max_complete_rewards_slot,
                 prioritization_fee_cache.clone(),
@@ -1325,7 +1344,7 @@ impl Validator {
             config.wait_to_vote_slot,
             accounts_background_request_sender,
             config.runtime_config.log_messages_bytes_limit,
-            &connection_cache,
+            &tpu_connection_cache, // for the cache warmer
             &prioritization_fee_cache,
             banking_tracer.clone(),
             turbine_quic_endpoint_sender.clone(),
@@ -1384,7 +1403,7 @@ impl Validator {
             bank_notification_sender.map(|sender| sender.sender),
             config.tpu_coalesce,
             duplicate_confirmed_slot_sender,
-            &connection_cache,
+            &tpu_fwd_connection_cache,
             turbine_quic_endpoint_sender,
             &identity_keypair,
             config.runtime_config.log_messages_bytes_limit,
@@ -1408,7 +1427,8 @@ impl Validator {
         );
 
         *start_progress.write().unwrap() = ValidatorStartProgress::Running;
-        key_notifies.push(connection_cache);
+        key_notifies.push(tpu_connection_cache);
+        key_notifies.push(tpu_fwd_connection_cache);
 
         *admin_rpc_service_post_init.write().unwrap() = Some(AdminRpcRequestMetadataPostInit {
             bank_forks: bank_forks.clone(),
