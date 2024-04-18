@@ -1,39 +1,12 @@
 use {
-    crate::{
-<<<<<<< HEAD
-<<<<<<< HEAD
-        nonblocking::stream_throttle::{
-            ConnectionStreamCounter, StakedStreamLoadEMA, STREAM_STOP_CODE_THROTTLING,
-            STREAM_THROTTLING_INTERVAL_MS,
-        },
-        quic::{configure_server, QuicServerError, StreamStats},
-=======
-        nonblocking::connection_rate_limiter::ConnectionRateLimiter,
-        quic::{
-            configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS,
-        },
->>>>>>> 8609a86bb3 (use rate limit on connectings)
-=======
-        nonblocking::connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter},
+    super::stream_throttle::ConnectionStreamCounter, crate::{
+        nonblocking::{connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter}, stream_throttle::{StakedStreamLoadEMA, STREAM_THROTTLING_INTERVAL_MS}},
         quic::{configure_server, QuicServerError, StreamStats, MAX_UNSTAKED_CONNECTIONS},
->>>>>>> f6863fe072 (max concurrent connections)
         streamer::StakedNodes,
         tls_certificates::get_pubkey_from_tls_certificate,
-    },
-    async_channel::{
+    }, async_channel::{
         unbounded as async_unbounded, Receiver as AsyncReceiver, Sender as AsyncSender,
-    },
-    bytes::Bytes,
-    crossbeam_channel::Sender,
-    futures::{stream::FuturesUnordered, Future, StreamExt as _},
-    indexmap::map::{Entry, IndexMap},
-    percentage::Percentage,
-    quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
-    quinn_proto::VarIntBoundsExceeded,
-    rand::{thread_rng, Rng},
-    smallvec::SmallVec,
-    solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH},
-    solana_sdk::{
+    }, bytes::Bytes, crossbeam_channel::Sender, futures::{stream::FuturesUnordered, Future, StreamExt as _}, indexmap::map::{Entry, IndexMap}, percentage::Percentage, quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt}, quinn_proto::VarIntBoundsExceeded, rand::{thread_rng, Rng}, smallvec::SmallVec, solana_perf::packet::{PacketBatch, PACKETS_PER_BATCH}, solana_sdk::{
         packet::{Meta, PACKET_DATA_SIZE},
         pubkey::Pubkey,
         quic::{
@@ -44,8 +17,7 @@ use {
         },
         signature::Keypair,
         timing,
-    },
-    std::{
+    }, std::{
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
         pin::Pin,
@@ -56,8 +28,7 @@ use {
         },
         task::Poll,
         time::{Duration, Instant},
-    },
-    tokio::{
+    }, tokio::{
         // CAUTION: It's kind of sketch that we're mixing async and sync locks (see the RwLock above).
         // This is done so that sync code can also access the stake table.
         // Make sure we don't hold a sync lock across an await - including the await to
@@ -70,16 +41,9 @@ use {
         sync::{Mutex, MutexGuard},
         task::JoinHandle,
         time::{sleep, timeout},
-    },
+    }
 };
 
-<<<<<<< HEAD
-=======
-/// Limit to 50K PPS
-const MAX_STREAMS_PER_100MS: u64 = 50_000 / 10;
-const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
-const STREAM_THROTTLING_INTERVAL: Duration = Duration::from_millis(100);
->>>>>>> c18ae50d62 (change to 50K PPS)
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
 pub const DEFAULT_WAIT_FOR_CHUNK_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -96,15 +60,12 @@ const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] = b"exceed_max_stre
 
 const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
-<<<<<<< HEAD
 
 /// Limit to 250K PPS
 pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
-=======
 // const STREAM_STOP_CODE_THROTTLING: u32 = 15;
 
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
->>>>>>> c6f7f06a05 (Stall busy clients)
 
 const CONNECTIONS_LIMIT_PER_MINUTE: u32 = 8;
 const TOTAL_CONNECTIONS_PER_SECOND: u32 = 2500;
@@ -462,21 +423,14 @@ fn handle_and_cache_new_connection(
     connection_table: Arc<Mutex<ConnectionTable>>,
     params: &NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
-<<<<<<< HEAD
     stream_load_ema: Arc<StakedStreamLoadEMA>,
-=======
-    max_unstaked_connections: usize,
-    receive_window: Option<VarInt>,
->>>>>>> c6f7f06a05 (Stall busy clients)
 ) -> Result<(), ConnectionHandlerError> {
     if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
         params.peer_type,
         params.total_stake,
     ) as u64)
     {
-<<<<<<< HEAD
         connection.set_max_concurrent_uni_streams(max_uni_streams);
-<<<<<<< HEAD
         let receive_window =
             compute_recieve_window(params.max_stake, params.min_stake, params.peer_type);
 
@@ -484,10 +438,6 @@ fn handle_and_cache_new_connection(
             connection.set_receive_window(receive_window);
         }
 
-=======
->>>>>>> c6f7f06a05 (Stall busy clients)
-=======
->>>>>>> f6863fe072 (max concurrent connections)
         let remote_addr = connection.remote_address();
 
         debug!(
@@ -510,9 +460,6 @@ fn handle_and_cache_new_connection(
             )
         {
             drop(connection_table_l);
-            if let Some(receive_window) = receive_window {
-                connection.set_receive_window(receive_window);
-            }
             connection.set_max_concurrent_uni_streams(max_uni_streams);
             tokio::spawn(handle_connection(
                 connection,
@@ -522,13 +469,8 @@ fn handle_and_cache_new_connection(
                 stream_exit,
                 params.clone(),
                 wait_for_chunk_timeout,
-<<<<<<< HEAD
                 stream_load_ema,
                 stream_counter,
-=======
-                max_unstaked_connections,
-                receive_window,
->>>>>>> c6f7f06a05 (Stall busy clients)
             ));
             Ok(())
         } else {
@@ -557,11 +499,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
     max_connections: usize,
     params: &NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
-<<<<<<< HEAD
     stream_load_ema: Arc<StakedStreamLoadEMA>,
-=======
-    receive_window: Option<VarInt>,
->>>>>>> c6f7f06a05 (Stall busy clients)
 ) -> Result<(), ConnectionHandlerError> {
     let stats = params.stats.clone();
     if max_connections > 0 {
@@ -574,12 +512,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
             connection_table_clone,
             params,
             wait_for_chunk_timeout,
-<<<<<<< HEAD
             stream_load_ema,
-=======
-            max_connections,
-            receive_window,
->>>>>>> c6f7f06a05 (Stall busy clients)
         )
     } else {
         connection.close(
@@ -696,7 +629,6 @@ async fn setup_connection(
                             stats.num_evictions.fetch_add(num_pruned, Ordering::Relaxed);
                         }
 
-<<<<<<< HEAD
                         if connection_table_l.total_size < max_staked_connections {
                             if let Ok(()) = handle_and_cache_new_connection(
                                 new_connection,
@@ -738,58 +670,13 @@ async fn setup_connection(
                         }
                     }
                     ConnectionPeerType::Unstaked => {
-=======
-                    if connection_table_l.total_size < max_staked_connections {
-                        let receive_window = compute_recieve_window(
-                            params.max_stake,
-                            params.min_stake,
-                            connection_table_l.peer_type,
-                            params.stake,
-                        );
-
-                        if let Ok(()) = handle_and_cache_new_connection(
-                            new_connection,
-                            connection_table_l,
-                            staked_connection_table.clone(),
-                            &params,
-                            wait_for_chunk_timeout,
-                            max_unstaked_connections,
-                            receive_window.ok(),
-                        ) {
-                            stats
-                                .connection_added_from_staked_peer
-                                .fetch_add(1, Ordering::Relaxed);
-                        }
-                    } else {
-                        // If we couldn't prune a connection in the staked connection table, let's
-                        // put this connection in the unstaked connection table. If needed, prune a
-                        // connection from the unstaked connection table.
-
-                        let receive_window = compute_recieve_window(
-                            params.max_stake,
-                            params.min_stake,
-                            ConnectionPeerType::Staked,
-                            params.stake,
-                        );
-
-<<<<<<< HEAD
-                        if let Ok(receive_window) = receive_window {
-                            new_connection.set_receive_window(receive_window);
-                        }
->>>>>>> c6f7f06a05 (Stall busy clients)
-=======
->>>>>>> f6863fe072 (max concurrent connections)
                         if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
                             new_connection,
                             unstaked_connection_table.clone(),
                             max_unstaked_connections,
                             &params,
                             wait_for_chunk_timeout,
-<<<<<<< HEAD
                             stream_load_ema.clone(),
-=======
-                            receive_window.ok(),
->>>>>>> c6f7f06a05 (Stall busy clients)
                         )
                         .await
                         {
@@ -802,35 +689,6 @@ async fn setup_connection(
                                 .fetch_add(1, Ordering::Relaxed);
                         }
                     }
-<<<<<<< HEAD
-=======
-                } else {
-                    let receive_window = compute_recieve_window(
-                        params.max_stake,
-                        params.min_stake,
-                        ConnectionPeerType::Unstaked,
-                        params.stake,
-                    );
-
-                    if let Ok(()) = prune_unstaked_connections_and_add_new_connection(
-                        new_connection,
-                        unstaked_connection_table.clone(),
-                        max_unstaked_connections,
-                        &params,
-                        wait_for_chunk_timeout,
-                        receive_window.ok(),
-                    )
-                    .await
-                    {
-                        stats
-                            .connection_added_from_unstaked_peer
-                            .fetch_add(1, Ordering::Relaxed);
-                    } else {
-                        stats
-                            .connection_add_failed_unstaked_node
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
->>>>>>> c6f7f06a05 (Stall busy clients)
                 }
             }
             Err(e) => {
@@ -972,13 +830,8 @@ async fn handle_connection(
     stream_exit: Arc<AtomicBool>,
     params: NewConnectionHandlerParams,
     wait_for_chunk_timeout: Duration,
-<<<<<<< HEAD
     stream_load_ema: Arc<StakedStreamLoadEMA>,
     stream_counter: Arc<ConnectionStreamCounter>,
-=======
-    max_unstaked_connections: usize,
-    receive_window: Option<VarInt>,
->>>>>>> c6f7f06a05 (Stall busy clients)
 ) {
     let stats = params.stats;
     debug!(
@@ -995,98 +848,48 @@ async fn handle_connection(
         {
             match stream {
                 Ok(mut stream) => {
-<<<<<<< HEAD
                     let max_streams_per_throttling_interval = stream_load_ema
                         .available_load_capacity_in_throttling_duration(
                             params.peer_type,
                             params.total_stake,
                         );
 
-                    stream_counter.reset_throttling_params_if_needed();
-                    if stream_counter.stream_count.load(Ordering::Relaxed)
-                        >= max_streams_per_throttling_interval
-                    {
-                        stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                        match params.peer_type {
-                            ConnectionPeerType::Unstaked => {
-                                stats
-                                    .throttled_unstaked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
-                            }
-                            ConnectionPeerType::Staked(_) => {
-                                stats
-                                    .throttled_staked_streams
-                                    .fetch_add(1, Ordering::Relaxed);
-=======
-                    stats.received_streams.fetch_add(1, Ordering::Relaxed);
-
-                    match peer_type {
-                        ConnectionPeerType::Unstaked => {
-                            stats
-                                .received_unstaked_streams
-                                .fetch_add(1, Ordering::Relaxed);
-                        }
-                        ConnectionPeerType::Staked => {
-                            stats
-                                .received_staked_streams
-                                .fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-
                     let mut check_throttle = true;
                     let mut done_throttle = false;
-                    let mut new_receive_window = receive_window;
                     while check_throttle {
-                        if reset_throttling_params_if_needed(&mut last_throttling_instant) {
-                            streams_in_current_interval = 0;
+
+                        stream_counter.reset_throttling_params_if_needed();
+                        
+                        if stream_counter.stream_count.load(Ordering::Relaxed)
+                            < max_streams_per_throttling_interval  {
                             check_throttle = false;
-                        } else if streams_in_current_interval >= max_streams_per_100ms {
+                        } else {
                             if !done_throttle {
                                 done_throttle = true;
                                 stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                                match peer_type {
+                                match params.peer_type {
                                     ConnectionPeerType::Unstaked => {
                                         stats
                                             .throttled_unstaked_streams
                                             .fetch_add(1, Ordering::Relaxed);
                                     }
-                                    ConnectionPeerType::Staked => {
+                                    ConnectionPeerType::Staked(_) => {
                                         stats
                                             .throttled_staked_streams
                                             .fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
-                                debug!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
-                                    params.stake, params.total_stake);
+                                debug!("Throttled stream from {remote_addr:?}, peer: {:?}, total stake: {}",
+                                    params.peer_type, params.total_stake);
                             }
 
-                            // slash the receive window by half?
-                            if let Some(t_receive_window) = new_receive_window {
-                                let t_receive_window =
-                                    (t_receive_window.into_inner() as u32 / 2).into();
-                                connection.set_receive_window(t_receive_window);
-                                new_receive_window = Some(t_receive_window);
->>>>>>> c6f7f06a05 (Stall busy clients)
-                            }
                             sleep(STREAM_THROTTLE_SLEEP_INTERVAL).await;
-                        } else {
-                            check_throttle = false;
                         }
                     }
 
-                    // resume the original receive window
-                    if done_throttle {
-                        if let Some(receive_window) = receive_window {
-                            connection.set_receive_window(receive_window);
-                        }
-                    }
-<<<<<<< HEAD
                     stream_load_ema.increment_load(params.peer_type);
                     stream_counter.stream_count.fetch_add(1, Ordering::Relaxed);
-=======
 
-                    streams_in_current_interval = streams_in_current_interval.saturating_add(1);
->>>>>>> c6f7f06a05 (Stall busy clients)
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
                     let stream_exit = stream_exit.clone();
