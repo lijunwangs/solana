@@ -80,7 +80,7 @@ const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 // const STREAM_STOP_CODE_THROTTLING: u32 = 15;
 
-const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
+const STREAM_THROTTLE_INTERVAL: Duration = Duration::from_millis(100);
 
 const CONNECTIONS_LIMIT_PER_MINUTE: u32 = 8;
 const TOTAL_CONNECTIONS_PER_SECOND: u32 = 2500;
@@ -882,15 +882,6 @@ fn max_streams_for_connection_in_100ms(
     }
 }
 
-fn reset_throttling_params_if_needed(last_instant: &mut tokio::time::Instant) -> bool {
-    if tokio::time::Instant::now().duration_since(*last_instant) > STREAM_THROTTLING_INTERVAL {
-        *last_instant = tokio::time::Instant::now();
-        true
-    } else {
-        false
-    }
-}
-
 async fn handle_connection(
     connection: Connection,
     remote_addr: SocketAddr,
@@ -913,21 +904,59 @@ async fn handle_connection(
     );
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
-    let max_streams_per_100ms = max_streams_for_connection_in_100ms(
+    let max_streams_per_interval = max_streams_for_connection_in_100ms(
         peer_type,
         params.stake,
         params.total_stake,
         max_unstaked_connections,
         max_connections_per_peer,
     );
-    let mut last_throttling_instant = tokio::time::Instant::now();
-    let mut streams_in_current_interval = 0;
+
+    // when did we start tracking the last read interval
+    let mut read_interval_start = Instant::now();
+    // how many streams we've read during the last interval
+    let mut read_interval_streams = 0;
     while !stream_exit.load(Ordering::Relaxed) {
         if let Ok(stream) =
             tokio::time::timeout(WAIT_FOR_STREAM_TIMEOUT, connection.accept_uni()).await
         {
             match stream {
                 Ok(mut stream) => {
+                    read_interval_streams += 1;
+                    if read_interval_streams >= max_streams_per_interval {
+                        // The peer is sending faster than we're willing to read. Sleep for what's
+                        // left of this read interval so the peer backsoff.
+                        let throttle_duration = STREAM_THROTTLE_INTERVAL
+                            .saturating_sub(read_interval_start.elapsed())
+                            .saturating_sub(connection.rtt());
+                        if !throttle_duration.is_zero() {
+                            debug!("Throttling stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}, \
+                                    max_streams_per_interval: {max_streams_per_interval}, read_interval_streams: {read_interval_streams} \
+                                    throttle_duration: {throttle_duration:?}",
+                                    params.stake, params.total_stake);
+
+                            stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
+                            match peer_type {
+                                ConnectionPeerType::Unstaked => {
+                                    stats
+                                        .throttled_unstaked_streams
+                                        .fetch_add(1, Ordering::Relaxed);
+                                }
+                                ConnectionPeerType::Staked => {
+                                    stats
+                                        .throttled_staked_streams
+                                        .fetch_add(1, Ordering::Relaxed);
+                                }
+                            }
+                            tokio::time::sleep(throttle_duration).await;
+                        }
+                        read_interval_start = Instant::now();
+                        read_interval_streams = 0;
+                    } else if read_interval_start.elapsed() > STREAM_THROTTLE_INTERVAL {
+                        read_interval_start = Instant::now();
+                        read_interval_streams = 0;
+                    }
+
                     stats.received_streams.fetch_add(1, Ordering::Relaxed);
 
                     match peer_type {
@@ -943,54 +972,6 @@ async fn handle_connection(
                         }
                     }
 
-                    let mut check_throttle = true;
-                    let mut done_throttle = false;
-                    let mut new_receive_window = receive_window;
-                    while check_throttle {
-                        if reset_throttling_params_if_needed(&mut last_throttling_instant) {
-                            streams_in_current_interval = 0;
-                            check_throttle = false;
-                        } else if streams_in_current_interval >= max_streams_per_100ms {
-                            if !done_throttle {
-                                done_throttle = true;
-                                stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-                                match peer_type {
-                                    ConnectionPeerType::Unstaked => {
-                                        stats
-                                            .throttled_unstaked_streams
-                                            .fetch_add(1, Ordering::Relaxed);
-                                    }
-                                    ConnectionPeerType::Staked => {
-                                        stats
-                                            .throttled_staked_streams
-                                            .fetch_add(1, Ordering::Relaxed);
-                                    }
-                                }
-                                debug!("Throttled stream from {remote_addr:?}, peer type: {peer_type:?}, stake: {}, total stake: {}",
-                                    params.stake, params.total_stake);
-                            }
-
-                            // slash the receive window by half?
-                            if let Some(t_receive_window) = new_receive_window {
-                                let t_receive_window =
-                                    (t_receive_window.into_inner() as u32 / 2).into();
-                                connection.set_receive_window(t_receive_window);
-                                new_receive_window = Some(t_receive_window);
-                            }
-                            sleep(STREAM_THROTTLE_SLEEP_INTERVAL).await;
-                        } else {
-                            check_throttle = false;
-                        }
-                    }
-
-                    // resume the original receive window
-                    if done_throttle {
-                        if let Some(receive_window) = receive_window {
-                            connection.set_receive_window(receive_window);
-                        }
-                    }
-
-                    streams_in_current_interval = streams_in_current_interval.saturating_add(1);
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
                     let stream_exit = stream_exit.clone();
