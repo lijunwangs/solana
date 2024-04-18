@@ -18,7 +18,6 @@ impl ConnectionRateLimiter {
     pub fn check(&self, ip: &IpAddr) -> bool {
         // Acquire a permit from the rate limiter for the given IP address
         if self.limiter.check_key(ip).is_ok() {
-            // Simulate making a request (e.g., establishing a TCP connection)
             debug!("Request from IP {:?} allowed", ip);
             true // Request allowed
         } else {
@@ -43,9 +42,7 @@ impl TotalConnectionRateLimiter {
     }
 
     pub fn check(&self, ip: &IpAddr) -> bool {
-        // Acquire a permit from the rate limiter for the given IP address
         if self.limiter.check().is_ok() {
-            // Simulate making a request (e.g., establishing a TCP connection)
             debug!("Request from IP {:?} allowed", ip);
             true // Request allowed
         } else {
