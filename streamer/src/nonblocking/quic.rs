@@ -156,7 +156,8 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<(Vec<Endpoint>, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
-    let concurrent_connections = (max_staked_connections + max_unstaked_connections).div_ceil(sockets.len());
+    let concurrent_connections =
+        (max_staked_connections + max_unstaked_connections).div_ceil(sockets.len());
     let max_concurrent_connections = (concurrent_connections + concurrent_connections / 4) as u32;
     let (config, _cert) = configure_server(keypair, gossip_host, max_concurrent_connections)?;
 
@@ -444,6 +445,9 @@ fn handle_and_cache_new_connection(
         ) {
             let peer_type = connection_table_l.peer_type;
             drop(connection_table_l);
+            if let Some(receive_window) = receive_window {
+                connection.set_receive_window(receive_window);
+            }
             connection.set_max_concurrent_uni_streams(max_uni_streams);
             tokio::spawn(handle_connection(
                 connection,
