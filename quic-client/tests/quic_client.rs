@@ -154,7 +154,7 @@ mod tests {
         let (sender, receiver) = unbounded();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let (s, exit, keypair) = server_args();
-        let (_, _, t) = solana_streamer::nonblocking::quic::spawn_server(
+        let (_, _, t, _) = solana_streamer::nonblocking::quic::spawn_server(
             "quic_streamer_test",
             s.try_clone().unwrap(),
             &keypair,

@@ -1337,7 +1337,7 @@ pub mod test {
         let keypair = Keypair::new();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
-        let (_, stats, t) = spawn_server(
+        let (_, stats, t, _) = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
@@ -1773,7 +1773,7 @@ pub mod test {
         let keypair = Keypair::new();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (_, _, t) = spawn_server(
+        let (_, _, t, _) = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
@@ -1803,7 +1803,7 @@ pub mod test {
         let keypair = Keypair::new();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (_, stats, t) = spawn_server(
+        let (_, stats, t, _) = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
