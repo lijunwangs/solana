@@ -426,7 +426,7 @@ fn handle_and_cache_new_connection(
     wait_for_chunk_timeout: Duration,
     max_unstaked_connections: usize,
     receive_window: Option<VarInt>,
-    max_connections_per_peer: usize
+    max_connections_per_peer: usize,
 ) -> Result<(), ConnectionHandlerError> {
     if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
         connection_table_l.peer_type,
@@ -515,7 +515,7 @@ async fn prune_unstaked_connections_and_add_new_connection(
             wait_for_chunk_timeout,
             max_connections,
             receive_window,
-            max_connections_per_peer
+            max_connections_per_peer,
         )
     } else {
         connection.close(
@@ -645,7 +645,7 @@ async fn setup_connection(
                             wait_for_chunk_timeout,
                             max_unstaked_connections,
                             receive_window.ok(),
-                            max_connections_per_peer
+                            max_connections_per_peer,
                         ) {
                             stats
                                 .connection_added_from_staked_peer
@@ -670,7 +670,7 @@ async fn setup_connection(
                             &params,
                             wait_for_chunk_timeout,
                             receive_window.ok(),
-                            max_connections_per_peer
+                            max_connections_per_peer,
                         )
                         .await
                         {
@@ -701,7 +701,7 @@ async fn setup_connection(
                         &params,
                         wait_for_chunk_timeout,
                         receive_window.ok(),
-                        max_connections_per_peer
+                        max_connections_per_peer,
                     )
                     .await
                     {
@@ -875,7 +875,8 @@ fn max_streams_for_connection_in_100ms(
             - Percentage::from(MAX_UNSTAKED_STREAMS_PERCENT).apply_to(MAX_STREAMS_PER_100MS);
         std::cmp::max(
             min_staked_streams_per_100ms,
-            ((max_total_staked_streams as f64 / total_stake as f64) * stake as f64) as u64 / max_connections_per_peer as u64,
+            ((max_total_staked_streams as f64 / total_stake as f64) * stake as f64) as u64
+                / max_connections_per_peer as u64,
         )
     }
 }
