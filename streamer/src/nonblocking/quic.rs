@@ -61,7 +61,6 @@ use {
 /// Limit to 50K PPS
 const MAX_STREAMS_PER_100MS: u64 = 50_000 / 10;
 const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
-const STREAM_THROTTLING_INTERVAL: Duration = Duration::from_millis(100);
 const WAIT_FOR_STREAM_TIMEOUT: Duration = Duration::from_millis(100);
 pub const DEFAULT_WAIT_FOR_CHUNK_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -471,7 +470,6 @@ fn handle_and_cache_new_connection(
                 peer_type,
                 wait_for_chunk_timeout,
                 max_unstaked_connections,
-                receive_window,
                 max_connections_per_peer,
             ));
             Ok(())
@@ -892,7 +890,6 @@ async fn handle_connection(
     peer_type: ConnectionPeerType,
     wait_for_chunk_timeout: Duration,
     max_unstaked_connections: usize,
-    receive_window: Option<VarInt>,
     max_connections_per_peer: usize,
 ) {
     let stats = params.stats;
@@ -948,7 +945,7 @@ async fn handle_connection(
                                         .fetch_add(1, Ordering::Relaxed);
                                 }
                             }
-                            tokio::time::sleep(throttle_duration).await;
+                            sleep(throttle_duration).await;
                         }
                         read_interval_start = Instant::now();
                         read_interval_streams = 0;
