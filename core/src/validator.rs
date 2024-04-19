@@ -975,7 +975,7 @@ impl Validator {
 
                 let connection_cache_fwd = ConnectionCache::new_with_client_options(
                     "connection_cache_tpu_fwd_quic",
-                    1, // connection_pool_size
+                    1,    // connection_pool_size
                     None, // client_endpoint
                     Some((
                         &identity_keypair,
