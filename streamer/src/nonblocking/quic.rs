@@ -79,8 +79,8 @@ const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] = b"exceed_max_stre
 const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 
-/// Limit to 250K PPS
-pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
+/// Limit to 50K PPS
+pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 50;
 // const STREAM_STOP_CODE_THROTTLING: u32 = 15;
 
 const STREAM_THROTTLE_SLEEP_INTERVAL: Duration = Duration::from_millis(100);
