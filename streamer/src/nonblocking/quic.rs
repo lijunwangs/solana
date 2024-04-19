@@ -113,6 +113,13 @@ impl ConnectionPeerType {
     }
 }
 
+pub struct SpawnNonBlockingServerResult {
+    pub endpoint: Endpoint,
+    pub stats: Arc<StreamStats>,
+    pub thread: JoinHandle<()>,
+    pub max_concurrent_connections: usize,
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_server(
     name: &'static str,
@@ -128,9 +135,15 @@ pub fn spawn_server(
     max_streams_per_ms: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
-) -> Result<(Endpoint, Arc<StreamStats>, JoinHandle<()>), QuicServerError> {
+) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
     info!("Start {name} quic server on {sock:?}");
+<<<<<<< HEAD
     let (config, _cert) = configure_server(keypair, gossip_host)?;
+=======
+    let concurrent_connections = max_staked_connections + max_unstaked_connections;
+    let max_concurrent_connections = concurrent_connections + concurrent_connections / 4;
+    let (config, _cert) = configure_server(keypair, max_concurrent_connections)?;
+>>>>>>> 9d953cb83a (Limit max concurrent connections (#851))
 
     let endpoint = Endpoint::new(
         EndpointConfig::default(),
@@ -139,6 +152,7 @@ pub fn spawn_server(
         Arc::new(TokioRuntime),
     )
     .map_err(QuicServerError::EndpointFailed)?;
+
     let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
@@ -154,7 +168,12 @@ pub fn spawn_server(
         wait_for_chunk_timeout,
         coalesce,
     ));
-    Ok((endpoint, stats, handle))
+    Ok(SpawnNonBlockingServerResult {
+        endpoint,
+        stats,
+        thread: handle,
+        max_concurrent_connections,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1291,7 +1310,12 @@ pub mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
-        let (_, stats, t) = spawn_server(
+        let SpawnNonBlockingServerResult {
+            endpoint: _,
+            stats,
+            thread: t,
+            max_concurrent_connections: _,
+        } = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
@@ -1728,7 +1752,12 @@ pub mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (_, _, t) = spawn_server(
+        let SpawnNonBlockingServerResult {
+            endpoint: _,
+            stats: _,
+            thread: t,
+            max_concurrent_connections: _,
+        } = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
@@ -1760,7 +1789,12 @@ pub mod test {
         let ip = "127.0.0.1".parse().unwrap();
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-        let (_, stats, t) = spawn_server(
+        let SpawnNonBlockingServerResult {
+            endpoint: _,
+            stats,
+            thread: t,
+            max_concurrent_connections: _,
+        } = spawn_server(
             "quic_streamer_test",
             s,
             &keypair,
