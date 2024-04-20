@@ -823,6 +823,7 @@ async fn handle_connection(
                         .available_load_capacity_in_throttling_duration(
                             params.peer_type,
                             params.total_stake,
+                            stream_counter.get_connection_count(),
                         );
 
                     stream_counter.reset_throttling_params_if_needed();
@@ -1204,6 +1205,7 @@ impl ConnectionTable {
                 // use the same IP due to NAT. So counting all the streams from a given IP could be too restrictive.
                 Arc::new(ConnectionStreamCounter::new())
             };
+            stream_counter.increment_connection_count(1);
             connection_entry.push(ConnectionEntry::new(
                 exit.clone(),
                 peer_type,
@@ -1247,6 +1249,10 @@ impl ConnectionTable {
             let new_size = e_ref.len();
             if e_ref.is_empty() {
                 e.swap_remove_entry();
+            } else {
+                e_ref[0]
+                    .stream_counter
+                    .decrement_connection_count(old_size - new_size);
             }
             let connections_removed = old_size.saturating_sub(new_size);
             self.total_size = self.total_size.saturating_sub(connections_removed);
