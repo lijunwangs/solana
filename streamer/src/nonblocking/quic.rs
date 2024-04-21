@@ -82,7 +82,7 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 /// Limit to 250K PPS
 pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
 
-const CONNECTIONS_LIMIT_PER_MINUTE: u32 = 8;
+pub const DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE: u32 = 8;
 const TOTAL_CONNECTIONS_PER_SECOND: u32 = 2500;
 
 // A sequence of bytes that is part of a packet
@@ -141,6 +141,7 @@ pub fn spawn_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
+    max_connections_per_ipaddr_per_min: u32,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
@@ -168,6 +169,7 @@ pub fn spawn_server(
         max_staked_connections,
         max_unstaked_connections,
         max_streams_per_ms,
+        max_connections_per_ipaddr_per_min,
         stats.clone(),
         wait_for_chunk_timeout,
         coalesce,
@@ -191,11 +193,12 @@ async fn run_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
+    max_connections_per_ipaddr_per_min: u32,
     stats: Arc<StreamStats>,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) {
-    let rate_limiter = ConnectionRateLimiter::new(CONNECTIONS_LIMIT_PER_MINUTE);
+    let rate_limiter = ConnectionRateLimiter::new(max_connections_per_ipaddr_per_min);
     let overall_connection_rate_limiter =
         TotalConnectionRateLimiter::new(TOTAL_CONNECTIONS_PER_SECOND);
 
@@ -239,7 +242,7 @@ async fn run_server(
             info!("Got a connection {remote_address:?}");
             let do_rate_limiting = true;
             if do_rate_limiting && !rate_limiter.check(&remote_address.ip()) {
-                debug!(
+                info!(
                     "Reject connection from {:?} -- rate limiting exceeded",
                     remote_address
                 );
@@ -1389,6 +1392,7 @@ pub mod test {
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
             DEFAULT_MAX_STREAMS_PER_MS,
+            DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
             Duration::from_secs(2),
             DEFAULT_TPU_COALESCE,
         )
@@ -1830,6 +1834,7 @@ pub mod test {
             MAX_STAKED_CONNECTIONS,
             0, // Do not allow any connection from unstaked clients/nodes
             DEFAULT_MAX_STREAMS_PER_MS,
+            DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
@@ -1865,6 +1870,7 @@ pub mod test {
             MAX_STAKED_CONNECTIONS,
             MAX_UNSTAKED_CONNECTIONS,
             DEFAULT_MAX_STREAMS_PER_MS,
+            DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
             DEFAULT_TPU_COALESCE,
         )
