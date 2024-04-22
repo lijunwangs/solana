@@ -258,7 +258,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Unstaked,
-                10000
+                10000,
             ),
             10
         );
@@ -286,7 +286,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000
+                10000,
             ),
             30
         );
@@ -296,7 +296,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000
+                10000,
             ),
             2000
         );
@@ -307,7 +307,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000
+                10000,
             ),
             120
         );
@@ -317,7 +317,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000
+                10000,
             ),
             8000
         );
@@ -329,7 +329,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000
+                10000,
             ),
             120
         );
@@ -338,7 +338,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000
+                10000,
             ),
             8000
         );
@@ -348,7 +348,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1),
-                40000
+                40000,
             ),
             load_ema
                 .max_unstaked_load_in_throttling_window
