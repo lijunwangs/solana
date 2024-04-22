@@ -233,7 +233,7 @@ async fn run_server(
         if let Ok(Some(connection)) = timeout_connection {
             let remote_address = connection.remote_address();
 
-            let do_rate_limiting = true;
+            let do_rate_limiting = false;
             // first check overall connection rate limit:
             if do_rate_limiting && !overall_connection_rate_limiter.check(&remote_address.ip()) {
                 stats.connection_throttled.fetch_add(1, Ordering::Relaxed);
