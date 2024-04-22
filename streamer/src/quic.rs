@@ -318,12 +318,14 @@ impl StreamStats {
             ),
             (
                 "connection_throttled_across_all",
-                self.connection_throttled_across_all.swap(0, Ordering::Relaxed),
+                self.connection_throttled_across_all
+                    .swap(0, Ordering::Relaxed),
                 i64
             ),
             (
                 "connection_throttled_per_ipaddr",
-                self.connection_throttled_per_ipaddr.swap(0, Ordering::Relaxed),
+                self.connection_throttled_per_ipaddr
+                    .swap(0, Ordering::Relaxed),
                 i64
             ),
             (
