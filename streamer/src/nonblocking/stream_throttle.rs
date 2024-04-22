@@ -258,8 +258,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Unstaked,
-                10000,
-                1,
+                10000
             ),
             10
         );
@@ -287,8 +286,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000,
-                1,
+                10000
             ),
             30
         );
@@ -298,8 +296,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000,
-                1,
+                10000
             ),
             2000
         );
@@ -310,8 +307,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000,
-                1,
+                10000
             ),
             120
         );
@@ -321,8 +317,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000,
-                1,
+                10000
             ),
             8000
         );
@@ -334,8 +329,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000,
-                1,
+                10000
             ),
             120
         );
@@ -344,8 +338,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000,
-                1,
+                10000
             ),
             8000
         );
@@ -355,8 +348,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1),
-                40000,
-                1,
+                40000
             ),
             load_ema
                 .max_unstaked_load_in_throttling_window
@@ -386,8 +378,7 @@ pub mod test {
         assert!(
             (46u64..=47).contains(&load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000,
-                1,
+                10000
             ))
         );
 
@@ -396,8 +387,7 @@ pub mod test {
         assert!((3124u64..=3125).contains(
             &load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000,
-                1,
+                10000
             )
         ));
 
@@ -407,8 +397,7 @@ pub mod test {
         assert!(
             (92u64..=94).contains(&load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000,
-                1,
+                10000
             ))
         );
 
@@ -417,8 +406,7 @@ pub mod test {
         assert!((6248u64..=6250).contains(
             &load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000,
-                1,
+                10000
             )
         ));
 
@@ -429,8 +417,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(15),
-                10000,
-                1,
+                10000
             ),
             150
         );
@@ -439,21 +426,9 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1000),
-                10000,
-                1,
+                10000
             ),
             10000
-        );
-
-        // function = ((12.5K * 12.5K) / 25% of 12.5K) * stake / total_stake / connection_count
-        // as there are more than 1 connection from the staked node
-        assert_eq!(
-            load_ema.available_load_capacity_in_throttling_duration(
-                ConnectionPeerType::Staked(1000),
-                10000,
-                4,
-            ),
-            10000 / 4
         );
 
         // At 1/400000 stake weight, and minimum load, it should still allow
@@ -461,8 +436,7 @@ pub mod test {
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Staked(1),
-                400000,
-                1,
+                400000
             ),
             load_ema
                 .max_unstaked_load_in_throttling_window
