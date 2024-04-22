@@ -170,7 +170,8 @@ pub struct StreamStats {
     pub(crate) connection_setup_error_locally_closed: AtomicUsize,
     pub(crate) connection_removed: AtomicUsize,
     pub(crate) connection_remove_failed: AtomicUsize,
-    pub(crate) connection_throttled: AtomicUsize,
+    pub(crate) connection_throttled_across_all: AtomicUsize,
+    pub(crate) connection_throttled_per_ipaddr: AtomicUsize,
     pub(crate) throttled_streams: AtomicUsize,
     pub(crate) stream_load_ema: AtomicUsize,
     pub(crate) stream_load_ema_overflow: AtomicUsize,
@@ -316,8 +317,13 @@ impl StreamStats {
                 i64
             ),
             (
-                "connection_throttled",
-                self.connection_throttled.swap(0, Ordering::Relaxed),
+                "connection_throttled_across_all",
+                self.connection_throttled_across_all.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "connection_throttled_per_ipaddr",
+                self.connection_throttled_per_ipaddr.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
