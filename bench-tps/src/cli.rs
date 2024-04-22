@@ -355,12 +355,6 @@ pub fn build_args<'a>(version: &'_ str) -> App<'a, '_> {
                 .help("Controls the connection pool size per remote address; only affects TpuClient (default) sends"),
         )
         .arg(
-            Arg::with_name("tpu_max_connections_per_ipaddr_per_minute")
-                .long("tpu-max-connections-per-ipaddr-per-minute")
-                .takes_value(true)
-                .help("Controls the rate of the clients connections per IpAddr per minute."),
-        )
-        .arg(
             Arg::with_name("compute_unit_price")
             .long("compute-unit-price")
             .takes_value(true)
