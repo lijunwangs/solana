@@ -803,7 +803,7 @@ async fn handle_connection(
         max_unstaked_connections,
         max_streams_per_ms,
     );
-    let mut streams_in_current_interval = 0;
+
     while !stream_exit.load(Ordering::Relaxed) {
         if let Ok(stream) =
             tokio::time::timeout(WAIT_FOR_STREAM_TIMEOUT, connection.accept_uni()).await
@@ -815,7 +815,7 @@ async fn handle_connection(
                     let streams_read_in_throttle_interval =
                         stream_counter.stream_count.load(Ordering::Relaxed);
 
-                    if streams_in_current_interval >= max_streams_per_throttling_interval {
+                    if streams_read_in_throttle_interval >= max_streams_per_throttling_interval {
                         stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
 
                         // The peer is sending faster than we're willing to read. Sleep for what's
@@ -844,7 +844,8 @@ async fn handle_connection(
                             sleep(throttle_duration).await;
                         }
                     }
-                    streams_in_current_interval = streams_in_current_interval.saturating_add(1);
+                    stream_counter.stream_count.fetch_add(1, Ordering::Relaxed);
+
                     stats.total_streams.fetch_add(1, Ordering::Relaxed);
                     stats.total_new_streams.fetch_add(1, Ordering::Relaxed);
                     let stream_exit = stream_exit.clone();
