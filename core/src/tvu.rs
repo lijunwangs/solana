@@ -297,7 +297,7 @@ impl Tvu {
             .unwrap_or(false);
         let warm_quic_cache_service = if connection_cache_use_quic {
             Some(WarmQuicCacheService::new(
-                connection_cache.clone(),
+                connection_cache.unwrap().clone(),
                 cluster_info.clone(),
                 poh_recorder.clone(),
                 exit.clone(),
