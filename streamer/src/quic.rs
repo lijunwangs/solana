@@ -61,11 +61,8 @@ impl rustls::server::ClientCertVerifier for SkipClientVerification {
 #[allow(clippy::field_reassign_with_default)] // https://github.com/rust-lang/rust-clippy/issues/6527
 pub(crate) fn configure_server(
     identity_keypair: &Keypair,
-<<<<<<< HEAD
     gossip_host: IpAddr,
-=======
     max_concurrent_connections: usize,
->>>>>>> 9d953cb83a (Limit max concurrent connections (#851))
 ) -> Result<(ServerConfig, String), QuicServerError> {
     let (cert, priv_key) = new_self_signed_tls_certificate(identity_keypair, gossip_host)?;
     let cert_chain_pem_parts = vec![Pem {
@@ -126,20 +123,13 @@ pub enum QuicServerError {
 
 pub struct EndpointKeyUpdater {
     endpoint: Endpoint,
-<<<<<<< HEAD
     gossip_host: IpAddr,
-=======
     max_concurrent_connections: usize,
->>>>>>> 9d953cb83a (Limit max concurrent connections (#851))
 }
 
 impl NotifyKeyUpdate for EndpointKeyUpdater {
     fn update_key(&self, key: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
-<<<<<<< HEAD
-        let (config, _) = configure_server(key, self.gossip_host)?;
-=======
-        let (config, _) = configure_server(key, self.max_concurrent_connections)?;
->>>>>>> 9d953cb83a (Limit max concurrent connections (#851))
+        let (config, _) = configure_server(key, self.gossip_host, self.max_concurrent_connections)?;
         self.endpoint.set_server_config(Some(config));
         Ok(())
     }
@@ -488,13 +478,8 @@ pub fn spawn_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<SpawnServerResult, QuicServerError> {
-<<<<<<< HEAD
     let runtime = rt();
-    let (endpoint, _stats, task) = {
-=======
-    let runtime = rt(format!("{thread_name}Rt"));
     let result = {
->>>>>>> 9d953cb83a (Limit max concurrent connections (#851))
         let _guard = runtime.enter();
         crate::nonblocking::quic::spawn_server(
             name,
@@ -520,15 +505,13 @@ pub fn spawn_server(
             }
         })
         .unwrap();
+
     let updater = EndpointKeyUpdater {
-<<<<<<< HEAD
-        endpoint: endpoint.clone(),
-        gossip_host,
-=======
         endpoint: result.endpoint.clone(),
+        gossip_host,
         max_concurrent_connections: result.max_concurrent_connections,
->>>>>>> 9d953cb83a (Limit max concurrent connections (#851))
     };
+
     Ok(SpawnServerResult {
         endpoint: result.endpoint,
         thread: handle,
