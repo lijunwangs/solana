@@ -292,9 +292,7 @@ impl Tvu {
             tower_storage,
         );
 
-        let connection_cache_use_quic = connection_cache
-            .map(|cc| cc.use_quic())
-            .unwrap_or(false);
+        let connection_cache_use_quic = connection_cache.map(|cc| cc.use_quic()).unwrap_or(false);
         let warm_quic_cache_service = if connection_cache_use_quic {
             Some(WarmQuicCacheService::new(
                 connection_cache.unwrap().clone(),
