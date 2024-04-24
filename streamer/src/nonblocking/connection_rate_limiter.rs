@@ -8,14 +8,17 @@ pub struct ConnectionRateLimiter {
 }
 
 impl ConnectionRateLimiter {
+    /// Create a new rate limiter per IpAddr. The rate is specified as the count per minute to allow for
+    /// less frequent connections.
     pub fn new(limit_per_minute: u32) -> Self {
-        let quota = Quota::per_minute(NonZeroU32::new(limit_per_minute).unwrap()); // Adjust the rate limit as needed
+        let quota = Quota::per_minute(NonZeroU32::new(limit_per_minute).unwrap());
         Self {
             limiter: DefaultKeyedRateLimiter::keyed(quota),
         }
     }
 
-    pub fn check(&self, ip: &IpAddr) -> bool {
+    /// Check if the connection from the said `ip` is allowed.
+    pub fn is_allowed(&self, ip: &IpAddr) -> bool {
         // Acquire a permit from the rate limiter for the given IP address
         if self.limiter.check_key(ip).is_ok() {
             debug!("Request from IP {:?} allowed", ip);
@@ -34,6 +37,7 @@ pub struct TotalConnectionRateLimiter {
 }
 
 impl TotalConnectionRateLimiter {
+    /// Create a new rate limiter. The rate is specified as the count per second.
     pub fn new(limit_per_second: u32) -> Self {
         let quota = Quota::per_second(NonZeroU32::new(limit_per_second).unwrap()); // Adjust the rate limit as needed
         Self {
@@ -41,12 +45,11 @@ impl TotalConnectionRateLimiter {
         }
     }
 
-    pub fn check(&self, ip: &IpAddr) -> bool {
+    /// Check if a connection is allowed.
+    pub fn is_allowed(&self) -> bool {
         if self.limiter.check().is_ok() {
-            debug!("Request from IP {:?} allowed", ip);
             true // Request allowed
         } else {
-            debug!("Request from IP {:?} blocked", ip);
             false // Request blocked
         }
     }

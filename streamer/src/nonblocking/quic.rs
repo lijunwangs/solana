@@ -234,7 +234,11 @@ async fn run_server(
             let remote_address = connection.remote_address();
 
             // first check overall connection rate limit:
-            if !overall_connection_rate_limiter.check(&remote_address.ip()) {
+            if !overall_connection_rate_limiter.is_allowed() {
+                debug!(
+                    "Reject connection from {:?} -- total rate limiting exceeded",
+                    remote_address.ip()
+                );
                 stats
                     .connection_throttled_across_all
                     .fetch_add(1, Ordering::Relaxed);
@@ -242,7 +246,7 @@ async fn run_server(
             }
 
             info!("Got a connection {remote_address:?}");
-            if !rate_limiter.check(&remote_address.ip()) {
+            if !rate_limiter.is_allowed(&remote_address.ip()) {
                 info!(
                     "Reject connection from {:?} -- rate limiting exceeded",
                     remote_address
