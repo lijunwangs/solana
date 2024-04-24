@@ -890,6 +890,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .takes_value(true)
                 .default_value(&default_args.tpu_max_connections_per_ipaddr_per_minute)
                 .validator(is_parsable::<u32>)
+                .hidden(hidden_unless_forced())
                 .help("Controls the rate of the clients connections per IpAddr per minute."),
         )
         .arg(
