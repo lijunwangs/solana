@@ -308,6 +308,28 @@ pub fn compute_max_allowed_uni_streams(peer_type: ConnectionPeerType, total_stak
     }
 }
 
+/// Given the load EMA, derive the streams per throttle window.
+/// Do not allow concurrent streams more than the max streams per throttle window.
+fn max_allowed_uni_streams_per_throttling_interval_ema(
+    ema: &StakedStreamLoadEMA,
+    peer_type: ConnectionPeerType,
+    total_stake: u64,
+) -> u64 {
+    let max_streams_per_throttle_window =
+        ema.available_load_capacity_in_throttling_duration(peer_type, total_stake);
+    (compute_max_allowed_uni_streams(peer_type, total_stake) as u64)
+        .min(max_streams_per_throttle_window)
+}
+
+/// Given the max_streams_per_throttling_interval, derive the streams per throttle window.
+/// Do not allow concurrent streams more than the max streams per throttle window.
+fn max_concurrent_uni_streams_per_throttling_interval(
+    max_streams_per_throttling_interval: u64,
+    max_concurrent_uni_streams: u64,
+) -> u64 {
+    max_concurrent_uni_streams.min(max_streams_per_throttling_interval)
+}
+
 enum ConnectionHandlerError {
     ConnectionAddError,
     MaxStreamError,
@@ -357,10 +379,12 @@ fn handle_and_cache_new_connection(
     wait_for_chunk_timeout: Duration,
     stream_load_ema: Arc<StakedStreamLoadEMA>,
 ) -> Result<(), ConnectionHandlerError> {
-    if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
-        params.peer_type,
-        params.total_stake,
-    ) as u64)
+    if let Ok(max_uni_streams) =
+        VarInt::from_u64(max_allowed_uni_streams_per_throttling_interval_ema(
+            &stream_load_ema,
+            params.peer_type,
+            params.total_stake,
+        ))
     {
         let remote_addr = connection.remote_address();
         let receive_window =
@@ -387,11 +411,6 @@ fn handle_and_cache_new_connection(
         {
             drop(connection_table_l);
 
-            if let Ok(receive_window) = receive_window {
-                connection.set_receive_window(receive_window);
-            }
-            connection.set_max_concurrent_uni_streams(max_uni_streams);
-
             tokio::spawn(handle_connection(
                 connection,
                 remote_addr,
@@ -402,6 +421,8 @@ fn handle_and_cache_new_connection(
                 wait_for_chunk_timeout,
                 stream_load_ema,
                 stream_counter,
+                max_uni_streams,
+                receive_window.ok(),
             ));
             Ok(())
         } else {
@@ -793,6 +814,7 @@ fn track_streamer_fetch_packet_performance(
         .fetch_add(measure.as_us(), Ordering::Relaxed);
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     connection: Connection,
     remote_addr: SocketAddr,
@@ -803,6 +825,8 @@ async fn handle_connection(
     wait_for_chunk_timeout: Duration,
     stream_load_ema: Arc<StakedStreamLoadEMA>,
     stream_counter: Arc<ConnectionStreamCounter>,
+    mut max_uni_streams: VarInt,
+    receive_window: Option<VarInt>,
 ) {
     let stats = params.stats;
     debug!(
@@ -811,8 +835,14 @@ async fn handle_connection(
         stats.total_streams.load(Ordering::Relaxed),
         stats.total_connections.load(Ordering::Relaxed),
     );
+    connection.set_max_concurrent_uni_streams(max_uni_streams);
+    if let Some(receive_window) = receive_window {
+        connection.set_receive_window(receive_window);
+    }
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
+    let max_concurrent_uni_streams =
+        compute_max_allowed_uni_streams(params.peer_type, params.total_stake) as u64;
     while !stream_exit.load(Ordering::Relaxed) {
         if let Ok(stream) =
             tokio::time::timeout(WAIT_FOR_STREAM_TIMEOUT, connection.accept_uni()).await
@@ -854,6 +884,21 @@ async fn handle_connection(
                                 }
                             }
                             sleep(throttle_duration).await;
+                        }
+                    }
+                    let max_concurrent_uni_streams =
+                        max_concurrent_uni_streams_per_throttling_interval(
+                            max_streams_per_throttling_interval,
+                            max_concurrent_uni_streams,
+                        );
+                    let max_concurrent_uni_streams =
+                        VarInt::from_u64(max_concurrent_uni_streams as u64);
+
+                    if let Ok(max_concurrent_uni_streams) = max_concurrent_uni_streams {
+                        // Update max concurrent uni streams if needed
+                        if max_concurrent_uni_streams != max_uni_streams {
+                            connection.set_max_concurrent_uni_streams(max_concurrent_uni_streams);
+                            max_uni_streams = max_concurrent_uni_streams;
                         }
                     }
                     stream_load_ema.increment_load(params.peer_type);
