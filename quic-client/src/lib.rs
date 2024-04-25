@@ -28,7 +28,7 @@ use {
         signature::{Keypair, Signer},
     },
     solana_streamer::{
-        nonblocking::quic::{compute_max_allowed_uni_streams, ConnectionPeerType},
+        nonblocking::quic::{ConnectionPeerType, UniStreamQosUtil},
         streamer::StakedNodes,
         tls_certificates::new_self_signed_tls_certificate,
     },
@@ -134,7 +134,7 @@ impl QuicConfig {
                         },
                     )
                 });
-        compute_max_allowed_uni_streams(client_type, stake, total_stake)
+        UniStreamQosUtil::compute_max_allowed_uni_streams(client_type, stake, total_stake)
     }
 
     pub fn update_client_certificate(
