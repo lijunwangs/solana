@@ -376,40 +376,73 @@ fn get_connection_stake(
     ))
 }
 
-pub fn compute_max_allowed_uni_streams(
-    peer_type: ConnectionPeerType,
-    peer_stake: u64,
-    total_stake: u64,
-) -> usize {
-    // Treat stake = 0 as unstaked
-    if peer_stake == 0 {
-        QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
-    } else {
-        match peer_type {
-            ConnectionPeerType::Staked => {
-                // No checked math for f64 type. So let's explicitly check for 0 here
-                if total_stake == 0 || peer_stake > total_stake {
-                    warn!(
-                        "Invalid stake values: peer_stake: {:?}, total_stake: {:?}",
-                        peer_stake, total_stake,
-                    );
+pub struct UniStreamQosUtil {}
 
-                    QUIC_MIN_STAKED_CONCURRENT_STREAMS
-                } else {
-                    let delta = (QUIC_TOTAL_STAKED_CONCURRENT_STREAMS
-                        - QUIC_MIN_STAKED_CONCURRENT_STREAMS)
-                        as f64;
+impl UniStreamQosUtil {
+    /// Calculate the maximum allowed uni streams based on stake information.
+    pub fn compute_max_allowed_uni_streams(
+        peer_type: ConnectionPeerType,
+        peer_stake: u64,
+        total_stake: u64,
+    ) -> usize {
+        // Treat stake = 0 as unstaked
+        if peer_stake == 0 {
+            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
+        } else {
+            match peer_type {
+                ConnectionPeerType::Staked => {
+                    // No checked math for f64 type. So let's explicitly check for 0 here
+                    if total_stake == 0 || peer_stake > total_stake {
+                        warn!(
+                            "Invalid stake values: peer_stake: {:?}, total_stake: {:?}",
+                            peer_stake, total_stake,
+                        );
 
-                    (((peer_stake as f64 / total_stake as f64) * delta) as usize
-                        + QUIC_MIN_STAKED_CONCURRENT_STREAMS)
-                        .clamp(
-                            QUIC_MIN_STAKED_CONCURRENT_STREAMS,
-                            QUIC_MAX_STAKED_CONCURRENT_STREAMS,
-                        )
+                        QUIC_MIN_STAKED_CONCURRENT_STREAMS
+                    } else {
+                        let delta = (QUIC_TOTAL_STAKED_CONCURRENT_STREAMS
+                            - QUIC_MIN_STAKED_CONCURRENT_STREAMS)
+                            as f64;
+
+                        (((peer_stake as f64 / total_stake as f64) * delta) as usize
+                            + QUIC_MIN_STAKED_CONCURRENT_STREAMS)
+                            .clamp(
+                                QUIC_MIN_STAKED_CONCURRENT_STREAMS,
+                                QUIC_MAX_STAKED_CONCURRENT_STREAMS,
+                            )
+                    }
                 }
+                _ => QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
             }
-            _ => QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
         }
+    }
+
+    /// Do not allow concurrent streams more than the max streams per throttle window.
+    pub(crate) fn max_allowed_uni_streams_per_throttling_interval(
+        stake: u64,
+        peer_type: ConnectionPeerType,
+        total_stake: u64,
+        max_unstaked_connections: usize,
+        max_streams_per_ms: u64,
+    ) -> u64 {
+        let max_streams_per_throttle_window = max_streams_for_connection_in_100ms(
+            peer_type,
+            stake,
+            total_stake,
+            max_unstaked_connections,
+            max_streams_per_ms,
+        );
+        (Self::compute_max_allowed_uni_streams(peer_type, stake, total_stake) as u64)
+            .min(max_streams_per_throttle_window)
+    }
+
+    /// Given the max_streams_per_throttling_interval, derive the streams per throttle window.
+    /// Do not allow concurrent streams more than the max streams per throttle window.
+    pub fn max_concurrent_uni_streams_per_throttling_interval(
+        max_streams_per_throttling_interval: u64,
+        max_concurrent_uni_streams: u64,
+    ) -> u64 {
+        max_concurrent_uni_streams.min(max_streams_per_throttling_interval)
     }
 }
 
@@ -463,12 +496,15 @@ fn handle_and_cache_new_connection(
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
 ) -> Result<(), ConnectionHandlerError> {
-    if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
-        connection_table_l.peer_type,
-        params.stake,
-        params.total_stake,
-    ) as u64)
-    {
+    if let Ok(max_uni_streams) = VarInt::from_u64(
+        UniStreamQosUtil::max_allowed_uni_streams_per_throttling_interval(
+            params.stake,
+            connection_table_l.peer_type,
+            params.total_stake,
+            max_unstaked_connections,
+            max_streams_per_ms,
+        ),
+    ) {
         let receive_window = compute_recieve_window(
             params.max_stake,
             params.min_stake,
@@ -500,11 +536,6 @@ fn handle_and_cache_new_connection(
             let peer_type = connection_table_l.peer_type;
             drop(connection_table_l);
 
-            if let Ok(receive_window) = receive_window {
-                connection.set_receive_window(receive_window);
-            }
-            connection.set_max_concurrent_uni_streams(max_uni_streams);
-
             tokio::spawn(handle_connection(
                 connection,
                 remote_addr,
@@ -517,6 +548,8 @@ fn handle_and_cache_new_connection(
                 max_unstaked_connections,
                 max_streams_per_ms,
                 stream_counter,
+                max_uni_streams,
+                receive_window.ok(),
             ));
             Ok(())
         } else {
@@ -913,6 +946,8 @@ async fn handle_connection(
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
     stream_counter: Arc<ConnectionStreamCounter>,
+    mut max_uni_streams: VarInt,
+    receive_window: Option<VarInt>,
 ) {
     let stats = params.stats;
     debug!(
@@ -921,8 +956,17 @@ async fn handle_connection(
         stats.total_streams.load(Ordering::Relaxed),
         stats.total_connections.load(Ordering::Relaxed),
     );
+    connection.set_max_concurrent_uni_streams(max_uni_streams);
+    if let Some(receive_window) = receive_window {
+        connection.set_receive_window(receive_window);
+    }
     let stable_id = connection.stable_id();
     stats.total_connections.fetch_add(1, Ordering::Relaxed);
+    let max_concurrent_uni_streams = UniStreamQosUtil::compute_max_allowed_uni_streams(
+        peer_type,
+        params.stake,
+        params.total_stake,
+    ) as u64;
     let max_streams_per_throttling_interval = max_streams_for_connection_in_100ms(
         peer_type,
         params.stake,
@@ -930,7 +974,6 @@ async fn handle_connection(
         max_unstaked_connections,
         max_streams_per_ms,
     );
-
     while !stream_exit.load(Ordering::Relaxed) {
         if let Ok(stream) =
             tokio::time::timeout(WAIT_FOR_STREAM_TIMEOUT, connection.accept_uni()).await
@@ -967,6 +1010,20 @@ async fn handle_connection(
                                 }
                             }
                             sleep(throttle_duration).await;
+                        }
+                    }
+                    let max_uni_streams_in_interval = VarInt::from_u64(
+                        UniStreamQosUtil::max_concurrent_uni_streams_per_throttling_interval(
+                            max_streams_per_throttling_interval,
+                            max_concurrent_uni_streams,
+                        ),
+                    );
+
+                    if let Ok(max_uni_streams_in_interval) = max_uni_streams_in_interval {
+                        // Update max concurrent uni streams if needed
+                        if max_uni_streams_in_interval != max_uni_streams {
+                            connection.set_max_concurrent_uni_streams(max_uni_streams_in_interval);
+                            max_uni_streams = max_uni_streams_in_interval;
                         }
                     }
                     stream_counter.stream_count.fetch_add(1, Ordering::Relaxed);
@@ -1400,7 +1457,7 @@ pub mod test {
     use {
         super::*,
         crate::{
-            nonblocking::quic::compute_max_allowed_uni_streams,
+            nonblocking::quic::UniStreamQosUtil,
             quic::{MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
             tls_certificates::new_self_signed_tls_certificate,
         },
@@ -2253,53 +2310,39 @@ pub mod test {
 
     fn test_max_allowed_uni_streams() {
         assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 0, 0),
+            UniStreamQosUtil::compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 0),
             QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
         );
         assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 10, 0),
-            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
-        );
-        assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 0, 0),
-            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
-        );
-        assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 10, 0),
+            UniStreamQosUtil::compute_max_allowed_uni_streams(ConnectionPeerType::Staked(10), 0),
             QUIC_MIN_STAKED_CONCURRENT_STREAMS
         );
         let delta =
             (QUIC_TOTAL_STAKED_CONCURRENT_STREAMS - QUIC_MIN_STAKED_CONCURRENT_STREAMS) as f64;
         assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 1000, 10000),
+            UniStreamQosUtil::compute_max_allowed_uni_streams(
+                ConnectionPeerType::Staked(1000),
+                10000
+            ),
             QUIC_MAX_STAKED_CONCURRENT_STREAMS,
         );
         assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 100, 10000),
+            UniStreamQosUtil::compute_max_allowed_uni_streams(
+                ConnectionPeerType::Staked(100),
+                10000
+            ),
             ((delta / (100_f64)) as usize + QUIC_MIN_STAKED_CONCURRENT_STREAMS)
                 .min(QUIC_MAX_STAKED_CONCURRENT_STREAMS)
         );
         assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Staked, 0, 10000),
-            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
-        );
-        assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 1000, 10000),
-            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
-        );
-        assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 1, 10000),
-            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
-        );
-        assert_eq!(
-            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 0, 10000),
+            UniStreamQosUtil::compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 10000),
             QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
         );
     }
 
     #[test]
     fn test_cacluate_receive_window_ratio_for_staked_node() {
-        let mut max_stake = 10000;
+        let mut max_stake: u64 = 10000;
         let mut min_stake = 0;
         let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, min_stake);
         assert_eq!(ratio, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO);
@@ -2332,81 +2375,79 @@ pub mod test {
     }
 
     #[test]
-    fn test_max_streams_for_connection_in_100ms() {
-        // 50K packets per ms * 20% / 500 max unstaked connections
+    fn test_max_allowed_uni_streams_per_throttling_interval_ema() {
+        let load_ema = StakedStreamLoadEMA::new(
+            Arc::new(StreamStats::default()),
+            MAX_UNSTAKED_CONNECTIONS,
+            DEFAULT_MAX_STREAMS_PER_MS,
+        );
+
+        let total_stake = 10000;
+
         assert_eq!(
-            max_streams_for_connection_in_100ms(
+            UniStreamQosUtil::compute_max_allowed_uni_streams(
                 ConnectionPeerType::Unstaked,
-                0,
-                10000,
-                MAX_UNSTAKED_CONNECTIONS,
-                DEFAULT_MAX_STREAMS_PER_MS,
+                total_stake
             ),
-            20
+            128
         );
 
-        // 50K packets per ms * 20% / 500 max unstaked connections
-        assert_eq!(
-            max_streams_for_connection_in_100ms(
+        let max_uni_streams_in_ema_window =
+            UniStreamQosUtil::max_allowed_uni_streams_per_throttling_interval_ema(
+                &load_ema,
                 ConnectionPeerType::Unstaked,
-                10,
-                10000,
-                MAX_UNSTAKED_CONNECTIONS,
-                DEFAULT_MAX_STREAMS_PER_MS,
+                total_stake,
+            );
+
+        assert_eq!(max_uni_streams_in_ema_window, 10);
+
+        assert_eq!(
+            UniStreamQosUtil::compute_max_allowed_uni_streams(
+                ConnectionPeerType::Staked(1000),
+                total_stake
             ),
-            20
+            512
         );
 
-        // If stake is 0, same limits as unstaked connections will apply.
-        // 50K packets per ms * 20% / 500 max unstaked connections
-        assert_eq!(
-            max_streams_for_connection_in_100ms(
-                ConnectionPeerType::Staked,
-                0,
-                10000,
-                MAX_UNSTAKED_CONNECTIONS,
-                DEFAULT_MAX_STREAMS_PER_MS,
-            ),
-            20
-        );
+        let max_uni_streams_in_ema_window =
+            UniStreamQosUtil::max_allowed_uni_streams_per_throttling_interval_ema(
+                &load_ema,
+                ConnectionPeerType::Staked(1000),
+                total_stake,
+            );
 
-        // max staked streams = 50K packets per ms * 80% = 40K
-        // function = 40K * stake / total_stake
-        assert_eq!(
-            max_streams_for_connection_in_100ms(
-                ConnectionPeerType::Staked,
-                15,
-                10000,
-                MAX_UNSTAKED_CONNECTIONS,
-                DEFAULT_MAX_STREAMS_PER_MS
-            ),
-            60
-        );
+        assert_eq!(max_uni_streams_in_ema_window, 512);
 
-        // max staked streams = 50K packets per ms * 80% = 40K
-        // function = 40K * stake / total_stake
-        assert_eq!(
-            max_streams_for_connection_in_100ms(
-                ConnectionPeerType::Staked,
-                1000,
-                10000,
-                MAX_UNSTAKED_CONNECTIONS,
-                DEFAULT_MAX_STREAMS_PER_MS
-            ),
-            4000
-        );
+        let max_uni_streams_in_ema_window =
+            UniStreamQosUtil::max_allowed_uni_streams_per_throttling_interval_ema(
+                &load_ema,
+                ConnectionPeerType::Staked(1),
+                total_stake,
+            );
 
-        // max staked streams minimum unstkaed streams + 1.
-        // (50K packets per ms * 20%) / 500 + 1 =
+        assert_eq!(max_uni_streams_in_ema_window, 11);
+
+        let max_uni_streams_in_ema_window =
+            UniStreamQosUtil::max_allowed_uni_streams_per_throttling_interval_ema(
+                &load_ema,
+                ConnectionPeerType::Staked(10),
+                total_stake,
+            );
+
+        assert_eq!(max_uni_streams_in_ema_window, 80);
+    }
+
+    #[test]
+    fn test_max_concurrent_uni_streams_per_throttling_interval() {
+        // the current unit streams in a throttling window should be always the minimum of the allowed
+        // max streams per throttle window and the max concurrent streams allowed for it.
         assert_eq!(
-            max_streams_for_connection_in_100ms(
-                ConnectionPeerType::Staked,
-                1,
-                50000,
-                MAX_UNSTAKED_CONNECTIONS,
-                DEFAULT_MAX_STREAMS_PER_MS
-            ),
-            21
+            UniStreamQosUtil::max_concurrent_uni_streams_per_throttling_interval(10, 20),
+            10
+        );
+        assert_eq!(
+            UniStreamQosUtil::max_concurrent_uni_streams_per_throttling_interval(20, 10),
+            10
         );
     }
 }
