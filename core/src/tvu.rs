@@ -295,7 +295,7 @@ impl Tvu {
         let warm_quic_cache_service = connection_cache.and_then(|connection_cache| {
             if connection_cache.use_quic() {
                 Some(WarmQuicCacheService::new(
-                    connection_cache.unwrap().clone(),
+                    connection_cache.clone(),
                     cluster_info.clone(),
                     poh_recorder.clone(),
                     exit.clone(),
