@@ -816,8 +816,6 @@ async fn handle_connection(
                         stream_counter.stream_count.load(Ordering::Relaxed);
 
                     if streams_read_in_throttle_interval >= max_streams_per_throttling_interval {
-                        stats.throttled_streams.fetch_add(1, Ordering::Relaxed);
-
                         // The peer is sending faster than we're willing to read. Sleep for what's
                         // left of this read interval so the peer backs off.
                         let throttle_duration = STREAM_THROTTLING_INTERVAL
