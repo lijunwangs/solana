@@ -69,7 +69,7 @@ pub struct Config {
     pub external_client_type: ExternalClientType,
     pub use_quic: bool,
     pub tpu_connection_pool_size: usize,
-    pub tpu_max_connections_per_ipaddr_per_minute: u32,
+    pub tpu_max_connections_per_ipaddr_per_minute: u64,
     pub compute_unit_price: Option<ComputeUnitPrice>,
     pub skip_tx_account_data_size: bool,
     pub use_durable_nonce: bool,

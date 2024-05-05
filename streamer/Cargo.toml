@@ -13,8 +13,8 @@ edition = { workspace = true }
 async-channel = { workspace = true }
 bytes = { workspace = true }
 crossbeam-channel = { workspace = true }
+dashmap = { workspace = true }
 futures-util = { workspace = true }
-governor = { workspace = true }
 histogram = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }

@@ -82,8 +82,10 @@ const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 /// Limit to 250K PPS
 pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 250;
 
-pub const DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE: u32 = 8;
-const TOTAL_CONNECTIONS_PER_SECOND: u32 = 2500;
+pub const DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE: u64 = 8;
+const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
+
+const CONNECITON_RATE_LIMITER_CLEANUP_THRESHOLD: usize = 100_000;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
@@ -141,7 +143,7 @@ pub fn spawn_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
-    max_connections_per_ipaddr_per_min: u32,
+    max_connections_per_ipaddr_per_min: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
@@ -193,13 +195,13 @@ async fn run_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
-    max_connections_per_ipaddr_per_min: u32,
+    max_connections_per_ipaddr_per_min: u64,
     stats: Arc<StreamStats>,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) {
     let rate_limiter = ConnectionRateLimiter::new(max_connections_per_ipaddr_per_min);
-    let overall_connection_rate_limiter =
+    let mut overall_connection_rate_limiter =
         TotalConnectionRateLimiter::new(TOTAL_CONNECTIONS_PER_SECOND);
 
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
@@ -245,6 +247,12 @@ async fn run_server(
                 continue;
             }
 
+            if rate_limiter.len() > CONNECITON_RATE_LIMITER_CLEANUP_THRESHOLD {
+                rate_limiter.retain_recent();
+            }
+            stats
+                .connection_rate_limiter_length
+                .store(rate_limiter.len(), Ordering::Relaxed);
             info!("Got a connection {remote_address:?}");
             if !rate_limiter.is_allowed(&remote_address.ip()) {
                 info!(
