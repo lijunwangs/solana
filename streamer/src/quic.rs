@@ -182,6 +182,7 @@ pub struct StreamStats {
     pub(crate) total_unstaked_packets_sent_for_batching: AtomicUsize,
     pub(crate) throttled_staked_streams: AtomicUsize,
     pub(crate) throttled_unstaked_streams: AtomicUsize,
+    pub(crate) connection_rate_limiter_length: AtomicUsize,
 }
 
 impl StreamStats {
@@ -505,6 +506,11 @@ impl StreamStats {
                 self.perf_track_overhead_us.swap(0, Ordering::Relaxed),
                 i64
             ),
+            (
+                "connection_rate_limiter_length",
+                self.connection_rate_limiter_length.load(Ordering::Relaxed),
+                i64
+            ),
         );
     }
 }
@@ -522,7 +528,7 @@ pub fn spawn_server(
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     max_streams_per_ms: u64,
-    max_connections_per_ipaddr_per_min: u32,
+    max_connections_per_ipaddr_per_min: u64,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<SpawnServerResult, QuicServerError> {

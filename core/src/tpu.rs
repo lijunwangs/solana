@@ -108,7 +108,7 @@ impl Tpu {
         banking_tracer: Arc<BankingTracer>,
         tracer_thread_hdl: TracerThread,
         tpu_enable_udp: bool,
-        tpu_max_connections_per_ipaddr_per_minute: u32,
+        tpu_max_connections_per_ipaddr_per_minute: u64,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
         block_production_method: BlockProductionMethod,
         _generator_config: Option<GeneratorConfig>, /* vestigial code for replay invalidator */
