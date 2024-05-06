@@ -81,7 +81,7 @@ pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 500;
 pub const DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE: u64 = 8;
 const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
 
-const CONNECITON_RATE_LIMITER_CLEANUP_THRESHOLD: usize = 10000;
+const CONNECITON_RATE_LIMITER_CLEANUP_THRESHOLD: usize = 100_000;
 
 // A sequence of bytes that is part of a packet
 // along with where in the packet it is
