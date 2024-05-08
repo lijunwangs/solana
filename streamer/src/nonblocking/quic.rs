@@ -902,7 +902,7 @@ async fn handle_connection(
                             max_concurrent_uni_streams,
                         );
                     let max_concurrent_uni_streams =
-                        VarInt::from_u64(max_concurrent_uni_streams as u64);
+                        VarInt::from_u64(max_concurrent_uni_streams);
 
                     if let Ok(max_concurrent_uni_streams) = max_concurrent_uni_streams {
                         // Update max concurrent uni streams if needed
