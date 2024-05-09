@@ -900,7 +900,8 @@ async fn handle_connection(
                         UniStreamQosUtil::max_concurrent_uni_streams_per_throttling_interval(
                             max_streams_per_throttling_interval,
                             max_concurrent_uni_streams,
-                        ));
+                        ),
+                    );
 
                     if let Ok(max_uni_streams_in_interval) = max_uni_streams_in_interval {
                         // Update max concurrent uni streams if needed
