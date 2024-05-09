@@ -325,7 +325,7 @@ impl UniStreamQosUtil {
     ) -> u64 {
         let max_streams_per_throttle_window =
             ema.available_load_capacity_in_throttling_duration(peer_type, total_stake);
-        (UniStreamQosUtil::compute_max_allowed_uni_streams(peer_type, total_stake) as u64)
+        (Self::compute_max_allowed_uni_streams(peer_type, total_stake) as u64)
             .min(max_streams_per_throttle_window)
     }
 
@@ -896,17 +896,17 @@ async fn handle_connection(
                             sleep(throttle_duration).await;
                         }
                     }
-                    let max_concurrent_uni_streams_per_interval = VarInt::from_u64(
+                    let max_uni_streams_in_interval = VarInt::from_u64(
                         UniStreamQosUtil::max_concurrent_uni_streams_per_throttling_interval(
                             max_streams_per_throttling_interval,
                             max_concurrent_uni_streams,
                         ));
 
-                    if let Ok(max_concurrent_uni_streams_per_interval) = max_concurrent_uni_streams_per_interval {
+                    if let Ok(max_uni_streams_in_interval) = max_uni_streams_in_interval {
                         // Update max concurrent uni streams if needed
-                        if max_concurrent_uni_streams != max_uni_streams {
-                            connection.set_max_concurrent_uni_streams(max_concurrent_uni_streams_per_interval);
-                            max_uni_streams = max_concurrent_uni_streams_per_interval;
+                        if max_uni_streams_in_interval != max_uni_streams {
+                            connection.set_max_concurrent_uni_streams(max_uni_streams_in_interval);
+                            max_uni_streams = max_uni_streams_in_interval;
                         }
                     }
                     stream_load_ema.increment_load(params.peer_type);
