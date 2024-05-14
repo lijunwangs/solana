@@ -19,7 +19,7 @@ impl ConnectionRateLimiter {
     /// Check if the connection from the said `ip` is allowed.
     pub fn is_allowed(&self, ip: &IpAddr) -> bool {
         // Acquire a permit from the rate limiter for the given IP address
-        if self.limiter.is_allowed(*ip) {
+        if self.limiter.check_and_update(*ip) {
             debug!("Request from IP {:?} allowed", ip);
             true // Request allowed
         } else {
@@ -61,7 +61,7 @@ impl TotalConnectionRateLimiter {
 
     /// Check if a connection is allowed.
     pub fn is_allowed(&mut self) -> bool {
-        self.limiter.is_allowed()
+        self.limiter.check_and_update()
     }
 }
 

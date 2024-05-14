@@ -23,17 +23,19 @@ where
         }
     }
 
-    /// Check if the connection from the said `key` is allowed.
-    pub fn is_allowed(&self, key: K) -> bool {
+    /// Check if the connection from the said `key` is allowed to pass through the rate limiter.
+    /// When it is allowed, the rate limiter state is updated to reflect it has been
+    /// allowed. For a unique request, the caller should call it only once when it is allowed.
+    pub fn check_and_update(&self, key: K) -> bool {
         let allowed = match self.limiters.entry(key) {
             dashmap::mapref::entry::Entry::Occupied(mut entry) => {
                 let limiter = entry.get_mut();
-                limiter.is_allowed()
+                limiter.check_and_update()
             }
             dashmap::mapref::entry::Entry::Vacant(entry) => entry
                 .insert(RateLimiter::new(self.limit, self.interval))
                 .value_mut()
-                .is_allowed(),
+                .check_and_update(),
         };
         allowed
     }
@@ -68,33 +70,33 @@ pub mod test {
         let limiter = KeyedRateLimiter::<u64>::new(2, Duration::from_millis(100));
         assert!(limiter.len() == 0);
         assert!(limiter.is_empty());
-        assert!(limiter.is_allowed(1));
-        assert!(limiter.is_allowed(1));
-        assert!(!limiter.is_allowed(1));
+        assert!(limiter.check_and_update(1));
+        assert!(limiter.check_and_update(1));
+        assert!(!limiter.check_and_update(1));
         assert!(limiter.len() == 1);
-        assert!(limiter.is_allowed(2));
-        assert!(limiter.is_allowed(2));
-        assert!(!limiter.is_allowed(2));
+        assert!(limiter.check_and_update(2));
+        assert!(limiter.check_and_update(2));
+        assert!(!limiter.check_and_update(2));
         assert!(limiter.len() == 2);
 
         // sleep 150 ms, the throttle parameters should have been reset.
         sleep(Duration::from_millis(150)).await;
         assert!(limiter.len() == 2);
 
-        assert!(limiter.is_allowed(1));
-        assert!(limiter.is_allowed(1));
-        assert!(!limiter.is_allowed(1));
+        assert!(limiter.check_and_update(1));
+        assert!(limiter.check_and_update(1));
+        assert!(!limiter.check_and_update(1));
 
-        assert!(limiter.is_allowed(2));
-        assert!(limiter.is_allowed(2));
-        assert!(!limiter.is_allowed(2));
+        assert!(limiter.check_and_update(2));
+        assert!(limiter.check_and_update(2));
+        assert!(!limiter.check_and_update(2));
         assert!(limiter.len() == 2);
 
         // sleep another 150 and clean outdatated, key 2 will be removed
         sleep(Duration::from_millis(150)).await;
-        assert!(limiter.is_allowed(1));
-        assert!(limiter.is_allowed(1));
-        assert!(!limiter.is_allowed(1));
+        assert!(limiter.check_and_update(1));
+        assert!(limiter.check_and_update(1));
+        assert!(!limiter.check_and_update(1));
 
         limiter.retain_recent();
         assert!(limiter.len() == 1);
