@@ -47,9 +47,9 @@ use {
             ClusterInfo, Node, DEFAULT_CONTACT_DEBUG_INTERVAL_MILLIS,
             DEFAULT_CONTACT_SAVE_INTERVAL_MILLIS,
         },
+        contact_info::ContactInfo,
         crds_gossip_pull::CRDS_GOSSIP_PULL_CRDS_TIMEOUT_MS,
         gossip_service::GossipService,
-        legacy_contact_info::LegacyContactInfo as ContactInfo,
     },
     solana_ledger::{
         bank_forks_utils,
@@ -120,7 +120,7 @@ use {
     solana_turbine::{self, broadcast_stage::BroadcastStageType},
     solana_unified_scheduler_pool::DefaultSchedulerPool,
     solana_vote_program::vote_state,
-    solana_wen_restart::wen_restart::wait_for_wen_restart,
+    solana_wen_restart::wen_restart::{wait_for_wen_restart, WenRestartConfig},
     std::{
         collections::{HashMap, HashSet},
         net::SocketAddr,
@@ -353,7 +353,7 @@ impl ValidatorConfig {
         Self {
             enforce_ulimit_nofile: false,
             rpc_config: JsonRpcConfig::default_for_test(),
-            block_production_method: BlockProductionMethod::ThreadLocalMultiIterator,
+            block_production_method: BlockProductionMethod::default(),
             replay_forks_threads: NonZeroUsize::new(1).expect("1 is non-zero"),
             replay_transactions_threads: NonZeroUsize::new(get_max_thread_count())
                 .expect("thread count is non-zero"),
@@ -510,8 +510,11 @@ impl Validator {
         use_quic: bool,
         tpu_connection_pool_size: usize,
         tpu_enable_udp: bool,
+        tpu_max_connections_per_ipaddr_per_minute: u64,
         admin_rpc_service_post_init: Arc<RwLock<Option<AdminRpcRequestMetadataPostInit>>>,
     ) -> Result<Self, String> {
+        let start_time = Instant::now();
+
         let id = identity_keypair.pubkey();
         assert_eq!(&id, node.info.pubkey());
 
@@ -1323,9 +1326,9 @@ impl Validator {
             &max_slots,
             block_metadata_notifier,
             config.wait_to_vote_slot,
-            accounts_background_request_sender,
+            accounts_background_request_sender.clone(),
             config.runtime_config.log_messages_bytes_limit,
-            &connection_cache,
+            json_rpc_service.is_some().then_some(&connection_cache), // for the cache warmer only used for STS for RPC service
             &prioritization_fee_cache,
             banking_tracer.clone(),
             turbine_quic_endpoint_sender.clone(),
@@ -1338,16 +1341,20 @@ impl Validator {
 
         if in_wen_restart {
             info!("Waiting for wen_restart phase one to finish");
-            match wait_for_wen_restart(
-                &config.wen_restart_proto_path.clone().unwrap(),
+            match wait_for_wen_restart(WenRestartConfig {
+                wen_restart_path: config.wen_restart_proto_path.clone().unwrap(),
                 last_vote,
-                blockstore.clone(),
-                cluster_info.clone(),
-                bank_forks.clone(),
-                wen_restart_repair_slots.clone(),
-                WAIT_FOR_WEN_RESTART_SUPERMAJORITY_THRESHOLD_PERCENT,
-                exit.clone(),
-            ) {
+                blockstore: blockstore.clone(),
+                cluster_info: cluster_info.clone(),
+                bank_forks: bank_forks.clone(),
+                wen_restart_repair_slots: wen_restart_repair_slots.clone(),
+                wait_for_supermajority_threshold_percent:
+                    WAIT_FOR_WEN_RESTART_SUPERMAJORITY_THRESHOLD_PERCENT,
+                snapshot_config: config.snapshot_config.clone(),
+                accounts_background_request_sender: accounts_background_request_sender.clone(),
+                genesis_config_hash: genesis_config.hash(),
+                exit: exit.clone(),
+            }) {
                 Ok(()) => {
                     return Err("wen_restart phase one completedy".to_string());
                 }
@@ -1393,6 +1400,7 @@ impl Validator {
             banking_tracer,
             tracer_thread,
             tpu_enable_udp,
+            tpu_max_connections_per_ipaddr_per_minute,
             &prioritization_fee_cache,
             config.block_production_method.clone(),
             config.generator_config.clone(),
@@ -1403,6 +1411,7 @@ impl Validator {
             ("id", id.to_string(), String),
             ("version", solana_version::version!(), String),
             ("cluster_type", genesis_config.cluster_type as u32, i64),
+            ("elapsed_ms", start_time.elapsed().as_millis() as i64, i64),
             ("waited_for_supermajority", waited_for_supermajority, bool),
             ("expected_shred_version", config.expected_shred_version, Option<i64>),
         );
@@ -2115,12 +2124,6 @@ fn maybe_warp_slot(
             &config.snapshot_config.full_snapshot_archives_dir,
             &config.snapshot_config.incremental_snapshot_archives_dir,
             config.snapshot_config.archive_format,
-            config
-                .snapshot_config
-                .maximum_full_snapshot_archives_to_retain,
-            config
-                .snapshot_config
-                .maximum_incremental_snapshot_archives_to_retain,
         ) {
             Ok(archive_info) => archive_info,
             Err(e) => return Err(format!("Unable to create snapshot: {e}")),
@@ -2531,7 +2534,7 @@ mod tests {
         super::*,
         crossbeam_channel::{bounded, RecvTimeoutError},
         solana_entry::entry,
-        solana_gossip::contact_info::{ContactInfo, LegacyContactInfo},
+        solana_gossip::contact_info::ContactInfo,
         solana_ledger::{
             blockstore, create_new_tmp_ledger, genesis_utils::create_genesis_config_with_leader,
             get_tmp_ledger_path_auto_delete,
@@ -2571,7 +2574,7 @@ mod tests {
             &validator_ledger_path,
             &voting_keypair.pubkey(),
             Arc::new(RwLock::new(vec![voting_keypair])),
-            vec![LegacyContactInfo::try_from(&leader_node.info).unwrap()],
+            vec![leader_node.info],
             &config,
             true, // should_check_duplicate_instance
             None, // rpc_to_plugin_manager_receiver
@@ -2580,6 +2583,7 @@ mod tests {
             DEFAULT_TPU_USE_QUIC,
             DEFAULT_TPU_CONNECTION_POOL_SIZE,
             DEFAULT_TPU_ENABLE_UDP,
+            32, // max connections per IpAddr per minute for test
             Arc::new(RwLock::new(None)),
         )
         .expect("assume successful validator start");
@@ -2656,7 +2660,7 @@ mod tests {
                     &validator_ledger_path,
                     &vote_account_keypair.pubkey(),
                     Arc::new(RwLock::new(vec![Arc::new(vote_account_keypair)])),
-                    vec![LegacyContactInfo::try_from(&leader_node.info).unwrap()],
+                    vec![leader_node.info.clone()],
                     &config,
                     true, // should_check_duplicate_instance.
                     None, // rpc_to_plugin_manager_receiver
@@ -2665,6 +2669,7 @@ mod tests {
                     DEFAULT_TPU_USE_QUIC,
                     DEFAULT_TPU_CONNECTION_POOL_SIZE,
                     DEFAULT_TPU_ENABLE_UDP,
+                    32, // max connections per IpAddr per minute for test
                     Arc::new(RwLock::new(None)),
                 )
                 .expect("assume successful validator start")

@@ -6,7 +6,7 @@ use {
     rand_chacha::ChaChaRng,
     solana_gossip::{
         cluster_info::ClusterInfo,
-        contact_info::{LegacyContactInfo as ContactInfo, LegacyContactInfo, Protocol},
+        contact_info::{ContactInfo, Protocol},
         crds::GossipRoute,
         crds_gossip_pull::CRDS_GOSSIP_PULL_CRDS_TIMEOUT_MS,
         crds_value::{CrdsData, CrdsValue},
@@ -85,6 +85,9 @@ pub struct ClusterNodesCache<T> {
 pub struct RetransmitPeers<'a> {
     root_distance: usize, // distance from the root node
     children: Vec<&'a Node>,
+    // Maps tvu addresses to the first node
+    // in the shuffle with the same address.
+    addrs: HashMap<SocketAddr, Pubkey>, // tvu addresses
 }
 
 impl Node {
@@ -173,13 +176,16 @@ impl ClusterNodes<RetransmitStage> {
         let RetransmitPeers {
             root_distance,
             children,
+            addrs,
         } = self.get_retransmit_peers(slot_leader, shred, fanout)?;
         let protocol = get_broadcast_protocol(shred);
-        let peers = children
-            .into_iter()
-            .filter_map(|node| node.contact_info()?.tvu(protocol).ok())
-            .collect();
-        Ok((root_distance, peers))
+        let peers = children.into_iter().filter_map(|node| {
+            node.contact_info()?
+                .tvu(protocol)
+                .ok()
+                .filter(|addr| addrs.get(addr) == Some(&node.pubkey()))
+        });
+        Ok((root_distance, peers.collect()))
     }
 
     pub fn get_retransmit_peers(
@@ -199,10 +205,19 @@ impl ClusterNodes<RetransmitStage> {
         if let Some(index) = self.index.get(slot_leader) {
             weighted_shuffle.remove_index(*index);
         }
+        let mut addrs = HashMap::<SocketAddr, Pubkey>::with_capacity(self.nodes.len());
         let mut rng = get_seeded_rng(slot_leader, shred);
+        let protocol = get_broadcast_protocol(shred);
         let nodes: Vec<_> = weighted_shuffle
             .shuffle(&mut rng)
             .map(|index| &self.nodes[index])
+            .inspect(|node| {
+                if let Some(node) = node.contact_info() {
+                    if let Ok(addr) = node.tvu(protocol) {
+                        addrs.entry(addr).or_insert(*node.pubkey());
+                    }
+                }
+            })
             .collect();
         let self_index = nodes
             .iter()
@@ -221,6 +236,7 @@ impl ClusterNodes<RetransmitStage> {
         Ok(RetransmitPeers {
             root_distance,
             children: peers.collect(),
+            addrs,
         })
     }
 
@@ -309,9 +325,7 @@ fn get_nodes(
     // The local node itself.
     std::iter::once({
         let stake = stakes.get(&self_pubkey).copied().unwrap_or_default();
-        let node = LegacyContactInfo::try_from(&cluster_info.my_contact_info())
-            .map(NodeId::from)
-            .expect("Operator must spin up node with valid contact-info");
+        let node = NodeId::from(cluster_info.my_contact_info());
         Node { node, stake }
     })
     // All known tvu-peers from gossip.
@@ -510,7 +524,6 @@ pub fn make_test_cluster<R: Rng>(
     HashMap<Pubkey, u64>, // stakes
     ClusterInfo,
 ) {
-    use solana_gossip::contact_info::ContactInfo;
     let (unstaked_numerator, unstaked_denominator) = unstaked_ratio.unwrap_or((1, 7));
     let mut nodes: Vec<_> = repeat_with(|| {
         let pubkey = solana_sdk::pubkey::new_rand();
@@ -535,17 +548,12 @@ pub fn make_test_cluster<R: Rng>(
     // Add some staked nodes with no contact-info.
     stakes.extend(repeat_with(|| (Pubkey::new_unique(), rng.gen_range(0..20))).take(100));
     let cluster_info = ClusterInfo::new(this_node, keypair, SocketAddrSpace::Unspecified);
-    let nodes: Vec<_> = nodes
-        .iter()
-        .map(LegacyContactInfo::try_from)
-        .collect::<Result<_, _>>()
-        .unwrap();
     {
         let now = timestamp();
         let mut gossip_crds = cluster_info.gossip.crds.write().unwrap();
         // First node is pushed to crds table by ClusterInfo constructor.
         for node in nodes.iter().skip(1) {
-            let node = CrdsData::LegacyContactInfo(node.clone());
+            let node = CrdsData::ContactInfo(node.clone());
             let node = CrdsValue::new_unsigned(node);
             assert_eq!(
                 gossip_crds.insert(node, now, GossipRoute::LocalMessage),

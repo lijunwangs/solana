@@ -221,7 +221,7 @@ impl Restart {
                     paths.remove(&id)
                 });
                 RestartableBucket {
-                    restart: restart.map(Arc::clone),
+                    restart: restart.cloned(),
                     index,
                     path,
                 }
@@ -241,7 +241,7 @@ impl Restart {
         let mut data = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
+            .create_new(true)
             .open(file)?;
 
         if capacity > 0 {

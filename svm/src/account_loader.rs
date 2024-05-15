@@ -1,11 +1,12 @@
 use {
     crate::{
-        account_overrides::AccountOverrides, account_rent_state::RentState,
+        account_overrides::AccountOverrides,
+        account_rent_state::RentState,
+        nonce_info::{NonceFull, NoncePartial},
         transaction_error_metrics::TransactionErrorMetrics,
-        transaction_processor::TransactionProcessingCallback,
+        transaction_processing_callback::TransactionProcessingCallback,
     },
     itertools::Itertools,
-    log::warn,
     solana_program_runtime::{
         compute_budget_processor::process_compute_budget_instructions,
         loaded_programs::{ProgramCacheEntry, ProgramCacheForTxBatch},
@@ -20,7 +21,6 @@ use {
         message::SanitizedMessage,
         native_loader,
         nonce::State as NonceState,
-        nonce_info::{NonceFull, NoncePartial},
         pubkey::Pubkey,
         rent::RentDue,
         rent_collector::{RentCollector, RENT_EXEMPT_RENT_EPOCH},
@@ -46,6 +46,12 @@ pub struct LoadedTransaction {
     pub program_indices: TransactionProgramIndices,
     pub rent: TransactionRent,
     pub rent_debits: RentDebits,
+}
+
+impl LoadedTransaction {
+    pub fn fee_payer_account(&self) -> Option<&TransactionAccount> {
+        self.accounts.first()
+    }
 }
 
 /// Check whether the payer_account is capable of paying the fee. The
@@ -151,21 +157,22 @@ pub(crate) fn load_accounts<CB: TransactionProcessingCallback>(
                 };
 
                 // Update nonce with fee-subtracted accounts
-                let nonce = if let Some(nonce) = nonce {
-                    match NonceFull::from_partial(
-                        nonce,
-                        message,
-                        &loaded_transaction.accounts,
-                        &loaded_transaction.rent_debits,
-                    ) {
-                        Ok(nonce) => Some(nonce),
-                        // This error branch is never reached, because `load_transaction_accounts`
-                        // already validates the fee payer account.
-                        Err(e) => return (Err(e), None),
-                    }
-                } else {
-                    None
+                let Some((fee_payer_address, fee_payer_account)) =
+                    loaded_transaction.fee_payer_account()
+                else {
+                    // This error branch is never reached, because `load_transaction_accounts`
+                    // already validates the fee payer account.
+                    return (Err(TransactionError::AccountNotFound), None);
                 };
+
+                let nonce = nonce.as_ref().map(|nonce| {
+                    NonceFull::from_partial(
+                        nonce,
+                        fee_payer_address,
+                        fee_payer_account.clone(),
+                        &loaded_transaction.rent_debits,
+                    )
+                });
 
                 (Ok(loaded_transaction), nonce)
             }
@@ -281,11 +288,7 @@ fn load_transaction_accounts<CB: TransactionProcessingCallback>(
                     error_counters,
                 )?;
 
-                if !validated_fee_payer && message.is_non_loader_key(i) {
-                    if i != 0 {
-                        warn!("Payer index should be 0! {:?}", message);
-                    }
-
+                if i == 0 {
                     validate_fee_payer(
                         key,
                         &mut account,
@@ -454,8 +457,9 @@ mod tests {
     use {
         super::*,
         crate::{
+            nonce_info::{NonceFull, NoncePartial},
             transaction_account_state_info::TransactionAccountStateInfo,
-            transaction_processor::TransactionProcessingCallback,
+            transaction_processing_callback::TransactionProcessingCallback,
         },
         nonce::state::Versions as NonceVersions,
         solana_program_runtime::{
@@ -480,7 +484,6 @@ mod tests {
             native_loader,
             native_token::sol_to_lamports,
             nonce,
-            nonce_info::{NonceFull, NoncePartial},
             pubkey::Pubkey,
             rent::Rent,
             rent_collector::{RentCollector, RENT_EXEMPT_RENT_EPOCH},

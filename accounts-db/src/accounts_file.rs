@@ -49,6 +49,13 @@ pub enum MatchAccountOwnerError {
     UnableToLoad,
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum StorageAccess {
+    #[default]
+    /// storages should be accessed by Mmap
+    Mmap,
+}
+
 pub type Result<T> = std::result::Result<T, AccountsFileError>;
 
 #[derive(Debug)]
@@ -64,9 +71,22 @@ impl AccountsFile {
     ///
     /// The second element of the returned tuple is the number of accounts in the
     /// accounts file.
-    pub fn new_from_file(path: impl Into<PathBuf>, current_len: usize) -> Result<(Self, usize)> {
-        let (av, num_accounts) = AppendVec::new_from_file(path, current_len)?;
+    pub fn new_from_file(
+        path: impl Into<PathBuf>,
+        current_len: usize,
+        storage_access: StorageAccess,
+    ) -> Result<(Self, usize)> {
+        let (av, num_accounts) = AppendVec::new_from_file(path, current_len, storage_access)?;
         Ok((Self::AppendVec(av), num_accounts))
+    }
+
+    /// true if this storage can possibly be appended to (independent of capacity check)
+    pub(crate) fn can_append(&self) -> bool {
+        match self {
+            Self::AppendVec(av) => av.can_append(),
+            // once created, tiered storages cannot be appended to
+            Self::TieredStorage(_) => false,
+        }
     }
 
     pub fn flush(&self) -> Result<()> {
@@ -115,30 +135,11 @@ impl AccountsFile {
         format!("{slot}.{id}")
     }
 
-    /// Return (account metadata, next_index) pair for the account at the
-    /// specified `offset` if any.  Otherwise return None.   Also return the
-    /// index of the next entry.
-    pub fn get_stored_account_meta(&self, offset: usize) -> Option<(StoredAccountMeta<'_>, usize)> {
-        match self {
-            Self::AppendVec(av) => av.get_stored_account_meta(offset),
-            // Note: The conversion here is needed as the AccountsDB currently
-            // assumes all offsets are multiple of 8 while TieredStorage uses
-            // IndexOffset that is equivalent to AccountInfo::reduced_offset.
-            Self::TieredStorage(ts) => ts
-                .reader()?
-                .get_stored_account_meta(IndexOffset(AccountInfo::get_reduced_offset(offset)))
-                .ok()?
-                .map(|(metas, index_offset)| {
-                    (metas, AccountInfo::reduced_offset_to_offset(index_offset.0))
-                }),
-        }
-    }
-
     /// calls `callback` with the account located at the specified index offset.
-    pub fn get_stored_account_meta_callback<'a, Ret>(
-        &'a self,
+    pub fn get_stored_account_meta_callback<Ret>(
+        &self,
         offset: usize,
-        callback: impl FnMut(StoredAccountMeta<'a>) -> Ret,
+        callback: impl for<'local> FnMut(StoredAccountMeta<'local>) -> Ret,
     ) -> Option<Ret> {
         match self {
             Self::AppendVec(av) => av.get_stored_account_meta_callback(offset, callback),
@@ -199,13 +200,11 @@ impl AccountsFile {
         }
     }
 
-    /// Return iterator for account metadata
-    pub fn account_iter(&self) -> AccountsFileIter {
-        AccountsFileIter::new(self)
-    }
-
     /// Iterate over all accounts and call `callback` with each account.
-    pub(crate) fn scan_accounts(&self, callback: impl for<'a> FnMut(StoredAccountMeta<'a>)) {
+    pub(crate) fn scan_accounts(
+        &self,
+        callback: impl for<'local> FnMut(StoredAccountMeta<'local>),
+    ) {
         match self {
             Self::AppendVec(av) => av.scan_accounts(callback),
             Self::TieredStorage(ts) => {
@@ -251,24 +250,6 @@ impl AccountsFile {
         }
     }
 
-    /// Return a vector of account metadata for each account, starting from `offset`.
-    pub fn accounts(&self, offset: usize) -> Vec<StoredAccountMeta> {
-        match self {
-            Self::AppendVec(av) => av.accounts(offset),
-            // Note: The conversion here is needed as the AccountsDB currently
-            // assumes all offsets are multiple of 8 while TieredStorage uses
-            // IndexOffset that is equivalent to AccountInfo::reduced_offset.
-            Self::TieredStorage(ts) => ts
-                .reader()
-                .and_then(|reader| {
-                    reader
-                        .accounts(IndexOffset(AccountInfo::get_reduced_offset(offset)))
-                        .ok()
-                })
-                .unwrap_or_default(),
-        }
-    }
-
     /// Copy each account metadata, account and hash to the internal buffer.
     /// If there is no room to write the first entry, None is returned.
     /// Otherwise, returns the starting offset of each account metadata.
@@ -306,33 +287,6 @@ impl AccountsFile {
                 .reader()
                 .expect("must be a reader when archiving")
                 .data_for_archive(),
-        }
-    }
-}
-
-pub struct AccountsFileIter<'a> {
-    file_entry: &'a AccountsFile,
-    offset: usize,
-}
-
-impl<'a> AccountsFileIter<'a> {
-    pub fn new(file_entry: &'a AccountsFile) -> Self {
-        Self {
-            file_entry,
-            offset: 0,
-        }
-    }
-}
-
-impl<'a> Iterator for AccountsFileIter<'a> {
-    type Item = StoredAccountMeta<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some((account, next_offset)) = self.file_entry.get_stored_account_meta(self.offset) {
-            self.offset = next_offset;
-            Some(account)
-        } else {
-            None
         }
     }
 }

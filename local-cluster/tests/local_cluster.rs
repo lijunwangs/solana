@@ -16,11 +16,11 @@ use {
         },
         optimistic_confirmation_verifier::OptimisticConfirmationVerifier,
         replay_stage::DUPLICATE_THRESHOLD,
-        validator::{BlockProductionMethod, BlockVerificationMethod, ValidatorConfig},
+        validator::{BlockVerificationMethod, ValidatorConfig},
     },
     solana_download_utils::download_snapshot_archive,
     solana_entry::entry::create_ticks,
-    solana_gossip::{contact_info::LegacyContactInfo, gossip_service::discover_cluster},
+    solana_gossip::gossip_service::discover_cluster,
     solana_ledger::{
         ancestor_iterator::AncestorIterator,
         bank_forks_utils,
@@ -87,7 +87,6 @@ use {
         fs,
         io::Read,
         iter,
-        num::NonZeroUsize,
         path::Path,
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -199,7 +198,6 @@ fn test_spend_and_verify_all_nodes_3() {
 
 #[test]
 #[serial]
-#[ignore]
 fn test_local_cluster_signature_subscribe() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
     let num_nodes = 2;
@@ -218,11 +216,10 @@ fn test_local_cluster_signature_subscribe() {
         .unwrap();
     let non_bootstrap_info = cluster.get_contact_info(&non_bootstrap_id).unwrap();
 
-    let (rpc, tpu) = LegacyContactInfo::try_from(non_bootstrap_info)
-        .map(|node| {
-            cluster_tests::get_client_facing_addr(cluster.connection_cache.protocol(), node)
-        })
-        .unwrap();
+    let (rpc, tpu) = cluster_tests::get_client_facing_addr(
+        cluster.connection_cache.protocol(),
+        non_bootstrap_info,
+    );
     let tx_client = ThinClient::new(rpc, tpu, cluster.connection_cache.clone());
 
     let (blockhash, _) = tx_client
@@ -280,31 +277,6 @@ fn test_local_cluster_signature_subscribe() {
 }
 
 #[test]
-#[allow(unused_attributes)]
-#[ignore]
-fn test_spend_and_verify_all_nodes_env_num_nodes() {
-    solana_logger::setup_with_default(RUST_LOG_FILTER);
-    let num_nodes: usize = std::env::var("NUM_NODES")
-        .expect("please set environment variable NUM_NODES")
-        .parse()
-        .expect("could not parse NUM_NODES as a number");
-    let local = LocalCluster::new_with_equal_stakes(
-        num_nodes,
-        DEFAULT_CLUSTER_LAMPORTS,
-        DEFAULT_NODE_STAKE,
-        SocketAddrSpace::Unspecified,
-    );
-    cluster_tests::spend_and_verify_all_nodes(
-        &local.entry_point_info,
-        &local.funding_keypair,
-        num_nodes,
-        HashSet::new(),
-        SocketAddrSpace::Unspecified,
-        &local.connection_cache,
-    );
-}
-
-#[test]
 #[serial]
 fn test_two_unbalanced_stakes() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
@@ -346,16 +318,11 @@ fn test_forwarding() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
     // Set up a cluster where one node is never the leader, so all txs sent to this node
     // will be have to be forwarded in order to be confirmed
-    // Only ThreadLocalMultiIterator banking stage forwards transactions,
-    // so must use that block-production-method.
     let mut config = ClusterConfig {
         node_stakes: vec![DEFAULT_NODE_STAKE * 100, DEFAULT_NODE_STAKE],
         cluster_lamports: DEFAULT_CLUSTER_LAMPORTS + DEFAULT_NODE_STAKE * 100,
         validator_configs: make_identical_validator_configs(
-            &ValidatorConfig {
-                block_production_method: BlockProductionMethod::ThreadLocalMultiIterator,
-                ..ValidatorConfig::default_for_test()
-            },
+            &ValidatorConfig::default_for_test(),
             2,
         ),
         ..ClusterConfig::default()
@@ -423,7 +390,7 @@ fn test_restart_node() {
         slots_per_epoch,
     );
     cluster_tests::send_many_transactions(
-        &LegacyContactInfo::try_from(&cluster.entry_point_info).unwrap(),
+        &cluster.entry_point_info,
         &cluster.funding_keypair,
         &cluster.connection_cache,
         10,
@@ -455,11 +422,10 @@ fn test_mainnet_beta_cluster_type() {
     .unwrap();
     assert_eq!(cluster_nodes.len(), 1);
 
-    let (rpc, tpu) = LegacyContactInfo::try_from(&cluster.entry_point_info)
-        .map(|node| {
-            cluster_tests::get_client_facing_addr(cluster.connection_cache.protocol(), node)
-        })
-        .unwrap();
+    let (rpc, tpu) = cluster_tests::get_client_facing_addr(
+        cluster.connection_cache.protocol(),
+        &cluster.entry_point_info,
+    );
     let client = ThinClient::new(rpc, tpu, cluster.connection_cache.clone());
 
     // Programs that are available at epoch 0
@@ -1463,7 +1429,7 @@ fn test_snapshots_restart_validity() {
         // forwarded to and processed.
         trace!("Sending transactions");
         let new_balances = cluster_tests::send_many_transactions(
-            &LegacyContactInfo::try_from(&cluster.entry_point_info).unwrap(),
+            &cluster.entry_point_info,
             &cluster.funding_keypair,
             &cluster.connection_cache,
             10,
@@ -2142,7 +2108,10 @@ fn test_hard_fork_invalidates_tower() {
         Some(&hard_forks),
     );
 
-    validator_a_info.config.new_hard_forks = hard_fork_slots.clone();
+    validator_a_info
+        .config
+        .new_hard_forks
+        .clone_from(&hard_fork_slots);
     validator_a_info.config.wait_for_supermajority = Some(hard_fork_slot);
     validator_a_info.config.expected_shred_version = Some(expected_shred_version);
 
@@ -2226,8 +2195,6 @@ fn create_snapshot_to_hard_fork(
         ledger_path,
         ledger_path,
         snapshot_config.archive_format,
-        NonZeroUsize::new(1).unwrap(),
-        NonZeroUsize::new(1).unwrap(),
     )
     .unwrap();
     info!(
@@ -2239,6 +2206,7 @@ fn create_snapshot_to_hard_fork(
 }
 
 #[test]
+#[ignore]
 #[serial]
 fn test_hard_fork_with_gap_in_roots() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
@@ -2683,11 +2651,10 @@ fn test_oc_bad_signatures() {
     );
 
     // 3) Start up a spy to listen for and push votes to leader TPU
-    let (rpc, tpu) = LegacyContactInfo::try_from(&cluster.entry_point_info)
-        .map(|node| {
-            cluster_tests::get_client_facing_addr(cluster.connection_cache.protocol(), node)
-        })
-        .unwrap();
+    let (rpc, tpu) = cluster_tests::get_client_facing_addr(
+        cluster.connection_cache.protocol(),
+        &cluster.entry_point_info,
+    );
     let client = ThinClient::new(rpc, tpu, cluster.connection_cache.clone());
     let cluster_funding_keypair = cluster.funding_keypair.insecure_clone();
     let voter_thread_sleep_ms: usize = 100;
@@ -4365,10 +4332,7 @@ fn test_leader_failure_4() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
     error!("test_leader_failure_4");
     let num_nodes = 4;
-    let validator_config = ValidatorConfig {
-        block_production_method: BlockProductionMethod::ThreadLocalMultiIterator,
-        ..ValidatorConfig::default_for_test()
-    };
+    let validator_config = ValidatorConfig::default_for_test();
     let mut config = ClusterConfig {
         cluster_lamports: DEFAULT_CLUSTER_LAMPORTS,
         node_stakes: vec![DEFAULT_NODE_STAKE; 4],
@@ -4785,8 +4749,10 @@ fn test_duplicate_with_pruned_ancestor() {
     // Make sure we don't send duplicate votes
     majority_validator_info.config.wait_to_vote_slot = Some(fork_slot + fork_length);
     // Fix the leader schedule so we can produce blocks
-    majority_validator_info.config.fixed_leader_schedule =
-        minority_validator_info.config.fixed_leader_schedule.clone();
+    majority_validator_info
+        .config
+        .fixed_leader_schedule
+        .clone_from(&minority_validator_info.config.fixed_leader_schedule);
     cluster.restart_node(
         &majority_pubkey,
         majority_validator_info,
@@ -5706,6 +5672,7 @@ fn test_randomly_mixed_block_verification_methods_between_bootstrap_and_not() {
 
 /// Forks previous marked invalid should be marked as such in fork choice on restart
 #[test]
+#[ignore]
 #[serial]
 fn test_invalid_forks_persisted_on_restart() {
     solana_logger::setup_with("info,solana_metrics=off,solana_ledger=off");

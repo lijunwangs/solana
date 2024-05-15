@@ -25,7 +25,7 @@ use {
         partitioned_rewards::TestPartitionedEpochRewards,
         utils::{create_all_accounts_run_and_snapshot_dirs, create_and_canonicalize_directories},
     },
-    solana_clap_utils::input_parsers::{keypair_of, keypairs_of, pubkey_of, value_of},
+    solana_clap_utils::input_parsers::{keypair_of, keypairs_of, pubkey_of, value_of, values_of},
     solana_core::{
         banking_trace::DISABLED_BAKING_TRACE_DIR,
         consensus::tower_storage,
@@ -38,7 +38,7 @@ use {
     },
     solana_gossip::{
         cluster_info::{Node, NodeConfig},
-        legacy_contact_info::LegacyContactInfo as ContactInfo,
+        contact_info::ContactInfo,
     },
     solana_ledger::{
         blockstore_cleanup_service::{DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS},
@@ -1085,6 +1085,8 @@ pub fn main() {
     };
 
     let tpu_connection_pool_size = value_t_or_exit!(matches, "tpu_connection_pool_size", usize);
+    let tpu_max_connections_per_ipaddr_per_minute =
+        value_t_or_exit!(matches, "tpu_max_connections_per_ipaddr_per_minute", u64);
 
     let shrink_ratio = value_t_or_exit!(matches, "accounts_shrink_ratio", f64);
     if !(0.0..=1.0).contains(&shrink_ratio) {
@@ -1233,20 +1235,45 @@ pub fn main() {
         })
         .unzip();
 
+    let read_cache_limit_bytes = values_of::<usize>(&matches, "accounts_db_read_cache_limit_mb")
+        .map(|limits| {
+            match limits.len() {
+                // we were given explicit low and high watermark values, so use them
+                2 => (limits[0] * MB, limits[1] * MB),
+                // we were given a single value, so use it for both low and high watermarks
+                1 => (limits[0] * MB, limits[0] * MB),
+                _ => {
+                    // clap will enforce either one or two values is given
+                    unreachable!(
+                        "invalid number of values given to accounts-db-read-cache-limit-mb"
+                    )
+                }
+            }
+        });
+    let create_ancient_storage = matches
+        .value_of("accounts_db_squash_storages_method")
+        .map(|method| match method {
+            "pack" => CreateAncientStorage::Pack,
+            "append" => CreateAncientStorage::Append,
+            _ => {
+                // clap will enforce one of the above values is given
+                unreachable!("invalid value given to accounts-db-squash-storages-method")
+            }
+        })
+        .unwrap_or_default();
+
     let accounts_db_config = AccountsDbConfig {
         index: Some(accounts_index_config),
         base_working_path: Some(ledger_path.clone()),
         accounts_hash_cache_path: Some(accounts_hash_cache_path),
         shrink_paths: account_shrink_run_paths,
+        read_cache_limit_bytes,
         write_cache_limit_bytes: value_t!(matches, "accounts_db_cache_limit_mb", u64)
             .ok()
             .map(|mb| mb * MB as u64),
         ancient_append_vec_offset: value_t!(matches, "accounts_db_ancient_append_vecs", i64).ok(),
         exhaustively_verify_refcounts: matches.is_present("accounts_db_verify_refcounts"),
-        create_ancient_storage: matches
-            .is_present("accounts_db_create_ancient_storage_packed")
-            .then_some(CreateAncientStorage::Pack)
-            .unwrap_or_default(),
+        create_ancient_storage,
         test_partitioned_epoch_rewards,
         test_skip_rewrites_but_include_in_bank_hash: matches
             .is_present("accounts_db_test_skip_rewrites"),
@@ -1955,6 +1982,7 @@ pub fn main() {
         tpu_use_quic,
         tpu_connection_pool_size,
         tpu_enable_udp,
+        tpu_max_connections_per_ipaddr_per_minute,
         admin_service_post_init,
     )
     .unwrap_or_else(|e| {

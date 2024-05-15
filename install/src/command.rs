@@ -8,7 +8,7 @@ use {
     console::{style, Emoji},
     crossbeam_channel::unbounded,
     indicatif::{ProgressBar, ProgressStyle},
-    serde::{Deserialize, Serialize},
+    serde_derive::{Deserialize, Serialize},
     solana_config_program::{config_instruction, get_config_data, ConfigState},
     solana_rpc_client::rpc_client::RpcClient,
     solana_sdk::{
@@ -1158,7 +1158,10 @@ pub fn init_or_update(config_file: &str, is_init: bool, check_only: bool) -> Res
     // Trigger an update to the modification time for `release_dir`
     {
         let path = &release_dir.join(".touch");
-        let _ = fs::OpenOptions::new().create(true).write(true).open(path);
+        let _ = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(path);
         let _ = fs::remove_file(path);
     }
 

@@ -243,13 +243,14 @@ fn run_transactions_dos(
             program_pubkey: None,
             buffer_signer_index: None,
             buffer_pubkey: None,
-            allow_excessive_balance: true,
             upgrade_authority_signer_index: 0,
             is_final: true,
             max_len: None,
             compute_unit_price: None,
             max_sign_attempts: 5,
+            use_rpc: false,
             skip_fee_check: true, // skip_fee_check
+            auto_extend: true,
         });
 
         process_command(&config).expect("deploy didn't pass");

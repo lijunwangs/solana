@@ -39,11 +39,9 @@ pub use solana_sdk::reward_type::RewardType;
 use {
     crate::{
         bank::{
-            builtins::{BuiltinPrototype, BUILTINS},
+            builtins::{BuiltinPrototype, BUILTINS, STATELESS_BUILTINS},
             metrics::*,
-            partitioned_epoch_rewards::{
-                EpochRewardCalculateParamInfo, EpochRewardStatus, StakeRewards, VoteRewardsAccounts,
-            },
+            partitioned_epoch_rewards::{EpochRewardStatus, StakeRewards, VoteRewardsAccounts},
         },
         bank_forks::BankForks,
         epoch_stakes::{EpochStakes, NodeVoteAccounts},
@@ -109,6 +107,8 @@ use {
             create_account_shared_data_with_fields as create_account, from_account, Account,
             AccountSharedData, InheritableAccountFields, ReadableAccount, WritableAccount,
         },
+        account_utils::StateMut,
+        bpf_loader_upgradeable::{self, UpgradeableLoaderState},
         clock::{
             BankId, Epoch, Slot, SlotCount, SlotIndex, UnixTimestamp, DEFAULT_HASHES_PER_TICK,
             DEFAULT_TICKS_PER_SECOND, INITIAL_RENT_EPOCH, MAX_PROCESSING_AGE,
@@ -131,12 +131,12 @@ use {
         incinerator,
         inflation::Inflation,
         inner_instruction::InnerInstructions,
+        loader_v4,
         message::{AccountKeys, SanitizedMessage},
         native_loader,
         native_token::LAMPORTS_PER_SOL,
         nonce::{self, state::DurableNonce, NONCED_TX_MARKER_IX_INDEX},
         nonce_account,
-        nonce_info::{NonceInfo, NoncePartial},
         packet::PACKET_DATA_SIZE,
         precompiles::get_precompiles,
         pubkey::Pubkey,
@@ -166,10 +166,12 @@ use {
     solana_svm::{
         account_loader::{TransactionCheckResult, TransactionLoadResult},
         account_overrides::AccountOverrides,
+        nonce_info::{NonceInfo, NoncePartial},
+        program_loader::load_program_with_pubkey,
         transaction_error_metrics::TransactionErrorMetrics,
+        transaction_processing_callback::TransactionProcessingCallback,
         transaction_processor::{
             ExecutionRecordingConfig, TransactionBatchProcessor, TransactionLogMessages,
-            TransactionProcessingCallback,
         },
         transaction_results::{
             TransactionExecutionDetails, TransactionExecutionResult, TransactionResults,
@@ -183,7 +185,7 @@ use {
         collections::{HashMap, HashSet},
         convert::TryFrom,
         fmt, mem,
-        ops::{AddAssign, RangeInclusive},
+        ops::{AddAssign, RangeFull, RangeInclusive},
         path::PathBuf,
         slice,
         sync::{
@@ -476,7 +478,6 @@ pub struct BankFieldsToDeserialize {
     pub(crate) accounts_data_len: u64,
     pub(crate) incremental_snapshot_persistence: Option<BankIncrementalSnapshotPersistence>,
     pub(crate) epoch_accounts_hash: Option<Hash>,
-    pub(crate) epoch_reward_status: EpochRewardStatus,
 }
 
 /// Bank's common fields shared by all supported snapshot versions for serialization.
@@ -490,7 +491,7 @@ pub struct BankFieldsToDeserialize {
 #[derive(Debug)]
 pub(crate) struct BankFieldsToSerialize<'a> {
     pub(crate) blockhash_queue: &'a RwLock<BlockhashQueue>,
-    pub(crate) ancestors: &'a AncestorsForSerialization,
+    pub(crate) ancestors: AncestorsForSerialization,
     pub(crate) hash: Hash,
     pub(crate) parent_hash: Hash,
     pub(crate) parent_slot: Slot,
@@ -684,12 +685,13 @@ pub struct Bank {
     /// slots to hard fork at
     hard_forks: Arc<RwLock<HardForks>>,
 
-    /// The number of transactions processed without error
+    /// The number of committed transactions since genesis.
     transaction_count: AtomicU64,
 
-    /// The number of non-vote transactions processed without error since the most recent boot from
-    /// snapshot or genesis. This value is not shared though the network, nor retained within
-    /// snapshots, but is preserved in `Bank::new_from_parent`.
+    /// The number of non-vote transactions committed since the most
+    /// recent boot from snapshot or genesis. This value is only stored in
+    /// blockstore for the RPC method "getPerformanceSamples". It is not
+    /// retained within snapshots, but is preserved in `Bank::new_from_parent`.
     non_vote_transaction_count_since_restart: AtomicU64,
 
     /// The number of transaction errors in this slot
@@ -1634,7 +1636,7 @@ impl Bank {
             accounts_data_size_initial,
             accounts_data_size_delta_on_chain: AtomicI64::new(0),
             accounts_data_size_delta_off_chain: AtomicI64::new(0),
-            epoch_reward_status: fields.epoch_reward_status,
+            epoch_reward_status: EpochRewardStatus::default(),
             transaction_processor: TransactionBatchProcessor::default(),
             check_program_modification_slot: false,
             // collector_fee_details is not serialized to snapshot
@@ -1649,6 +1651,12 @@ impl Bank {
             Arc::new(RwLock::new(ProgramCache::new(fields.slot, fields.epoch))),
             HashSet::default(),
         );
+
+        let thread_pool = ThreadPoolBuilder::new()
+            .thread_name(|i| format!("solBnkNewFlds{i:02}"))
+            .build()
+            .expect("new rayon threadpool");
+        bank.recalculate_partitioned_rewards(null_tracer(), &thread_pool);
 
         bank.finish_init(
             genesis_config,
@@ -1708,13 +1716,10 @@ impl Bank {
     }
 
     /// Return subset of bank fields representing serializable state
-    pub(crate) fn get_fields_to_serialize<'a>(
-        &'a self,
-        ancestors: &'a HashMap<Slot, usize>,
-    ) -> BankFieldsToSerialize<'a> {
+    pub(crate) fn get_fields_to_serialize(&self) -> BankFieldsToSerialize {
         BankFieldsToSerialize {
             blockhash_queue: &self.blockhash_queue,
-            ancestors,
+            ancestors: AncestorsForSerialization::from(&self.ancestors),
             hash: *self.hash.read().unwrap(),
             parent_hash: self.parent_hash,
             parent_slot: self.parent_slot,
@@ -1804,7 +1809,11 @@ impl Bank {
 
     /// computed unix_timestamp at this slot height
     pub fn unix_timestamp_from_genesis(&self) -> i64 {
-        self.genesis_creation_time + ((self.slot as u128 * self.ns_per_slot) / 1_000_000_000) as i64
+        self.genesis_creation_time.saturating_add(
+            (self.slot as u128)
+                .saturating_mul(self.ns_per_slot)
+                .saturating_div(1_000_000_000) as i64,
+        )
     }
 
     fn update_sysvar_account<F>(&self, pubkey: &Pubkey, updater: F)
@@ -2000,7 +2009,7 @@ impl Bank {
         // update epoch_stakes cache
         //  if my parent didn't populate for this staker's epoch, we've
         //  crossed a boundary
-        if self.epoch_stakes.get(&leader_schedule_epoch).is_none() {
+        if !self.epoch_stakes.contains_key(&leader_schedule_epoch) {
             self.epoch_stakes.retain(|&epoch, _| {
                 epoch >= leader_schedule_epoch.saturating_sub(MAX_LEADER_SCHEDULE_STAKES)
             });
@@ -2391,24 +2400,6 @@ impl Bank {
             vote_with_stake_delegations_map,
             invalid_vote_keys,
             vote_accounts_cache_miss_count: vote_accounts_cache_miss_count.into_inner(),
-        }
-    }
-
-    /// calculate and return some reward calc info to avoid recalculation across functions
-    fn get_epoch_reward_calculate_param_info<'a>(
-        &self,
-        stakes: &'a Stakes<StakeAccount<Delegation>>,
-    ) -> EpochRewardCalculateParamInfo<'a> {
-        let stake_history = stakes.history().clone();
-
-        let stake_delegations = self.filter_stake_delegations(stakes);
-
-        let cached_vote_accounts = stakes.vote_accounts();
-
-        EpochRewardCalculateParamInfo {
-            stake_history,
-            stake_delegations,
-            cached_vote_accounts,
         }
     }
 
@@ -2985,6 +2976,7 @@ impl Bank {
         self.slots_per_year = genesis_config.slots_per_year();
 
         self.epoch_schedule = genesis_config.epoch_schedule.clone();
+        self.transaction_processor.epoch_schedule = genesis_config.epoch_schedule.clone();
 
         self.inflation = Arc::new(RwLock::new(genesis_config.inflation));
 
@@ -3071,7 +3063,7 @@ impl Bank {
 
     pub fn is_blockhash_valid(&self, hash: &Hash) -> bool {
         let blockhash_queue = self.blockhash_queue.read().unwrap();
-        blockhash_queue.is_hash_valid(hash)
+        blockhash_queue.is_hash_valid_for_age(hash, MAX_PROCESSING_AGE)
     }
 
     pub fn get_minimum_balance_for_rent_exemption(&self, data_len: usize) -> u64 {
@@ -3157,7 +3149,7 @@ impl Bank {
         // length is made variable by epoch
         blockhash_queue
             .get_hash_age(blockhash)
-            .map(|age| self.slot + blockhash_queue.get_max_age() as u64 - age)
+            .map(|age| self.slot + MAX_PROCESSING_AGE as u64 - age)
     }
 
     pub fn get_blockhash_last_valid_block_height(&self, blockhash: &Hash) -> Option<Slot> {
@@ -3166,7 +3158,7 @@ impl Bank {
         // length is made variable by epoch
         blockhash_queue
             .get_hash_age(blockhash)
-            .map(|age| self.block_height + blockhash_queue.get_max_age() as u64 - age)
+            .map(|age| self.block_height + MAX_PROCESSING_AGE as u64 - age)
     }
 
     pub fn confirmed_last_blockhash(&self) -> Hash {
@@ -3830,13 +3822,14 @@ impl Bank {
                 // replay could occur
                 signature_count += u64::from(tx.message().header().num_required_signatures);
                 executed_transactions_count += 1;
+
+                if !is_vote {
+                    executed_non_vote_transactions_count += 1;
+                }
             }
 
             match execution_result.flattened_result() {
                 Ok(()) => {
-                    if !is_vote {
-                        executed_non_vote_transactions_count += 1;
-                    }
                     executed_with_successful_result_count += 1;
                 }
                 Err(err) => {
@@ -4151,18 +4144,23 @@ impl Bank {
 
         let mut store_executors_which_were_deployed_time =
             Measure::start("store_executors_which_were_deployed_time");
+        let mut cache = None;
         for execution_result in &execution_results {
             if let TransactionExecutionResult::Executed {
                 details,
                 programs_modified_by_tx,
             } = execution_result
             {
-                if details.status.is_ok() {
-                    let mut cache = self.transaction_processor.program_cache.write().unwrap();
-                    cache.merge(programs_modified_by_tx);
+                if details.status.is_ok() && !programs_modified_by_tx.is_empty() {
+                    cache
+                        .get_or_insert_with(|| {
+                            self.transaction_processor.program_cache.write().unwrap()
+                        })
+                        .merge(programs_modified_by_tx);
                 }
             }
         }
+        drop(cache);
         store_executors_which_were_deployed_time.stop();
         saturating_add_assign!(
             timings.execute_accessories.update_executors_us,
@@ -5172,7 +5170,17 @@ impl Bank {
                 .iter()
                 .chain(additional_builtins.unwrap_or(&[]).iter())
             {
-                if builtin.enable_feature_id.is_none() {
+                // The builtin should be added if it has no enable feature ID
+                // and it has not been migrated to Core BPF.
+                //
+                // If a program was previously migrated to Core BPF, accountsDB
+                // from snapshot should contain the BPF program accounts.
+                let builtin_is_bpf = |program_id: &Pubkey| {
+                    self.get_account(program_id)
+                        .map(|a| a.owner() == &bpf_loader_upgradeable::id())
+                        .unwrap_or(false)
+                };
+                if builtin.enable_feature_id.is_none() && !builtin_is_bpf(&builtin.program_id) {
                     self.transaction_processor.add_builtin(
                         self,
                         builtin.program_id,
@@ -5599,8 +5607,7 @@ impl Bank {
         );
     }
 
-    /// Recalculate the hash_internal_state from the account stores. Would be used to verify a
-    /// snapshot.
+    /// Recalculate the accounts hash from the account stores. Used to verify a snapshot.
     /// return true if all is good
     /// Only called from startup or test code.
     #[must_use]
@@ -5617,49 +5624,63 @@ impl Bank {
             .verify_accounts_hash_in_bg
             .wait_for_complete();
 
-        if config.require_rooted_bank
-            && !accounts
-                .accounts_db
-                .accounts_index
-                .is_alive_root(self.slot())
-        {
+        let slot = self.slot();
+        if config.require_rooted_bank && !accounts.accounts_db.accounts_index.is_alive_root(slot) {
             if let Some(parent) = self.parent() {
-                info!("{} is not a root, so attempting to verify bank hash on parent bank at slot: {}", self.slot(), parent.slot());
+                info!(
+                    "slot {slot} is not a root, so verify accounts hash on parent bank at slot {}",
+                    parent.slot(),
+                );
                 return parent.verify_accounts_hash(base, config);
             } else {
                 // this will result in mismatch errors
                 // accounts hash calc doesn't include unrooted slots
-                panic!("cannot verify bank hash when bank is not a root");
+                panic!("cannot verify accounts hash because slot {slot} is not a root");
             }
         }
-        let slot = self.slot();
-        let ancestors = &self.ancestors;
-        let cap = self.capitalization();
-        let epoch_schedule = self.epoch_schedule();
-        let rent_collector = self.rent_collector();
+        // The snapshot storages must be captured *before* starting the background verification.
+        // Otherwise, it is possible that a delayed call to `get_snapshot_storages()` will *not*
+        // get the correct storages required to calculate and verify the accounts hashes.
+        let snapshot_storages = self
+            .rc
+            .accounts
+            .accounts_db
+            .get_snapshot_storages(RangeFull);
+        let capitalization = self.capitalization();
+        let verify_config = VerifyAccountsHashAndLamportsConfig {
+            ancestors: &self.ancestors,
+            epoch_schedule: self.epoch_schedule(),
+            rent_collector: self.rent_collector(),
+            test_hash_calculation: config.test_hash_calculation,
+            ignore_mismatch: config.ignore_mismatch,
+            store_detailed_debug_info: config.store_hash_raw_data_for_debug,
+            use_bg_thread_pool: config.run_in_background,
+        };
         if config.run_in_background {
-            let ancestors = ancestors.clone();
             let accounts = Arc::clone(accounts);
-            let epoch_schedule = epoch_schedule.clone();
-            let rent_collector = rent_collector.clone();
             let accounts_ = Arc::clone(&accounts);
+            let ancestors = self.ancestors.clone();
+            let epoch_schedule = self.epoch_schedule().clone();
+            let rent_collector = self.rent_collector().clone();
             accounts.accounts_db.verify_accounts_hash_in_bg.start(|| {
                 Builder::new()
                     .name("solBgHashVerify".into())
                     .spawn(move || {
                         info!("Initial background accounts hash verification has started");
+                        let snapshot_storages_and_slots = (
+                            snapshot_storages.0.as_slice(),
+                            snapshot_storages.1.as_slice(),
+                        );
                         let result = accounts_.verify_accounts_hash_and_lamports(
+                            snapshot_storages_and_slots,
                             slot,
-                            cap,
+                            capitalization,
                             base,
                             VerifyAccountsHashAndLamportsConfig {
                                 ancestors: &ancestors,
-                                test_hash_calculation: config.test_hash_calculation,
                                 epoch_schedule: &epoch_schedule,
                                 rent_collector: &rent_collector,
-                                ignore_mismatch: config.ignore_mismatch,
-                                store_detailed_debug_info: config.store_hash_raw_data_for_debug,
-                                use_bg_thread_pool: true,
+                                ..verify_config
                             },
                         );
                         accounts_
@@ -5673,19 +5694,16 @@ impl Bank {
             });
             true // initial result is true. We haven't failed yet. If verification fails, we'll panic from bg thread.
         } else {
+            let snapshot_storages_and_slots = (
+                snapshot_storages.0.as_slice(),
+                snapshot_storages.1.as_slice(),
+            );
             let result = accounts.verify_accounts_hash_and_lamports(
+                snapshot_storages_and_slots,
                 slot,
-                cap,
+                capitalization,
                 base,
-                VerifyAccountsHashAndLamportsConfig {
-                    ancestors,
-                    test_hash_calculation: config.test_hash_calculation,
-                    epoch_schedule,
-                    rent_collector,
-                    ignore_mismatch: config.ignore_mismatch,
-                    store_detailed_debug_info: config.store_hash_raw_data_for_debug,
-                    use_bg_thread_pool: false, // fg is waiting for this to run, so we can use the fg thread pool
-                },
+                verify_config,
             );
             self.set_initial_accounts_hash_verification_completed();
             result
@@ -5803,7 +5821,7 @@ impl Bank {
         self.rc
             .accounts
             .accounts_db
-            .update_accounts_hash_with_verify(
+            .update_accounts_hash_with_verify_from(
                 // we have to use the index since the slot could be in the write cache still
                 CalcAccountsHashDataSource::IndexForTests,
                 debug_verify,
@@ -5912,7 +5930,7 @@ impl Bank {
             .rc
             .accounts
             .accounts_db
-            .update_accounts_hash_with_verify(
+            .update_accounts_hash_with_verify_from(
                 data_source,
                 debug_verify,
                 self.slot(),
@@ -5937,7 +5955,7 @@ impl Bank {
                 self.rc
                     .accounts
                     .accounts_db
-                    .update_accounts_hash_with_verify(
+                    .update_accounts_hash_with_verify_from(
                         data_source,
                         debug_verify,
                         self.slot(),
@@ -6530,14 +6548,58 @@ impl Bank {
         new_feature_activations: &HashSet<Pubkey>,
     ) {
         for builtin in BUILTINS.iter() {
+            // The `builtin_is_bpf` flag is used to handle the case where a
+            // builtin is scheduled to be enabled by one feature gate and
+            // later migrated to Core BPF by another.
+            //
+            // There should never be a case where a builtin is set to be
+            // migrated to Core BPF and is also set to be enabled on feature
+            // activation on the same feature gate. However, the
+            // `builtin_is_bpf` flag will handle this case as well, electing
+            // to first attempt the migration to Core BPF.
+            //
+            // The migration to Core BPF will fail gracefully because the
+            // program account will not exist. The builtin will subsequently
+            // be enabled, but it will never be migrated to Core BPF.
+            //
+            // Using the same feature gate for both enabling and migrating a
+            // builtin to Core BPF should be strictly avoided.
+            let mut builtin_is_bpf = false;
+            if let Some(core_bpf_migration_config) = &builtin.core_bpf_migration_config {
+                // If the builtin is set to be migrated to Core BPF on feature
+                // activation, perform the migration and do not add the program
+                // to the bank's builtins. The migration will remove it from
+                // the builtins list and the cache.
+                if new_feature_activations.contains(&core_bpf_migration_config.feature_id) {
+                    if let Err(e) = self
+                        .migrate_builtin_to_core_bpf(&builtin.program_id, core_bpf_migration_config)
+                    {
+                        warn!(
+                            "Failed to migrate builtin {} to Core BPF: {}",
+                            builtin.name, e
+                        );
+                    } else {
+                        builtin_is_bpf = true;
+                    }
+                } else {
+                    // If the builtin has already been migrated to Core BPF, do not
+                    // add it to the bank's builtins.
+                    builtin_is_bpf = self
+                        .get_account(&builtin.program_id)
+                        .map(|a| a.owner() == &bpf_loader_upgradeable::id())
+                        .unwrap_or(false);
+                }
+            };
+
             if let Some(feature_id) = builtin.enable_feature_id {
-                let should_apply_action_for_feature_transition =
-                    if only_apply_transitions_for_new_features {
+                let should_enable_builtin_on_feature_transition = !builtin_is_bpf
+                    && if only_apply_transitions_for_new_features {
                         new_feature_activations.contains(&feature_id)
                     } else {
                         self.feature_set.is_active(&feature_id)
                     };
-                if should_apply_action_for_feature_transition {
+
+                if should_enable_builtin_on_feature_transition {
                     self.transaction_processor.add_builtin(
                         self,
                         builtin.program_id,
@@ -6551,6 +6613,26 @@ impl Bank {
                 }
             }
         }
+
+        // Migrate any necessary stateless builtins to core BPF.
+        // Stateless builtins do not have an `enable_feature_id` since they
+        // do not exist on-chain.
+        for stateless_builtin in STATELESS_BUILTINS.iter() {
+            if let Some(core_bpf_migration_config) = &stateless_builtin.core_bpf_migration_config {
+                if new_feature_activations.contains(&core_bpf_migration_config.feature_id) {
+                    if let Err(e) = self.migrate_builtin_to_core_bpf(
+                        &stateless_builtin.program_id,
+                        core_bpf_migration_config,
+                    ) {
+                        warn!(
+                            "Failed to migrate stateless builtin {} to Core BPF: {}",
+                            stateless_builtin.name, e
+                        );
+                    }
+                }
+            }
+        }
+
         for precompile in get_precompiles() {
             let should_add_precompile = precompile
                 .feature
@@ -6651,13 +6733,6 @@ impl Bank {
         Some(epoch_accounts_hash)
     }
 
-    /// Return the epoch_reward_status field on the bank to serialize
-    /// Returns none if we are NOT in the reward interval.
-    pub(crate) fn get_epoch_reward_status_to_serialize(&self) -> Option<&EpochRewardStatus> {
-        matches!(self.epoch_reward_status, EpochRewardStatus::Active(_))
-            .then_some(&self.epoch_reward_status)
-    }
-
     /// Convenience fn to get the Epoch Accounts Hash
     pub fn epoch_accounts_hash(&self) -> Option<EpochAccountsHash> {
         self.rc
@@ -6718,8 +6793,16 @@ impl Bank {
         reload: bool,
         effective_epoch: Epoch,
     ) -> Option<Arc<ProgramCacheEntry>> {
-        self.transaction_processor
-            .load_program_with_pubkey(self, pubkey, reload, effective_epoch)
+        let program_cache = self.transaction_processor.program_cache.read().unwrap();
+        load_program_with_pubkey(
+            self,
+            &program_cache,
+            pubkey,
+            self.slot(),
+            effective_epoch,
+            self.epoch_schedule(),
+            reload,
+        )
     }
 
     pub fn fee_structure(&self) -> &FeeStructure {
@@ -6733,6 +6816,40 @@ impl Bank {
     pub fn add_builtin(&self, program_id: Pubkey, name: &str, builtin: ProgramCacheEntry) {
         self.transaction_processor
             .add_builtin(self, program_id, name, builtin)
+    }
+
+    /// Find the slot in which the program was most recently modified.
+    /// Returns slot 0 for programs deployed with v1/v2 loaders, since programs deployed
+    /// with those loaders do not retain deployment slot information.
+    /// Returns an error if the program's account state can not be found or parsed.
+    fn program_modification_slot(&self, pubkey: &Pubkey) -> transaction::Result<Slot> {
+        let program = self
+            .get_account(pubkey)
+            .ok_or(TransactionError::ProgramAccountNotFound)?;
+        if bpf_loader_upgradeable::check_id(program.owner()) {
+            if let Ok(UpgradeableLoaderState::Program {
+                programdata_address,
+            }) = program.state()
+            {
+                let programdata = self
+                    .get_account(&programdata_address)
+                    .ok_or(TransactionError::ProgramAccountNotFound)?;
+                if let Ok(UpgradeableLoaderState::ProgramData {
+                    slot,
+                    upgrade_authority_address: _,
+                }) = programdata.state()
+                {
+                    return Ok(slot);
+                }
+            }
+            Err(TransactionError::ProgramAccountNotFound)
+        } else if loader_v4::check_id(program.owner()) {
+            let state = solana_loader_v4_program::get_state(program.data())
+                .map_err(|_| TransactionError::ProgramAccountNotFound)?;
+            Ok(state.slot)
+        } else {
+            Ok(0)
+        }
     }
 }
 
@@ -6767,8 +6884,7 @@ impl TransactionProcessingCallback for Bank {
 
     fn get_program_match_criteria(&self, program: &Pubkey) -> ProgramCacheMatchCriteria {
         if self.check_program_modification_slot {
-            self.transaction_processor
-                .program_modification_slot(self, program)
+            self.program_modification_slot(program)
                 .map_or(ProgramCacheMatchCriteria::Tombstone, |slot| {
                     ProgramCacheMatchCriteria::DeployedOnOrAfterSlot(slot)
                 })

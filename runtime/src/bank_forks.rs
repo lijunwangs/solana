@@ -251,7 +251,7 @@ impl BankForks {
         self.insert(bank)
     }
 
-    pub fn remove(&mut self, slot: Slot) -> Option<Arc<Bank>> {
+    pub fn remove(&mut self, slot: Slot) -> Option<BankWithScheduler> {
         let bank = self.banks.remove(&slot)?;
         for parent in bank.proper_ancestors() {
             let Entry::Occupied(mut entry) = self.descendants.entry(parent) else {
@@ -268,7 +268,7 @@ impl BankForks {
         if entry.get().is_empty() {
             entry.remove_entry();
         }
-        Some(bank.clone_without_scheduler())
+        Some(bank)
     }
 
     pub fn highest_slot(&self) -> Slot {
@@ -283,12 +283,71 @@ impl BankForks {
         &self.banks[&self.highest_slot()]
     }
 
+    /// Sends an EpochAccountsHash request if one of the `banks` crosses the EAH boundary.
+    /// Returns if the bank at slot `root` was squashed, and its timings.
+    ///
+    /// Panics if more than one bank in `banks` should send an EAH request.
+    pub fn send_eah_request_if_needed(
+        &mut self,
+        root: Slot,
+        banks: &[&Arc<Bank>],
+        accounts_background_request_sender: &AbsRequestSender,
+    ) -> Result<(bool, SquashTiming), SetRootError> {
+        let mut is_root_bank_squashed = false;
+        let mut squash_timing = SquashTiming::default();
+
+        // Go through all the banks and see if we should send an EAH request.
+        // Only one EAH bank is allowed to send an EAH request.
+        // NOTE: Instead of filter-collect-assert, `.find()` could be used instead.
+        // Once sufficient testing guarantees only one bank will ever request an EAH,
+        // change to `.find()`.
+        let eah_banks: Vec<_> = banks
+            .iter()
+            .filter(|bank| self.should_request_epoch_accounts_hash(bank))
+            .collect();
+        assert!(
+            eah_banks.len() <= 1,
+            "At most one bank should request an epoch accounts hash calculation! num banks: {}, bank slots: {:?}",
+            eah_banks.len(),
+            eah_banks.iter().map(|bank| bank.slot()).collect::<Vec<_>>(),
+        );
+        if let Some(&&eah_bank) = eah_banks.first() {
+            debug!(
+                "sending epoch accounts hash request, slot: {}",
+                eah_bank.slot(),
+            );
+
+            self.last_accounts_hash_slot = eah_bank.slot();
+            squash_timing += eah_bank.squash();
+            is_root_bank_squashed = eah_bank.slot() == root;
+
+            eah_bank
+                .rc
+                .accounts
+                .accounts_db
+                .epoch_accounts_hash_manager
+                .set_in_flight(eah_bank.slot());
+            if let Err(e) =
+                accounts_background_request_sender.send_snapshot_request(SnapshotRequest {
+                    snapshot_root_bank: Arc::clone(eah_bank),
+                    status_cache_slot_deltas: Vec::default(),
+                    request_kind: SnapshotRequestKind::EpochAccountsHash,
+                    enqueued: Instant::now(),
+                })
+            {
+                return Err(SetRootError::SendEpochAccountHashError(eah_bank.slot(), e));
+            };
+        }
+
+        Ok((is_root_bank_squashed, squash_timing))
+    }
+
     fn do_set_root_return_metrics(
         &mut self,
         root: Slot,
         accounts_background_request_sender: &AbsRequestSender,
         highest_super_majority_root: Option<Slot>,
-    ) -> Result<(Vec<Arc<Bank>>, SetRootMetrics), SetRootError> {
+    ) -> Result<(Vec<BankWithScheduler>, SetRootMetrics), SetRootError> {
         let old_epoch = self.root_bank().epoch();
         // To support `RootBankCache` (via `ReadOnlyAtomicSlot`) accessing `root` *without* locking
         // BankForks first *and* from a different thread, this store *must* be at least Release to
@@ -321,58 +380,14 @@ impl BankForks {
             .map(|bank| bank.transaction_count())
             .unwrap_or(0);
         // Calculate the accounts hash at a fixed interval
-        let mut is_root_bank_squashed = false;
         let mut banks = vec![root_bank];
         let parents = root_bank.parents();
         banks.extend(parents.iter());
         let total_parent_banks = banks.len();
-        let mut squash_timing = SquashTiming::default();
         let mut total_snapshot_ms = 0;
 
-        // handle epoch accounts hash
-        // go through all the banks, oldest first
-        // find the newest bank where we should do EAH
-        // NOTE: Instead of filter-collect-assert, `.find()` could be used instead.  Once
-        // sufficient testing guarantees only one bank will ever request an EAH, change to
-        // `.find()`.
-        let eah_banks: Vec<_> = banks
-            .iter()
-            .filter(|&&bank| self.should_request_epoch_accounts_hash(bank))
-            .collect();
-        assert!(
-            eah_banks.len() <= 1,
-            "At most one bank should request an epoch accounts hash calculation! num banks: {}, bank slots: {:?}",
-            eah_banks.len(),
-            eah_banks.iter().map(|bank| bank.slot()).collect::<Vec<_>>(),
-        );
-        if let Some(eah_bank) = eah_banks.first() {
-            debug!(
-                "sending epoch accounts hash request, slot: {}",
-                eah_bank.slot()
-            );
-
-            self.last_accounts_hash_slot = eah_bank.slot();
-            squash_timing += eah_bank.squash();
-            is_root_bank_squashed = eah_bank.slot() == root;
-
-            eah_bank
-                .rc
-                .accounts
-                .accounts_db
-                .epoch_accounts_hash_manager
-                .set_in_flight(eah_bank.slot());
-            if let Err(e) =
-                accounts_background_request_sender.send_snapshot_request(SnapshotRequest {
-                    snapshot_root_bank: Arc::clone(eah_bank),
-                    status_cache_slot_deltas: Vec::default(),
-                    request_kind: SnapshotRequestKind::EpochAccountsHash,
-                    enqueued: Instant::now(),
-                })
-            {
-                return Err(SetRootError::SendEpochAccountHashError(eah_bank.slot(), e));
-            };
-        }
-        drop(eah_banks);
+        let (mut is_root_bank_squashed, mut squash_timing) =
+            self.send_eah_request_if_needed(root, &banks, accounts_background_request_sender)?;
 
         // After checking for EAH requests, also check for regular snapshot requests.
         //
@@ -465,7 +480,7 @@ impl BankForks {
         root: Slot,
         accounts_background_request_sender: &AbsRequestSender,
         highest_super_majority_root: Option<Slot>,
-    ) -> Result<Vec<Arc<Bank>>, SetRootError> {
+    ) -> Result<Vec<BankWithScheduler>, SetRootError> {
         let program_cache_prune_start = Instant::now();
         let set_root_start = Instant::now();
         let (removed_banks, set_root_metrics) = self.do_set_root_return_metrics(
@@ -626,7 +641,7 @@ impl BankForks {
         &mut self,
         root: Slot,
         highest_super_majority_root: Option<Slot>,
-    ) -> (Vec<Arc<Bank>>, u64, u64) {
+    ) -> (Vec<BankWithScheduler>, u64, u64) {
         // Clippy doesn't like separating the two collects below,
         // but we want to collect timing separately, and the 2nd requires
         // a unique borrow to self which is already borrowed by self.banks
@@ -795,8 +810,8 @@ mod tests {
         let bank0 = bank_forks[0].clone();
         let child_bank = Bank::new_from_parent(bank0, &Pubkey::default(), 1);
         bank_forks.insert(child_bank);
-        assert!(bank_forks.frozen_banks().get(&0).is_some());
-        assert!(bank_forks.frozen_banks().get(&1).is_none());
+        assert!(bank_forks.frozen_banks().contains_key(&0));
+        assert!(!bank_forks.frozen_banks().contains_key(&1));
     }
 
     #[test]

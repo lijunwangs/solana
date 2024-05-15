@@ -836,9 +836,13 @@ impl<'a> AccountsHasher<'a> {
                 accum
             })
             .reduce(
-                || DedupResult {
-                    hashes_files: Vec::with_capacity(max_bin),
-                    ..Default::default()
+                || {
+                    DedupResult {
+                        // Allocate with Vec::new() so that no allocation actually happens. See
+                        // https://github.com/anza-xyz/agave/pull/1308.
+                        hashes_files: Vec::new(),
+                        ..Default::default()
+                    }
                 },
                 |mut a, mut b| {
                     a.lamports_sum = a
@@ -1142,7 +1146,7 @@ impl<'a> AccountsHasher<'a> {
             capacity: max_inclusive_num_pubkeys * std::mem::size_of::<Hash>(),
         };
 
-        let mut overall_sum = 0;
+        let mut overall_sum: u64 = 0;
 
         while let Some(pointer) = working_set.pop() {
             let key = &sorted_data_by_pubkey[pointer.slot_group_index][pointer.offset].pubkey;
@@ -1157,9 +1161,9 @@ impl<'a> AccountsHasher<'a> {
 
             // add lamports and get hash
             if item.lamports != 0 {
-                overall_sum = Self::checked_cast_for_capitalization(
-                    item.lamports as u128 + overall_sum as u128,
-                );
+                overall_sum = overall_sum
+                    .checked_add(item.lamports)
+                    .expect("summing lamports cannot overflow");
                 hashes.write(&item.hash.0);
             } else {
                 // if lamports == 0, check if they should be included
@@ -1643,7 +1647,7 @@ mod tests {
         let (hashes, lamports) =
             accounts_hash.de_dup_accounts(vec, &mut HashStats::default(), one_range());
         assert_eq!(
-            vec![Hash::default(); 0],
+            Vec::<Hash>::new(),
             get_vec_vec(hashes)
                 .into_iter()
                 .flatten()
@@ -1659,12 +1663,12 @@ mod tests {
 
         let (hashes, lamports) =
             accounts_hash.de_dup_accounts_in_parallel(&[], 1, 1, &HashStats::default());
-        assert_eq!(vec![Hash::default(); 0], get_vec(hashes));
+        assert_eq!(Vec::<Hash>::new(), get_vec(hashes));
         assert_eq!(lamports, 0);
 
         let (hashes, lamports) =
             accounts_hash.de_dup_accounts_in_parallel(&[], 2, 1, &HashStats::default());
-        assert_eq!(vec![Hash::default(); 0], get_vec(hashes));
+        assert_eq!(Vec::<Hash>::new(), get_vec(hashes));
         assert_eq!(lamports, 0);
     }
 
@@ -2376,7 +2380,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "overflow is detected while summing capitalization")]
+    #[should_panic(expected = "summing lamports cannot overflow")]
     fn test_accountsdb_lamport_overflow() {
         solana_logger::setup();
 
@@ -2410,7 +2414,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "overflow is detected while summing capitalization")]
+    #[should_panic(expected = "summing lamports cannot overflow")]
     fn test_accountsdb_lamport_overflow2() {
         solana_logger::setup();
 

@@ -1,6 +1,7 @@
 use {
     crate::{
         bank::{builtins::BuiltinPrototype, Bank, BankFieldsToDeserialize, BankSlotDelta},
+        epoch_stakes::EpochStakes,
         runtime_config::RuntimeConfig,
         serde_snapshot::{
             bank_from_streams, bank_to_stream, fields_from_streams,
@@ -20,7 +21,7 @@ use {
             verify_and_unarchive_snapshots, verify_unpacked_snapshots_dir_and_version,
             AddBankSnapshotError, ArchiveFormat, BankSnapshotInfo, BankSnapshotKind, SnapshotError,
             SnapshotRootPaths, SnapshotVersion, StorageAndNextAccountsFileId,
-            UnpackedSnapshotsDirAndVersion, VerifySlotDeltasError,
+            UnpackedSnapshotsDirAndVersion, VerifyEpochStakesError, VerifySlotDeltasError,
         },
         status_cache,
     },
@@ -31,6 +32,7 @@ use {
             AccountShrinkThreshold, AccountStorageEntry, AccountsDbConfig, AtomicAccountsFileId,
             CalcAccountsHashDataSource,
         },
+        accounts_file::StorageAccess,
         accounts_hash::AccountsHash,
         accounts_index::AccountSecondaryIndexes,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
@@ -38,7 +40,7 @@ use {
     },
     solana_measure::{measure, measure::Measure},
     solana_sdk::{
-        clock::Slot,
+        clock::{Epoch, Slot},
         feature_set,
         genesis_config::GenesisConfig,
         hash::Hash,
@@ -46,10 +48,11 @@ use {
         slot_history::{Check, SlotHistory},
     },
     std::{
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         fs,
         io::{BufWriter, Write},
         num::NonZeroUsize,
+        ops::RangeInclusive,
         path::{Path, PathBuf},
         sync::{atomic::AtomicBool, Arc},
     },
@@ -231,6 +234,7 @@ pub struct BankFromDirTimings {
 pub fn bank_fields_from_snapshot_archives(
     full_snapshot_archives_dir: impl AsRef<Path>,
     incremental_snapshot_archives_dir: impl AsRef<Path>,
+    storage_access: StorageAccess,
 ) -> snapshot_utils::Result<BankFieldsToDeserialize> {
     let full_snapshot_archive_info =
         get_highest_full_snapshot_archive_info(&full_snapshot_archives_dir).ok_or_else(|| {
@@ -253,6 +257,7 @@ pub fn bank_fields_from_snapshot_archives(
             &full_snapshot_archive_info,
             incremental_snapshot_archive_info.as_ref(),
             &account_paths,
+            storage_access,
         )?;
 
     bank_fields_from_snapshots(
@@ -306,6 +311,10 @@ pub fn bank_from_snapshot_archives(
             full_snapshot_archive_info,
             incremental_snapshot_archive_info,
             account_paths,
+            accounts_db_config
+                .as_ref()
+                .map(|config| config.storage_access)
+                .unwrap_or_default(),
         )?;
 
     let mut storage = unarchived_full_snapshot.storage;
@@ -496,6 +505,7 @@ pub fn bank_from_snapshot_dir(
     accounts_db_config: Option<AccountsDbConfig>,
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
     exit: Arc<AtomicBool>,
+    storage_access: StorageAccess,
 ) -> snapshot_utils::Result<(Bank, BankFromDirTimings)> {
     info!(
         "Loading bank from snapshot dir: {}",
@@ -514,7 +524,8 @@ pub fn bank_from_snapshot_dir(
         rebuild_storages_from_snapshot_dir(
             bank_snapshot,
             account_paths,
-            next_append_vec_id.clone()
+            next_append_vec_id.clone(),
+            storage_access,
         )?,
         "rebuild storages from snapshot dir"
     );
@@ -583,7 +594,10 @@ pub fn bank_from_latest_snapshot_dir(
     let bank_snapshot = get_highest_bank_snapshot_post(&bank_snapshots_dir).ok_or_else(|| {
         SnapshotError::NoSnapshotSlotDir(bank_snapshots_dir.as_ref().to_path_buf())
     })?;
-
+    let storage_access = accounts_db_config
+        .as_ref()
+        .map(|config| config.storage_access)
+        .unwrap_or_default();
     let (bank, _) = bank_from_snapshot_dir(
         account_paths,
         &bank_snapshot,
@@ -598,6 +612,7 @@ pub fn bank_from_latest_snapshot_dir(
         accounts_db_config,
         accounts_update_notifier,
         exit,
+        storage_access,
     )?;
 
     Ok(bank)
@@ -758,6 +773,8 @@ fn rebuild_bank_from_unarchived_snapshots(
         )
     })?;
 
+    verify_epoch_stakes(&bank)?;
+
     // The status cache is rebuilt from the latest snapshot.  So, if there's an incremental
     // snapshot, use that.  Otherwise use the full snapshot.
     let status_cache_path = incremental_snapshot_unpacked_snapshots_dir_and_version
@@ -830,6 +847,8 @@ fn rebuild_bank_from_snapshot(
             exit,
         )?)
     })?;
+
+    verify_epoch_stakes(&bank)?;
 
     let status_cache_path = bank_snapshot
         .snapshot_dir
@@ -944,6 +963,51 @@ fn verify_slot_deltas_with_history(
     Ok(())
 }
 
+/// Verifies the bank's epoch stakes are valid after rebuilding from a snapshot
+fn verify_epoch_stakes(bank: &Bank) -> std::result::Result<(), VerifyEpochStakesError> {
+    // Stakes are required for epochs from the current epoch up-to-and-including the
+    // leader schedule epoch.  In practice this will only be two epochs: the current and the next.
+    // Using a range mirrors how Bank::new_with_paths() seeds the initial epoch stakes.
+    let current_epoch = bank.epoch();
+    let leader_schedule_epoch = bank.get_leader_schedule_epoch(bank.slot());
+    let required_epochs = current_epoch..=leader_schedule_epoch;
+    _verify_epoch_stakes(bank.epoch_stakes_map(), required_epochs)
+}
+
+/// Verifies the bank's epoch stakes are valid after rebuilding from a snapshot
+///
+/// This version of the function exists to facilitate testing.
+/// Normal callers should use `verify_epoch_stakes()`.
+fn _verify_epoch_stakes(
+    epoch_stakes_map: &HashMap<Epoch, EpochStakes>,
+    required_epochs: RangeInclusive<Epoch>,
+) -> std::result::Result<(), VerifyEpochStakesError> {
+    // Ensure epoch stakes from the snapshot does not contain entries for invalid epochs.
+    // Since epoch stakes are computed for the leader schedule epoch (usually `epoch + 1`),
+    // the snapshot's epoch stakes therefor can have entries for epochs at-or-below the
+    // leader schedule epoch.
+    let max_epoch = *required_epochs.end();
+    if let Some(invalid_epoch) = epoch_stakes_map.keys().find(|epoch| **epoch > max_epoch) {
+        return Err(VerifyEpochStakesError::EpochGreaterThanMax(
+            *invalid_epoch,
+            max_epoch,
+        ));
+    }
+
+    // Ensure epoch stakes contains stakes for all the required epochs
+    if let Some(missing_epoch) = required_epochs
+        .clone()
+        .find(|epoch| !epoch_stakes_map.contains_key(epoch))
+    {
+        return Err(VerifyEpochStakesError::StakesNotFound(
+            missing_epoch,
+            required_epochs,
+        ));
+    }
+
+    Ok(())
+}
+
 /// Get the snapshot storages for this bank
 pub fn get_snapshot_storages(bank: &Bank) -> Vec<Arc<AccountStorageEntry>> {
     let mut measure_snapshot_storages = Measure::start("snapshot-storages");
@@ -974,8 +1038,6 @@ pub fn bank_to_full_snapshot_archive(
     full_snapshot_archives_dir: impl AsRef<Path>,
     incremental_snapshot_archives_dir: impl AsRef<Path>,
     archive_format: ArchiveFormat,
-    maximum_full_snapshot_archives_to_retain: NonZeroUsize,
-    maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
 ) -> snapshot_utils::Result<FullSnapshotArchiveInfo> {
     let snapshot_version = snapshot_version.unwrap_or_default();
 
@@ -1005,8 +1067,10 @@ pub fn bank_to_full_snapshot_archive(
         snapshot_storages,
         archive_format,
         snapshot_version,
-        maximum_full_snapshot_archives_to_retain,
-        maximum_incremental_snapshot_archives_to_retain,
+        // Since bank_to_snapshot_archive() is not called as part of normal validator operation,
+        // do *not* purge any snapshot archives; leave that up to the node operator.
+        NonZeroUsize::MAX,
+        NonZeroUsize::MAX,
     )
 }
 
@@ -1025,8 +1089,6 @@ pub fn bank_to_incremental_snapshot_archive(
     full_snapshot_archives_dir: impl AsRef<Path>,
     incremental_snapshot_archives_dir: impl AsRef<Path>,
     archive_format: ArchiveFormat,
-    maximum_full_snapshot_archives_to_retain: NonZeroUsize,
-    maximum_incremental_snapshot_archives_to_retain: NonZeroUsize,
 ) -> snapshot_utils::Result<IncrementalSnapshotArchiveInfo> {
     let snapshot_version = snapshot_version.unwrap_or_default();
 
@@ -1065,8 +1127,10 @@ pub fn bank_to_incremental_snapshot_archive(
         snapshot_storages,
         archive_format,
         snapshot_version,
-        maximum_full_snapshot_archives_to_retain,
-        maximum_incremental_snapshot_archives_to_retain,
+        // Since bank_to_snapshot_archive() is not called as part of normal validator operation,
+        // do *not* purge any snapshot archives; leave that up to the node operator.
+        NonZeroUsize::MAX,
+        NonZeroUsize::MAX,
     )
 }
 
@@ -1087,8 +1151,8 @@ pub fn package_and_archive_full_snapshot(
         AccountsPackageKind::Snapshot(SnapshotKind::FullSnapshot),
         bank,
         bank_snapshot_info,
-        &full_snapshot_archives_dir,
-        &incremental_snapshot_archives_dir,
+        full_snapshot_archives_dir.as_ref(),
+        incremental_snapshot_archives_dir.as_ref(),
         snapshot_storages,
         archive_format,
         snapshot_version,
@@ -1139,8 +1203,8 @@ pub fn package_and_archive_incremental_snapshot(
         )),
         bank,
         bank_snapshot_info,
-        &full_snapshot_archives_dir,
-        &incremental_snapshot_archives_dir,
+        full_snapshot_archives_dir.as_ref(),
+        incremental_snapshot_archives_dir.as_ref(),
         snapshot_storages,
         archive_format,
         snapshot_version,
@@ -1262,6 +1326,7 @@ mod tests {
     use {
         super::*,
         crate::{
+            bank::tests::create_simple_test_bank,
             bank_forks::BankForks,
             genesis_utils,
             snapshot_config::SnapshotConfig,
@@ -1290,6 +1355,7 @@ mod tests {
             transaction::SanitizedTransaction,
         },
         std::sync::{atomic::Ordering, Arc, RwLock},
+        test_case::test_case,
     };
 
     fn new_bank_from_parent_with_bank_forks(
@@ -1330,8 +1396,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1446,8 +1510,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1539,8 +1601,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1582,8 +1642,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1665,8 +1723,6 @@ mod tests {
             &full_snapshot_archives_dir,
             &incremental_snapshot_archives_dir,
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1708,8 +1764,6 @@ mod tests {
             &full_snapshot_archives_dir,
             &incremental_snapshot_archives_dir,
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1810,8 +1864,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1852,8 +1904,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
         let (deserialized_bank, _) = bank_from_snapshot_archives(
@@ -1919,8 +1969,6 @@ mod tests {
             full_snapshot_archives_dir.path(),
             incremental_snapshot_archives_dir.path(),
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -1958,8 +2006,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_bank_fields_from_snapshot() {
+    #[test_case(StorageAccess::Mmap)]
+    fn test_bank_fields_from_snapshot(storage_access: StorageAccess) {
         let collector = Pubkey::new_unique();
         let key1 = Keypair::new();
 
@@ -1987,8 +2035,6 @@ mod tests {
             &all_snapshots_dir,
             &all_snapshots_dir,
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
@@ -2010,13 +2056,15 @@ mod tests {
             &all_snapshots_dir,
             &all_snapshots_dir,
             snapshot_archive_format,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
 
-        let bank_fields =
-            bank_fields_from_snapshot_archives(&all_snapshots_dir, &all_snapshots_dir).unwrap();
+        let bank_fields = bank_fields_from_snapshot_archives(
+            &all_snapshots_dir,
+            &all_snapshots_dir,
+            storage_access,
+        )
+        .unwrap();
         assert_eq!(bank_fields.slot, bank2.slot());
         assert_eq!(bank_fields.parent_slot, bank2.parent_slot());
     }
@@ -2226,8 +2274,6 @@ mod tests {
             &full_snapshot_archives_dir,
             &incremental_snapshot_archives_dir,
             ArchiveFormat::Tar,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
         let full_accounts_hash = bank
@@ -2258,8 +2304,6 @@ mod tests {
             &full_snapshot_archives_dir,
             &incremental_snapshot_archives_dir,
             ArchiveFormat::Tar,
-            snapshot_utils::DEFAULT_MAX_FULL_SNAPSHOT_ARCHIVES_TO_RETAIN,
-            snapshot_utils::DEFAULT_MAX_INCREMENTAL_SNAPSHOT_ARCHIVES_TO_RETAIN,
         )
         .unwrap();
         let incremental_accounts_hash = bank
@@ -2338,8 +2382,8 @@ mod tests {
         assert_eq!(other_incremental_accounts_hash, incremental_accounts_hash);
     }
 
-    #[test]
-    fn test_bank_from_snapshot_dir() {
+    #[test_case(StorageAccess::Mmap)]
+    fn test_bank_from_snapshot_dir(storage_access: StorageAccess) {
         let genesis_config = GenesisConfig::default();
         let bank_snapshots_dir = tempfile::TempDir::new().unwrap();
         let bank = create_snapshot_dirs_for_tests(&genesis_config, &bank_snapshots_dir, 3, 0);
@@ -2361,6 +2405,7 @@ mod tests {
             Some(ACCOUNTS_DB_CONFIG_FOR_TESTING),
             None,
             Arc::default(),
+            storage_access,
         )
         .unwrap();
 
@@ -2645,6 +2690,55 @@ mod tests {
             result,
             Err(VerifySlotDeltasError::SlotNotFoundInDeltas(333)),
         );
+    }
+
+    #[test]
+    fn test_verify_epoch_stakes_good() {
+        let bank = create_simple_test_bank(100 * LAMPORTS_PER_SOL);
+        assert_eq!(verify_epoch_stakes(&bank), Ok(()));
+    }
+
+    #[test]
+    fn test_verify_epoch_stakes_bad() {
+        let bank = create_simple_test_bank(100 * LAMPORTS_PER_SOL);
+        let current_epoch = bank.epoch();
+        let leader_schedule_epoch = bank.get_leader_schedule_epoch(bank.slot());
+        let required_epochs = current_epoch..=leader_schedule_epoch;
+
+        // insert an invalid epoch into the epoch stakes
+        {
+            let mut epoch_stakes_map = bank.epoch_stakes_map().clone();
+            let invalid_epoch = *required_epochs.end() + 1;
+            epoch_stakes_map.insert(
+                invalid_epoch,
+                bank.epoch_stakes(bank.epoch()).cloned().unwrap(),
+            );
+
+            assert_eq!(
+                _verify_epoch_stakes(&epoch_stakes_map, required_epochs.clone()),
+                Err(VerifyEpochStakesError::EpochGreaterThanMax(
+                    invalid_epoch,
+                    *required_epochs.end(),
+                )),
+            );
+        }
+
+        // remove required stakes
+        {
+            for removed_epoch in required_epochs.clone() {
+                let mut epoch_stakes_map = bank.epoch_stakes_map().clone();
+                let removed_stakes = epoch_stakes_map.remove(&removed_epoch);
+                assert!(removed_stakes.is_some());
+
+                assert_eq!(
+                    _verify_epoch_stakes(&epoch_stakes_map, required_epochs.clone()),
+                    Err(VerifyEpochStakesError::StakesNotFound(
+                        removed_epoch,
+                        required_epochs.clone(),
+                    )),
+                );
+            }
+        }
     }
 
     #[test]

@@ -60,20 +60,22 @@ fn bench_accounts_hash_bank_hash(bencher: &mut Bencher) {
     accounts.add_root(slot);
     accounts.accounts_db.flush_accounts_cache(true, Some(slot));
     bencher.iter(|| {
-        assert!(accounts.verify_accounts_hash_and_lamports(
-            0,
-            total_lamports,
-            None,
-            VerifyAccountsHashAndLamportsConfig {
-                ancestors: &ancestors,
-                test_hash_calculation: false,
-                epoch_schedule: &EpochSchedule::default(),
-                rent_collector: &RentCollector::default(),
-                ignore_mismatch: false,
-                store_detailed_debug_info: false,
-                use_bg_thread_pool: false,
-            }
-        ))
+        assert!(accounts
+            .accounts_db
+            .verify_accounts_hash_and_lamports_for_tests(
+                0,
+                total_lamports,
+                VerifyAccountsHashAndLamportsConfig {
+                    ancestors: &ancestors,
+                    test_hash_calculation: false,
+                    epoch_schedule: &EpochSchedule::default(),
+                    rent_collector: &RentCollector::default(),
+                    ignore_mismatch: false,
+                    store_detailed_debug_info: false,
+                    use_bg_thread_pool: false,
+                }
+            )
+            .is_ok())
     });
 }
 
@@ -124,12 +126,9 @@ fn bench_delete_dependencies(bencher: &mut Bencher) {
     });
 }
 
-fn store_accounts_with_possible_contention<F: 'static>(
-    bench_name: &str,
-    bencher: &mut Bencher,
-    reader_f: F,
-) where
-    F: Fn(&Accounts, &[Pubkey]) + Send + Copy,
+fn store_accounts_with_possible_contention<F>(bench_name: &str, bencher: &mut Bencher, reader_f: F)
+where
+    F: Fn(&Accounts, &[Pubkey]) + Send + Copy + 'static,
 {
     let num_readers = 5;
     let accounts_db = new_accounts_db(vec![PathBuf::from(

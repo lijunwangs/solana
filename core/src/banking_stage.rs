@@ -53,6 +53,7 @@ use {
 // Below modules are pub to allow use by banking_stage bench
 pub mod committer;
 pub mod consumer;
+pub mod forwarder;
 pub mod leader_slot_metrics;
 pub mod qos_service;
 pub mod unprocessed_packet_batches;
@@ -62,7 +63,6 @@ mod consume_worker;
 mod decision_maker;
 mod forward_packet_batches_by_accounts;
 mod forward_worker;
-mod forwarder;
 mod immutable_deserialized_packet;
 mod latest_unprocessed_votes;
 mod leader_slot_timing_metrics;
@@ -582,6 +582,14 @@ impl BankingStage {
             )
         }
 
+        let forwarder = Forwarder::new(
+            poh_recorder.clone(),
+            bank_forks.clone(),
+            cluster_info.clone(),
+            connection_cache.clone(),
+            data_budget.clone(),
+        );
+
         // Spawn the central scheduler thread
         bank_thread_hdls.push({
             let packet_deserializer =
@@ -593,6 +601,7 @@ impl BankingStage {
                 bank_forks,
                 scheduler,
                 worker_metrics,
+                forwarder,
             );
             Builder::new()
                 .name("solBnkTxSched".to_string())
@@ -617,7 +626,7 @@ impl BankingStage {
         committer: Committer,
         transaction_recorder: TransactionRecorder,
         log_messages_bytes_limit: Option<usize>,
-        forwarder: Forwarder,
+        mut forwarder: Forwarder,
         unprocessed_transaction_storage: UnprocessedTransactionStorage,
     ) -> JoinHandle<()> {
         let mut packet_receiver = PacketReceiver::new(id, packet_receiver, bank_forks);
@@ -634,7 +643,7 @@ impl BankingStage {
                 Self::process_loop(
                     &mut packet_receiver,
                     &decision_maker,
-                    &forwarder,
+                    &mut forwarder,
                     &consumer,
                     id,
                     unprocessed_transaction_storage,
@@ -646,7 +655,7 @@ impl BankingStage {
     #[allow(clippy::too_many_arguments)]
     fn process_buffered_packets(
         decision_maker: &DecisionMaker,
-        forwarder: &Forwarder,
+        forwarder: &mut Forwarder,
         consumer: &Consumer,
         unprocessed_transaction_storage: &mut UnprocessedTransactionStorage,
         banking_stage_stats: &BankingStageStats,
@@ -715,7 +724,7 @@ impl BankingStage {
     fn process_loop(
         packet_receiver: &mut PacketReceiver,
         decision_maker: &DecisionMaker,
-        forwarder: &Forwarder,
+        forwarder: &mut Forwarder,
         consumer: &Consumer,
         id: u32,
         mut unprocessed_transaction_storage: UnprocessedTransactionStorage,

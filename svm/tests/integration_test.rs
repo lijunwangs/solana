@@ -34,9 +34,8 @@ use {
         account_loader::TransactionCheckResult,
         runtime_config::RuntimeConfig,
         transaction_error_metrics::TransactionErrorMetrics,
-        transaction_processor::{
-            ExecutionRecordingConfig, TransactionBatchProcessor, TransactionProcessingCallback,
-        },
+        transaction_processing_callback::TransactionProcessingCallback,
+        transaction_processor::{ExecutionRecordingConfig, TransactionBatchProcessor},
         transaction_results::TransactionExecutionResult,
     },
     std::{
@@ -269,7 +268,7 @@ fn prepare_transactions(
     transaction_builder.create_instruction(hello_program, Vec::new(), HashMap::new(), Vec::new());
 
     let sanitized_transaction =
-        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()));
+        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()), false);
 
     all_transactions.push(sanitized_transaction);
     transaction_checks.push((Ok(()), None, Some(20)));
@@ -313,7 +312,7 @@ fn prepare_transactions(
     );
 
     let sanitized_transaction =
-        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()));
+        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()), true);
     all_transactions.push(sanitized_transaction);
     transaction_checks.push((Ok(()), None, Some(20)));
 
@@ -351,7 +350,7 @@ fn prepare_transactions(
     transaction_builder.create_instruction(program_account, Vec::new(), HashMap::new(), Vec::new());
 
     let sanitized_transaction =
-        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()));
+        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()), false);
 
     all_transactions.push(sanitized_transaction);
     transaction_checks.push((Ok(()), None, Some(20)));
@@ -393,7 +392,7 @@ fn prepare_transactions(
     );
 
     let sanitized_transaction =
-        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()));
+        transaction_builder.build(Hash::default(), (fee_payer, Signature::new_unique()), true);
     all_transactions.push(sanitized_transaction.clone());
     transaction_checks.push((Ok(()), None, Some(20)));
 

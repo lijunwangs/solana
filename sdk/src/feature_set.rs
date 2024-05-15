@@ -774,7 +774,7 @@ pub mod enable_gossip_duplicate_proof_ingestion {
 }
 
 pub mod chained_merkle_conflict_duplicate_proofs {
-    solana_sdk::declare_id!("mustrekeyVfuxJKNRGkyTDokLwWxx6kD2ZLsqQHaDD8");
+    solana_sdk::declare_id!("chaie9S2zVfuxJKNRGkyTDokLwWxx6kD2ZLsqQHaDD8");
 }
 
 pub mod enable_chained_merkle_shreds {
@@ -795,6 +795,10 @@ pub mod deprecate_unused_legacy_vote_plumbing {
 
 pub mod reward_full_priority_fee {
     solana_sdk::declare_id!("3opE3EzAKnUftUDURkzMgwpNgimBAypW1mNDYH4x4Zg7");
+}
+
+pub mod abort_on_invalid_curve {
+    solana_sdk::declare_id!("FuS3FPfJDKSNot99ECLXtp3rueq36hMNStJkPJwWodLh");
 }
 
 lazy_static! {
@@ -991,6 +995,7 @@ lazy_static! {
         (enable_tower_sync_ix::id(), "Enable tower sync vote instruction"),
         (chained_merkle_conflict_duplicate_proofs::id(), "generate duplicate proofs for chained merkle root conflicts"),
         (reward_full_priority_fee::id(), "Reward full priority fee to validators #34731"),
+        (abort_on_invalid_curve::id(), "Abort when elliptic curve syscalls invoked on invalid curve id SIMD-0137")
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()

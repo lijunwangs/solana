@@ -13,6 +13,8 @@
 //! and commits any side-effects (i.e. on-chain state changes) into the associated `Bank` via
 //! `solana-ledger`'s helper function called `execute_batch()`.
 
+#[cfg(feature = "dev-context-only-utils")]
+use qualifier_attr::qualifiers;
 use {
     assert_matches::assert_matches,
     crossbeam_channel::{self, never, select, Receiver, RecvError, SendError, Sender},
@@ -92,6 +94,7 @@ where
 {
     // Some internal impl and test code want an actual concrete type, NOT the
     // `dyn InstalledSchedulerPool`. So don't merge this into `Self::new_dyn()`.
+    #[cfg_attr(feature = "dev-context-only-utils", qualifiers(pub))]
     fn new(
         handler_count: Option<usize>,
         log_messages_bytes_limit: Option<usize>,
@@ -161,6 +164,11 @@ where
         } else {
             S::spawn(self.self_arc(), context)
         }
+    }
+
+    #[cfg(feature = "dev-context-only-utils")]
+    pub fn pooled_scheduler_count(&self) -> usize {
+        self.scheduler_inners.lock().expect("not poisoned").len()
     }
 
     pub fn default_handler_count() -> usize {
@@ -476,8 +484,8 @@ struct ThreadManager<S: SpawnableScheduler<TH>, TH: TaskHandler> {
     pool: Arc<SchedulerPool<S, TH>>,
     new_task_sender: Sender<NewTaskPayload>,
     new_task_receiver: Receiver<NewTaskPayload>,
-    session_result_sender: Sender<Option<ResultWithTimings>>,
-    session_result_receiver: Receiver<Option<ResultWithTimings>>,
+    session_result_sender: Sender<ResultWithTimings>,
+    session_result_receiver: Receiver<ResultWithTimings>,
     session_result_with_timings: Option<ResultWithTimings>,
     scheduler_thread: Option<JoinHandle<()>>,
     handler_threads: Vec<JoinHandle<()>>,
@@ -534,6 +542,7 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
         (result, timings): &mut ResultWithTimings,
         executed_task: Box<ExecutedTask>,
     ) {
+        timings.accumulate(&executed_task.result_with_timings.1);
         match executed_task.result_with_timings.0 {
             Ok(()) => {}
             Err(error) => {
@@ -545,7 +554,6 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
                 *result = Err(error);
             }
         }
-        timings.accumulate(&executed_task.result_with_timings.1);
     }
 
     fn take_session_result_with_timings(&mut self) -> ResultWithTimings {
@@ -652,7 +660,7 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
         let (finished_idle_task_sender, finished_idle_task_receiver) =
             crossbeam_channel::unbounded::<Box<ExecutedTask>>();
 
-        let mut result_with_timings = self.session_result_with_timings.take();
+        assert_matches!(self.session_result_with_timings, None);
 
         // High-level flow of new tasks:
         // 1. the replay stage thread send a new task.
@@ -719,19 +727,19 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
                 let mut state_machine = unsafe {
                     SchedulingStateMachine::exclusively_initialize_current_thread_for_scheduling()
                 };
+                let mut result_with_timings = initialized_result_with_timings();
 
                 loop {
-                    if let Ok(NewTaskPayload::OpenSubchannel(context)) = new_task_receiver.recv() {
-                        // signal about new SchedulingContext to handler threads
-                        runnable_task_sender
-                            .send_chained_channel(context, handler_count)
-                            .unwrap();
-                        assert_matches!(
-                            result_with_timings.replace(initialized_result_with_timings()),
-                            None
-                        );
-                    } else {
-                        unreachable!();
+                    match new_task_receiver.recv() {
+                        Ok(NewTaskPayload::OpenSubchannel(context)) => {
+                            // signal about new SchedulingContext to handler threads
+                            runnable_task_sender
+                                .send_chained_channel(context, handler_count)
+                                .unwrap();
+                        }
+                        _ => {
+                            unreachable!();
+                        }
                     }
 
                     let mut is_finished = false;
@@ -749,7 +757,7 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
                         // There's something special called dummy_unblocked_task_receiver here.
                         // This odd pattern was needed to react to newly unblocked tasks from
                         // _not-crossbeam-channel_ event sources, precisely at the specified
-                        // precedence among other selectors, while delegating the conrol flow to
+                        // precedence among other selectors, while delegating the control flow to
                         // select_biased!.
                         //
                         // In this way, hot looping is avoided and overall control flow is much
@@ -761,8 +769,7 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
                                 let executed_task = executed_task.unwrap();
 
                                 state_machine.deschedule_task(&executed_task.task);
-                                let result_with_timings = result_with_timings.as_mut().unwrap();
-                                Self::accumulate_result_with_timings(result_with_timings, executed_task);
+                                Self::accumulate_result_with_timings(&mut result_with_timings, executed_task);
                             },
                             recv(dummy_unblocked_task_receiver) -> dummy => {
                                 assert_matches!(dummy, Err(RecvError));
@@ -793,8 +800,7 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
                                 let executed_task = executed_task.unwrap();
 
                                 state_machine.deschedule_task(&executed_task.task);
-                                let result_with_timings = result_with_timings.as_mut().unwrap();
-                                Self::accumulate_result_with_timings(result_with_timings, executed_task);
+                                Self::accumulate_result_with_timings(&mut result_with_timings, executed_task);
                             },
                         };
 
@@ -804,10 +810,9 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
                     if session_ending {
                         state_machine.reinitialize();
                         session_result_sender
-                            .send(Some(
-                                result_with_timings
-                                    .take()
-                                    .unwrap_or_else(initialized_result_with_timings),
+                            .send(std::mem::replace(
+                                &mut result_with_timings,
+                                initialized_result_with_timings(),
                             ))
                             .unwrap();
                         session_ending = false;
@@ -886,9 +891,8 @@ impl<S: SpawnableScheduler<TH>, TH: TaskHandler> ThreadManager<S, TH> {
             .send(NewTaskPayload::CloseSubchannel)
             .unwrap();
 
-        if let Some(result_with_timings) = self.session_result_receiver.recv().unwrap() {
-            self.put_session_result_with_timings(result_with_timings);
-        }
+        let result_with_timings = self.session_result_receiver.recv().unwrap();
+        self.put_session_result_with_timings(result_with_timings);
     }
 
     fn start_session(&mut self, context: &SchedulingContext) {
@@ -1233,8 +1237,8 @@ mod tests {
         scheduler.pause_for_recent_blockhash();
         // transaction_count should remain same as scheduler should be bailing out.
         // That's because we're testing the serialized failing execution case in this test.
-        // However, currently threaded impl can't properly abort in this situtation..
-        // so, 1 should be observed, intead of 0.
+        // However, currently threaded impl can't properly abort in this situation..
+        // so, 1 should be observed, instead of 0.
         // Also note that bank.transaction_count() is generally racy by nature, because
         // blockstore_processor and unified_scheduler both tend to process non-conflicting batches
         // in parallel as part of the normal operation.

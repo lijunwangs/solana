@@ -145,7 +145,7 @@ declare_process_instruction!(Entrypoint, DEFAULT_COMPUTE_UNITS, |invoke_context|
                 &clock,
                 &stake_history,
                 &signers,
-                &invoke_context.feature_set,
+                invoke_context.get_feature_set(),
             )
         }
         StakeInstruction::Split(lamports) => {
@@ -310,7 +310,7 @@ declare_process_instruction!(Entrypoint, DEFAULT_COMPUTE_UNITS, |invoke_context|
             set_lockup(&mut me, &lockup, &signers, &clock)
         }
         StakeInstruction::GetMinimumDelegation => {
-            let feature_set = invoke_context.feature_set.as_ref();
+            let feature_set = invoke_context.get_feature_set();
             let minimum_delegation = crate::get_minimum_delegation(feature_set);
             let minimum_delegation = Vec::from(minimum_delegation.to_le_bytes());
             invoke_context
@@ -335,7 +335,7 @@ declare_process_instruction!(Entrypoint, DEFAULT_COMPUTE_UNITS, |invoke_context|
         StakeInstruction::Redelegate => {
             let mut me = get_stake_account()?;
             if invoke_context
-                .feature_set
+                .get_feature_set()
                 .is_active(&feature_set::stake_redelegate_instruction::id())
             {
                 instruction_context.check_number_of_instruction_accounts(3)?;
@@ -460,7 +460,7 @@ mod tests {
             expected_result,
             Entrypoint::vm,
             |invoke_context| {
-                invoke_context.feature_set = Arc::clone(&feature_set);
+                invoke_context.mock_set_feature_set(Arc::clone(&feature_set));
             },
             |_invoke_context| {},
         )
@@ -4215,7 +4215,7 @@ mod tests {
         ] {
             // Set the source's starting balance to something large to ensure its post-split
             // balance meets all the requirements
-            let source_balance = u64::MAX;
+            let source_balance = rent_exempt_reserve + split_amount;
             let source_meta = Meta {
                 rent_exempt_reserve,
                 ..Meta::auto(&source_address)
@@ -4362,7 +4362,7 @@ mod tests {
         ] {
             // Set the source's starting balance to something large to ensure its post-split
             // balance meets all the requirements
-            let source_balance = u64::MAX;
+            let source_balance = rent_exempt_reserve + minimum_delegation + split_amount;
             let source_meta = Meta {
                 rent_exempt_reserve,
                 ..Meta::auto(&source_address)
@@ -6889,11 +6889,11 @@ mod tests {
             Ok(()),
             Entrypoint::vm,
             |invoke_context| {
-                invoke_context.feature_set = Arc::clone(&feature_set);
+                invoke_context.mock_set_feature_set(Arc::clone(&feature_set));
             },
             |invoke_context| {
                 let expected_minimum_delegation =
-                    crate::get_minimum_delegation(&invoke_context.feature_set).to_le_bytes();
+                    crate::get_minimum_delegation(invoke_context.get_feature_set()).to_le_bytes();
                 let actual_minimum_delegation =
                     invoke_context.transaction_context.get_return_data().1;
                 assert_eq!(expected_minimum_delegation, actual_minimum_delegation);
@@ -6910,11 +6910,13 @@ mod tests {
     #[test_case(feature_set_all_enabled(); "all_enabled")]
     fn test_stake_process_instruction_error_ordering(feature_set: Arc<FeatureSet>) {
         let rent = Rent::default();
+        let rent_exempt_reserve = rent.minimum_balance(StakeStateV2::size_of());
         let rent_address = rent::id();
         let rent_account = create_account_shared_data_for_test(&rent);
 
         let good_stake_address = Pubkey::new_unique();
-        let good_stake_account = AccountSharedData::new(u64::MAX, StakeStateV2::size_of(), &id());
+        let good_stake_account =
+            AccountSharedData::new(rent_exempt_reserve, StakeStateV2::size_of(), &id());
         let good_instruction = instruction::initialize(
             &good_stake_address,
             &Authorized::auto(&good_stake_address),

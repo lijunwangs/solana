@@ -20,20 +20,23 @@ use {
     solana_accounts_db::{
         account_storage::AccountStorageMap,
         accounts_db::{AccountStorageEntry, AtomicAccountsFileId},
-        accounts_file::{AccountsFile, AccountsFileError},
-        append_vec::AppendVec,
+        accounts_file::{AccountsFile, AccountsFileError, StorageAccess},
         hardened_unpack::{self, ParallelSelector, UnpackError},
         shared_buffer_reader::{SharedBuffer, SharedBufferReader},
         utils::{move_and_async_delete_path, ACCOUNTS_RUN_DIR, ACCOUNTS_SNAPSHOT_DIR},
     },
     solana_measure::{measure, measure::Measure},
-    solana_sdk::{clock::Slot, hash::Hash},
+    solana_sdk::{
+        clock::{Epoch, Slot},
+        hash::Hash,
+    },
     std::{
         cmp::Ordering,
         collections::{HashMap, HashSet},
         fmt, fs,
         io::{BufReader, BufWriter, Error as IoError, Read, Result as IoResult, Seek, Write},
         num::NonZeroUsize,
+        ops::RangeInclusive,
         path::{Path, PathBuf},
         process::ExitStatus,
         str::FromStr,
@@ -333,6 +336,9 @@ pub enum SnapshotError {
     #[error("snapshot slot deltas are invalid: {0}")]
     VerifySlotDeltas(#[from] VerifySlotDeltasError),
 
+    #[error("snapshot epoch stakes are invalid: {0}")]
+    VerifyEpochStakes(#[from] VerifyEpochStakesError),
+
     #[error("bank_snapshot_info new_from_dir failed: {0}")]
     NewFromDir(#[from] SnapshotNewFromDirError),
 
@@ -407,6 +413,16 @@ pub enum VerifySlotDeltasError {
 
     #[error("slot history is bad and cannot be used to verify slot deltas")]
     BadSlotHistory,
+}
+
+/// Errors that can happen in `verify_epoch_stakes()`
+#[derive(Error, Debug, PartialEq, Eq)]
+pub enum VerifyEpochStakesError {
+    #[error("epoch {0} is greater than the max {1}")]
+    EpochGreaterThanMax(Epoch, Epoch),
+
+    #[error("stakes not found for epoch {0} (required epochs: {1:?})")]
+    StakesNotFound(Epoch, RangeInclusive<Epoch>),
 }
 
 /// Errors that can happen in `add_bank_snapshot()`
@@ -1240,7 +1256,7 @@ pub fn hard_link_storages_to_snapshot(
         )?;
         // The appendvec could be recycled, so its filename may not be consistent to the slot and id.
         // Use the storage slot and id to compose a consistent file name for the hard-link file.
-        let hardlink_filename = AppendVec::file_name(storage.slot(), storage.append_vec_id());
+        let hardlink_filename = AccountsFile::file_name(storage.slot(), storage.append_vec_id());
         let hard_link_path = snapshot_hardlink_dir.join(hardlink_filename);
         fs::hard_link(storage_path, &hard_link_path).map_err(|err| {
             HardLinkStoragesToSnapshotError::HardLinkStorage(
@@ -1273,6 +1289,7 @@ pub fn verify_and_unarchive_snapshots(
     full_snapshot_archive_info: &FullSnapshotArchiveInfo,
     incremental_snapshot_archive_info: Option<&IncrementalSnapshotArchiveInfo>,
     account_paths: &[PathBuf],
+    storage_access: StorageAccess,
 ) -> Result<(
     UnarchivedSnapshot,
     Option<UnarchivedSnapshot>,
@@ -1295,6 +1312,7 @@ pub fn verify_and_unarchive_snapshots(
         full_snapshot_archive_info.archive_format(),
         parallel_divisions,
         next_append_vec_id.clone(),
+        storage_access,
     )?;
 
     let unarchived_incremental_snapshot =
@@ -1308,6 +1326,7 @@ pub fn verify_and_unarchive_snapshots(
                 incremental_snapshot_archive_info.archive_format(),
                 parallel_divisions,
                 next_append_vec_id.clone(),
+                storage_access,
             )?;
             Some(unarchived_incremental_snapshot)
         } else {
@@ -1433,6 +1452,7 @@ fn unarchive_snapshot(
     archive_format: ArchiveFormat,
     parallel_divisions: usize,
     next_append_vec_id: Arc<AtomicAccountsFileId>,
+    storage_access: StorageAccess,
 ) -> Result<UnarchivedSnapshot> {
     let unpack_dir = tempfile::Builder::new()
         .prefix(unpacked_snapshots_dir_prefix)
@@ -1458,6 +1478,7 @@ fn unarchive_snapshot(
             num_rebuilder_threads,
             next_append_vec_id,
             SnapshotFrom::Archive,
+            storage_access,
         )?,
         measure_name
     );
@@ -1508,6 +1529,7 @@ pub fn rebuild_storages_from_snapshot_dir(
     snapshot_info: &BankSnapshotInfo,
     account_paths: &[PathBuf],
     next_append_vec_id: Arc<AtomicAccountsFileId>,
+    storage_access: StorageAccess,
 ) -> Result<AccountStorageMap> {
     let bank_snapshot_dir = &snapshot_info.snapshot_dir;
     let accounts_hardlinks = bank_snapshot_dir.join(SNAPSHOT_ACCOUNTS_HARDLINKS);
@@ -1580,6 +1602,7 @@ pub fn rebuild_storages_from_snapshot_dir(
         num_rebuilder_threads,
         next_append_vec_id,
         SnapshotFrom::Dir,
+        storage_access,
     )?;
 
     let RebuiltSnapshotStorage {

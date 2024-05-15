@@ -28,7 +28,7 @@ use {
         rent_collector::RENT_EXEMPT_RENT_EPOCH,
         stake_history::Epoch,
     },
-    std::{option::Option, path::Path},
+    std::{io::Write, option::Option, path::Path},
 };
 
 pub const HOT_FORMAT: TieredStorageFormat = TieredStorageFormat {
@@ -525,20 +525,11 @@ impl HotStorageReader {
     }
 
     /// calls `callback` with the account located at the specified index offset.
-    pub fn get_stored_account_meta_callback<'a, Ret>(
-        &'a self,
-        index_offset: IndexOffset,
-        mut callback: impl FnMut(StoredAccountMeta<'a>) -> Ret,
-    ) -> TieredStorageResult<Option<Ret>> {
-        let account = self.get_stored_account_meta(index_offset)?;
-        Ok(account.map(|(account, _offset)| callback(account)))
-    }
-
-    /// Returns the account located at the specified index offset.
-    pub fn get_stored_account_meta(
+    pub fn get_stored_account_meta_callback<Ret>(
         &self,
         index_offset: IndexOffset,
-    ) -> TieredStorageResult<Option<(StoredAccountMeta<'_>, IndexOffset)>> {
+        mut callback: impl for<'local> FnMut(StoredAccountMeta<'local>) -> Ret,
+    ) -> TieredStorageResult<Option<Ret>> {
         if index_offset.0 >= self.footer.account_entry_count {
             return Ok(None);
         }
@@ -550,16 +541,13 @@ impl HotStorageReader {
         let owner = self.get_owner_address(meta.owner_offset())?;
         let account_block = self.get_account_block(account_offset, index_offset)?;
 
-        Ok(Some((
-            StoredAccountMeta::Hot(HotAccount {
-                meta,
-                address,
-                owner,
-                index: index_offset,
-                account_block,
-            }),
-            IndexOffset(index_offset.0.saturating_add(1)),
-        )))
+        Ok(Some(callback(StoredAccountMeta::Hot(HotAccount {
+            meta,
+            address,
+            owner,
+            index: index_offset,
+            account_block,
+        }))))
     }
 
     /// Returns the account located at the specified index offset.
@@ -584,24 +572,6 @@ impl HotStorageReader {
         Ok(Some(AccountSharedData::create(
             lamports, data, owner, executable, rent_epoch,
         )))
-    }
-
-    /// Return a vector of account metadata for each account, starting from
-    /// `index_offset`
-    pub fn accounts(
-        &self,
-        mut index_offset: IndexOffset,
-    ) -> TieredStorageResult<Vec<StoredAccountMeta>> {
-        let mut accounts = Vec::with_capacity(
-            self.footer
-                .account_entry_count
-                .saturating_sub(index_offset.0) as usize,
-        );
-        while let Some((account, next)) = self.get_stored_account_meta(index_offset)? {
-            accounts.push(account);
-            index_offset = next;
-        }
-        Ok(accounts)
     }
 
     /// iterate over all pubkeys
@@ -633,7 +603,7 @@ impl HotStorageReader {
     /// Iterate over all accounts and call `callback` with each account.
     pub(crate) fn scan_accounts(
         &self,
-        mut callback: impl for<'a> FnMut(StoredAccountMeta<'a>),
+        mut callback: impl for<'local> FnMut(StoredAccountMeta<'local>),
     ) -> TieredStorageResult<()> {
         for i in 0..self.footer.account_entry_count {
             self.get_stored_account_meta_callback(IndexOffset(i), &mut callback)?;
@@ -835,6 +805,14 @@ impl HotStorageWriter {
             offsets,
             size: cursor,
         })
+    }
+
+    /// Flushes any buffered data to the file
+    pub fn flush(&mut self) -> TieredStorageResult<()> {
+        self.storage
+            .0
+            .flush()
+            .map_err(TieredStorageError::FlushHotWriter)
     }
 }
 
@@ -1461,28 +1439,29 @@ mod tests {
         let hot_storage = HotStorageReader::new(file).unwrap();
 
         for i in 0..NUM_ACCOUNTS {
-            let (stored_account_meta, next) = hot_storage
-                .get_stored_account_meta(IndexOffset(i as u32))
+            hot_storage
+                .get_stored_account_meta_callback(IndexOffset(i as u32), |stored_account_meta| {
+                    assert_eq!(
+                        stored_account_meta.lamports(),
+                        test_info.metas[i].lamports()
+                    );
+                    assert_eq!(stored_account_meta.data().len(), test_info.datas[i].len());
+                    assert_eq!(stored_account_meta.data(), test_info.datas[i]);
+                    assert_eq!(
+                        *stored_account_meta.owner(),
+                        test_info.owners[test_info.metas[i].owner_offset().0 as usize]
+                    );
+                    assert_eq!(*stored_account_meta.pubkey(), test_info.addresses[i]);
+                })
                 .unwrap()
                 .unwrap();
-            assert_eq!(
-                stored_account_meta.lamports(),
-                test_info.metas[i].lamports()
-            );
-            assert_eq!(stored_account_meta.data().len(), test_info.datas[i].len());
-            assert_eq!(stored_account_meta.data(), test_info.datas[i]);
-            assert_eq!(
-                *stored_account_meta.owner(),
-                test_info.owners[test_info.metas[i].owner_offset().0 as usize]
-            );
-            assert_eq!(*stored_account_meta.pubkey(), test_info.addresses[i]);
-
-            assert_eq!(i + 1, next.0 as usize);
         }
         // Make sure it returns None on NUM_ACCOUNTS to allow termination on
         // while loop in actual accounts-db read case.
         assert_matches!(
-            hot_storage.get_stored_account_meta(IndexOffset(NUM_ACCOUNTS as u32)),
+            hot_storage.get_stored_account_meta_callback(IndexOffset(NUM_ACCOUNTS as u32), |_| {
+                panic!("unexpected");
+            }),
             Ok(None)
         );
     }
@@ -1556,7 +1535,9 @@ mod tests {
         let path = temp_dir.path().join("test_write_account_and_index_blocks");
         let stored_accounts_info = {
             let mut writer = HotStorageWriter::new(&path).unwrap();
-            writer.write_accounts(&storable_accounts, 0).unwrap()
+            let stored_accounts_info = writer.write_accounts(&storable_accounts, 0).unwrap();
+            writer.flush().unwrap();
+            stored_accounts_info
         };
 
         let file = TieredReadableFile::new(&path).unwrap();
@@ -1564,63 +1545,61 @@ mod tests {
 
         let num_accounts = account_data_sizes.len();
         for i in 0..num_accounts {
-            let (stored_account_meta, next) = hot_storage
-                .get_stored_account_meta(IndexOffset(i as u32))
+            hot_storage
+                .get_stored_account_meta_callback(IndexOffset(i as u32), |stored_account_meta| {
+                    storable_accounts.account_default_if_zero_lamport(i, |account| {
+                        verify_test_account(
+                            &stored_account_meta,
+                            &account.to_account_shared_data(),
+                            account.pubkey(),
+                        );
+                    });
+                })
                 .unwrap()
                 .unwrap();
-
-            storable_accounts.account_default_if_zero_lamport(i, |account| {
-                verify_test_account(
-                    &stored_account_meta,
-                    &account.to_account_shared_data(),
-                    account.pubkey(),
-                );
-            });
-
-            assert_eq!(i + 1, next.0 as usize);
         }
         // Make sure it returns None on NUM_ACCOUNTS to allow termination on
         // while loop in actual accounts-db read case.
         assert_matches!(
-            hot_storage.get_stored_account_meta(IndexOffset(num_accounts as u32)),
+            hot_storage.get_stored_account_meta_callback(IndexOffset(num_accounts as u32), |_| {
+                panic!("unexpected");
+            }),
             Ok(None)
         );
 
         for offset in stored_accounts_info.offsets {
-            let (stored_account_meta, _) = hot_storage
-                .get_stored_account_meta(IndexOffset(offset as u32))
+            hot_storage
+                .get_stored_account_meta_callback(
+                    IndexOffset(offset as u32),
+                    |stored_account_meta| {
+                        storable_accounts.account_default_if_zero_lamport(offset, |account| {
+                            verify_test_account(
+                                &stored_account_meta,
+                                &account.to_account_shared_data(),
+                                account.pubkey(),
+                            );
+                        });
+                    },
+                )
                 .unwrap()
                 .unwrap();
-
-            storable_accounts.account_default_if_zero_lamport(offset, |account| {
-                verify_test_account(
-                    &stored_account_meta,
-                    &account.to_account_shared_data(),
-                    account.pubkey(),
-                );
-            });
         }
 
-        // verify get_accounts
-        let accounts = hot_storage.accounts(IndexOffset(0)).unwrap();
+        // verify everything
+        let mut i = 0;
+        hot_storage
+            .scan_accounts(|stored_meta| {
+                storable_accounts.account_default_if_zero_lamport(i, |account| {
+                    verify_test_account(
+                        &stored_meta,
+                        &account.to_account_shared_data(),
+                        account.pubkey(),
+                    );
+                });
+                i += 1;
+            })
+            .unwrap();
 
-        // first, we verify everything
-        for (i, stored_meta) in accounts.iter().enumerate() {
-            storable_accounts.account_default_if_zero_lamport(i, |account| {
-                verify_test_account(
-                    stored_meta,
-                    &account.to_account_shared_data(),
-                    account.pubkey(),
-                );
-            });
-        }
-
-        // second, we verify various initial position
-        let total_stored_accounts = accounts.len();
-        for i in 0..total_stored_accounts {
-            let partial_accounts = hot_storage.accounts(IndexOffset(i as u32)).unwrap();
-            assert_eq!(&partial_accounts, &accounts[i..]);
-        }
         let footer = hot_storage.footer();
 
         let expected_size = footer.owners_block_offset as usize

@@ -548,7 +548,7 @@ impl ReplayStage {
         cluster_slots_update_sender: ClusterSlotsUpdateSender,
         cost_update_sender: Sender<CostUpdate>,
         voting_sender: Sender<VoteOp>,
-        drop_bank_sender: Sender<Vec<Arc<Bank>>>,
+        drop_bank_sender: Sender<Vec<BankWithScheduler>>,
         block_metadata_notifier: Option<BlockMetadataNotifierArc>,
         log_messages_bytes_limit: Option<usize>,
         prioritization_fee_cache: Arc<PrioritizationFeeCache>,
@@ -1400,9 +1400,7 @@ impl ReplayStage {
                 .unwrap();
             let duplicate_slot_hashes = duplicate_slots.filter_map(|slot| {
                 let bank = bank_forks.get(slot)?;
-                bank.feature_set
-                    .is_active(&feature_set::consume_blockstore_duplicate_proofs::id())
-                    .then_some((slot, bank.hash()))
+                Some((slot, bank.hash()))
             });
             (
                 bank_forks.root_bank(),
@@ -1681,7 +1679,7 @@ impl ReplayStage {
 
         // Grab the Slot and BankId's of the banks we need to purge, then clear the banks
         // from BankForks
-        let (slots_to_purge, removed_banks): (Vec<(Slot, BankId)>, Vec<Arc<Bank>>) = {
+        let (slots_to_purge, removed_banks): (Vec<(Slot, BankId)>, Vec<BankWithScheduler>) = {
             let mut w_bank_forks = bank_forks.write().unwrap();
             slot_descendants
                 .iter()
@@ -2283,11 +2281,7 @@ impl ReplayStage {
         );
 
         // If we previously marked this slot as duplicate in blockstore, let the state machine know
-        if bank
-            .feature_set
-            .is_active(&feature_set::consume_blockstore_duplicate_proofs::id())
-            && !duplicate_slots_tracker.contains(&slot)
-            && blockstore.get_duplicate_slot(slot).is_some()
+        if !duplicate_slots_tracker.contains(&slot) && blockstore.get_duplicate_slot(slot).is_some()
         {
             let duplicate_state = DuplicateState::new_from_state(
                 slot,
@@ -2337,7 +2331,7 @@ impl ReplayStage {
         replay_timing: &mut ReplayLoopTiming,
         voting_sender: &Sender<VoteOp>,
         epoch_slots_frozen_slots: &mut EpochSlotsFrozenSlots,
-        drop_bank_sender: &Sender<Vec<Arc<Bank>>>,
+        drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
         wait_to_vote_slot: Option<Slot>,
     ) -> Result<(), SetRootError> {
         if bank.is_empty() {
@@ -3111,10 +3105,7 @@ impl ReplayStage {
                     SlotStateUpdate::BankFrozen(bank_frozen_state),
                 );
                 // If we previously marked this slot as duplicate in blockstore, let the state machine know
-                if bank
-                    .feature_set
-                    .is_active(&feature_set::consume_blockstore_duplicate_proofs::id())
-                    && !duplicate_slots_tracker.contains(&bank.slot())
+                if !duplicate_slots_tracker.contains(&bank.slot())
                     && blockstore.get_duplicate_slot(bank.slot()).is_some()
                 {
                     let duplicate_state = DuplicateState::new_from_state(
@@ -4169,7 +4160,7 @@ impl ReplayStage {
         has_new_vote_been_rooted: &mut bool,
         voted_signatures: &mut Vec<Signature>,
         epoch_slots_frozen_slots: &mut EpochSlotsFrozenSlots,
-        drop_bank_sender: &Sender<Vec<Arc<Bank>>>,
+        drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
     ) -> Result<(), SetRootError> {
         bank_forks.read().unwrap().prune_program_cache(new_root);
         let removed_banks = bank_forks.write().unwrap().set_root(
@@ -4251,7 +4242,7 @@ impl ReplayStage {
                 .get(&parent_slot)
                 .expect("missing parent in bank forks");
             for child_slot in children {
-                if forks.get(child_slot).is_some() || new_banks.get(&child_slot).is_some() {
+                if forks.get(child_slot).is_some() || new_banks.contains_key(&child_slot) {
                     trace!("child already active or frozen {}", child_slot);
                     continue;
                 }

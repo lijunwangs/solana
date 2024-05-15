@@ -3,8 +3,7 @@ mod tests {
     use {
         crate::{
             bank::{
-                epoch_accounts_hash_utils, partitioned_epoch_rewards::StartBlockHeightAndRewards,
-                test_utils as bank_test_utils, Bank, EpochRewardStatus,
+                epoch_accounts_hash_utils, test_utils as bank_test_utils, Bank, EpochRewardStatus,
             },
             genesis_utils::activate_all_features,
             runtime_config::RuntimeConfig,
@@ -19,18 +18,16 @@ mod tests {
             },
             status_cache::StatusCache,
         },
-        assert_matches::assert_matches,
         solana_accounts_db::{
             account_storage::{AccountStorageMap, AccountStorageReference},
             accounts_db::{
                 get_temp_accounts_paths, AccountShrinkThreshold, AccountStorageEntry, AccountsDb,
                 AtomicAccountsFileId,
             },
-            accounts_file::{AccountsFile, AccountsFileError},
+            accounts_file::{AccountsFile, AccountsFileError, StorageAccess},
             accounts_hash::{AccountsDeltaHash, AccountsHash},
             accounts_index::AccountSecondaryIndexes,
             epoch_accounts_hash::EpochAccountsHash,
-            stake_rewards::StakeReward,
         },
         solana_sdk::{
             epoch_schedule::EpochSchedule,
@@ -41,18 +38,19 @@ mod tests {
         },
         std::{
             io::{Cursor, Read, Write},
-            num::NonZeroUsize,
             ops::RangeFull,
             path::Path,
             sync::{Arc, RwLock},
         },
         tempfile::TempDir,
+        test_case::test_case,
     };
 
     /// Simulates the unpacking & storage reconstruction done during snapshot unpacking
     fn copy_append_vecs<P: AsRef<Path>>(
         accounts_db: &AccountsDb,
         output_dir: P,
+        storage_access: StorageAccess,
     ) -> Result<StorageAndNextAccountsFileId, AccountsFileError> {
         let storage_entries = accounts_db.get_snapshot_storages(RangeFull).0;
         let storage: AccountStorageMap = AccountStorageMap::with_capacity(storage_entries.len());
@@ -66,8 +64,11 @@ mod tests {
             std::fs::copy(storage_path, &output_path)?;
 
             // Read new file into append-vec and build new entry
-            let (accounts_file, num_accounts) =
-                AccountsFile::new_from_file(output_path, storage_entry.accounts.len())?;
+            let (accounts_file, num_accounts) = AccountsFile::new_from_file(
+                output_path,
+                storage_entry.accounts.len(),
+                storage_access,
+            )?;
             let new_storage_entry = AccountStorageEntry::new_existing(
                 storage_entry.slot(),
                 storage_entry.append_vec_id(),
@@ -96,6 +97,7 @@ mod tests {
         update_accounts_hash: bool,
         incremental_snapshot_persistence: bool,
         initial_epoch_accounts_hash: bool,
+        storage_access: StorageAccess,
     ) {
         solana_logger::setup();
         let (mut genesis_config, _) = create_genesis_config(500);
@@ -252,8 +254,12 @@ mod tests {
         status_cache.add_root(2);
         // Create a directory to simulate AppendVecs unpackaged from a snapshot tar
         let copied_accounts = TempDir::new().unwrap();
-        let storage_and_next_append_vec_id =
-            copy_append_vecs(&bank2.rc.accounts.accounts_db, copied_accounts.path()).unwrap();
+        let storage_and_next_append_vec_id = copy_append_vecs(
+            &bank2.rc.accounts.accounts_db,
+            copied_accounts.path(),
+            storage_access,
+        )
+        .unwrap();
         let mut snapshot_streams = SnapshotStreams {
             full_snapshot_stream: &mut reader,
             incremental_snapshot_stream: None,
@@ -303,8 +309,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_bank_serialize_newer() {
+    #[test_case(StorageAccess::Mmap)]
+    fn test_bank_serialize_newer(storage_access: StorageAccess) {
         for (reserialize_accounts_hash, update_accounts_hash) in
             [(false, false), (true, false), (true, true)]
         {
@@ -321,6 +327,7 @@ mod tests {
                         update_accounts_hash,
                         incremental_snapshot_persistence,
                         initial_epoch_accounts_hash,
+                        storage_access,
                     )
                 }
             }
@@ -332,202 +339,144 @@ mod tests {
         bank.flush_accounts_cache_slot_for_tests()
     }
 
-    #[test]
-    fn test_extra_fields_eof() {
+    #[test_case(StorageAccess::Mmap)]
+    fn test_extra_fields_eof(storage_access: StorageAccess) {
         solana_logger::setup();
-        let sample_rewards = (0..2)
-            .map(|_| StakeReward::new_random())
-            .collect::<Vec<_>>();
-        for epoch_reward_status_active in [None, Some(vec![]), Some(vec![sample_rewards])] {
-            let (genesis_config, _) = create_genesis_config(500);
+        let (genesis_config, _) = create_genesis_config(500);
 
-            let bank0 = Arc::new(Bank::new_for_tests(&genesis_config));
-            bank0.squash();
-            let mut bank = Bank::new_from_parent(bank0.clone(), &Pubkey::default(), 1);
+        let bank0 = Arc::new(Bank::new_for_tests(&genesis_config));
+        bank0.squash();
+        let mut bank = Bank::new_from_parent(bank0.clone(), &Pubkey::default(), 1);
 
-            add_root_and_flush_write_cache(&bank0);
-            bank.rc
-                .accounts
-                .accounts_db
-                .set_accounts_delta_hash(bank.slot(), AccountsDeltaHash(Hash::new_unique()));
-            bank.rc.accounts.accounts_db.set_accounts_hash(
-                bank.slot(),
-                (AccountsHash(Hash::new_unique()), u64::default()),
-            );
+        add_root_and_flush_write_cache(&bank0);
+        bank.rc
+            .accounts
+            .accounts_db
+            .set_accounts_delta_hash(bank.slot(), AccountsDeltaHash(Hash::new_unique()));
+        bank.rc.accounts.accounts_db.set_accounts_hash(
+            bank.slot(),
+            (AccountsHash(Hash::new_unique()), u64::default()),
+        );
 
-            // Set extra fields
-            bank.fee_rate_governor.lamports_per_signature = 7000;
+        // Set extra fields
+        bank.fee_rate_governor.lamports_per_signature = 7000;
 
-            if let Some(rewards) = epoch_reward_status_active.as_ref() {
-                assert_eq!(bank.block_height(), 1);
-                bank.set_epoch_reward_status_active(rewards.clone());
-            }
+        // Serialize
+        let snapshot_storages = bank.get_snapshot_storages(None);
+        let mut buf = vec![];
+        let mut writer = Cursor::new(&mut buf);
 
-            // Serialize
-            let snapshot_storages = bank.get_snapshot_storages(None);
-            let mut buf = vec![];
-            let mut writer = Cursor::new(&mut buf);
+        crate::serde_snapshot::bank_to_stream(
+            SerdeStyle::Newer,
+            &mut std::io::BufWriter::new(&mut writer),
+            &bank,
+            &get_storages_to_serialize(&snapshot_storages),
+        )
+        .unwrap();
 
-            crate::serde_snapshot::bank_to_stream(
-                SerdeStyle::Newer,
-                &mut std::io::BufWriter::new(&mut writer),
-                &bank,
-                &get_storages_to_serialize(&snapshot_storages),
-            )
-            .unwrap();
+        // Deserialize
+        let rdr = Cursor::new(&buf[..]);
+        let mut reader = std::io::BufReader::new(&buf[rdr.position() as usize..]);
+        let mut snapshot_streams = SnapshotStreams {
+            full_snapshot_stream: &mut reader,
+            incremental_snapshot_stream: None,
+        };
+        let (_accounts_dir, dbank_paths) = get_temp_accounts_paths(4).unwrap();
+        let copied_accounts = TempDir::new().unwrap();
+        let storage_and_next_append_vec_id = copy_append_vecs(
+            &bank.rc.accounts.accounts_db,
+            copied_accounts.path(),
+            storage_access,
+        )
+        .unwrap();
+        let dbank = crate::serde_snapshot::bank_from_streams(
+            SerdeStyle::Newer,
+            &mut snapshot_streams,
+            &dbank_paths,
+            storage_and_next_append_vec_id,
+            &genesis_config,
+            &RuntimeConfig::default(),
+            None,
+            None,
+            AccountSecondaryIndexes::default(),
+            None,
+            AccountShrinkThreshold::default(),
+            false,
+            Some(solana_accounts_db::accounts_db::ACCOUNTS_DB_CONFIG_FOR_TESTING),
+            None,
+            Arc::default(),
+        )
+        .unwrap();
 
-            // Deserialize
-            let rdr = Cursor::new(&buf[..]);
-            let mut reader = std::io::BufReader::new(&buf[rdr.position() as usize..]);
-            let mut snapshot_streams = SnapshotStreams {
-                full_snapshot_stream: &mut reader,
-                incremental_snapshot_stream: None,
-            };
-            let (_accounts_dir, dbank_paths) = get_temp_accounts_paths(4).unwrap();
-            let copied_accounts = TempDir::new().unwrap();
-            let storage_and_next_append_vec_id =
-                copy_append_vecs(&bank.rc.accounts.accounts_db, copied_accounts.path()).unwrap();
-            let dbank = crate::serde_snapshot::bank_from_streams(
-                SerdeStyle::Newer,
-                &mut snapshot_streams,
-                &dbank_paths,
-                storage_and_next_append_vec_id,
-                &genesis_config,
-                &RuntimeConfig::default(),
-                None,
-                None,
-                AccountSecondaryIndexes::default(),
-                None,
-                AccountShrinkThreshold::default(),
-                false,
-                Some(solana_accounts_db::accounts_db::ACCOUNTS_DB_CONFIG_FOR_TESTING),
-                None,
-                Arc::default(),
-            )
-            .unwrap();
-
-            assert_eq!(
-                bank.fee_rate_governor.lamports_per_signature,
-                dbank.fee_rate_governor.lamports_per_signature
-            );
-
-            // assert epoch_reward_status is the same as the set epoch reward status
-            let epoch_reward_status = dbank
-                .get_epoch_reward_status_to_serialize()
-                .unwrap_or(&EpochRewardStatus::Inactive);
-            if let Some(rewards) = epoch_reward_status_active {
-                assert_matches!(epoch_reward_status, EpochRewardStatus::Active(_));
-                if let EpochRewardStatus::Active(StartBlockHeightAndRewards {
-                    start_block_height,
-                    ref stake_rewards_by_partition,
-                }) = epoch_reward_status
-                {
-                    assert_eq!(*start_block_height, 1);
-                    assert_eq!(&rewards[..], &stake_rewards_by_partition[..]);
-                } else {
-                    unreachable!("Epoch reward status should NOT be inactive.");
-                }
-            } else {
-                assert_matches!(epoch_reward_status, EpochRewardStatus::Inactive);
-            }
-        }
+        assert_eq!(
+            bank.fee_rate_governor.lamports_per_signature,
+            dbank.fee_rate_governor.lamports_per_signature
+        );
     }
 
     #[test]
     fn test_extra_fields_full_snapshot_archive() {
         solana_logger::setup();
 
-        let sample_rewards = (0..2)
-            .map(|_| StakeReward::new_random())
-            .collect::<Vec<_>>();
-        for epoch_reward_status_active in [None, Some(vec![]), Some(vec![sample_rewards])] {
-            let (mut genesis_config, _) = create_genesis_config(500);
-            activate_all_features(&mut genesis_config);
+        let (mut genesis_config, _) = create_genesis_config(500);
+        activate_all_features(&mut genesis_config);
 
-            let bank0 = Arc::new(Bank::new_for_tests(&genesis_config));
-            let mut bank = Bank::new_from_parent(bank0, &Pubkey::default(), 1);
-            while !bank.is_complete() {
-                bank.fill_bank_with_ticks_for_tests();
-            }
-
-            // Set extra field
-            bank.fee_rate_governor.lamports_per_signature = 7000;
-
-            if let Some(rewards) = epoch_reward_status_active.as_ref() {
-                assert_eq!(bank.block_height(), 1);
-                bank.set_epoch_reward_status_active(rewards.clone());
-            }
-
-            let (_tmp_dir, accounts_dir) = create_tmp_accounts_dir_for_tests();
-            let bank_snapshots_dir = TempDir::new().unwrap();
-            let full_snapshot_archives_dir = TempDir::new().unwrap();
-            let incremental_snapshot_archives_dir = TempDir::new().unwrap();
-
-            // Serialize
-            let snapshot_archive_info = snapshot_bank_utils::bank_to_full_snapshot_archive(
-                &bank_snapshots_dir,
-                &bank,
-                None,
-                full_snapshot_archives_dir.path(),
-                incremental_snapshot_archives_dir.path(),
-                ArchiveFormat::Tar,
-                NonZeroUsize::new(1).unwrap(),
-                NonZeroUsize::new(1).unwrap(),
-            )
-            .unwrap();
-
-            // Deserialize
-            let (dbank, _) = snapshot_bank_utils::bank_from_snapshot_archives(
-                &[accounts_dir],
-                bank_snapshots_dir.path(),
-                &snapshot_archive_info,
-                None,
-                &genesis_config,
-                &RuntimeConfig::default(),
-                None,
-                None,
-                AccountSecondaryIndexes::default(),
-                None,
-                AccountShrinkThreshold::default(),
-                false,
-                false,
-                false,
-                false,
-                Some(solana_accounts_db::accounts_db::ACCOUNTS_DB_CONFIG_FOR_TESTING),
-                None,
-                Arc::default(),
-            )
-            .unwrap();
-
-            assert_eq!(
-                bank.fee_rate_governor.lamports_per_signature,
-                dbank.fee_rate_governor.lamports_per_signature
-            );
-
-            // assert epoch_reward_status is the same as the set epoch reward status
-            let epoch_reward_status = dbank
-                .get_epoch_reward_status_to_serialize()
-                .unwrap_or(&EpochRewardStatus::Inactive);
-            if let Some(rewards) = epoch_reward_status_active {
-                assert_matches!(epoch_reward_status, EpochRewardStatus::Active(_));
-                if let EpochRewardStatus::Active(StartBlockHeightAndRewards {
-                    start_block_height,
-                    ref stake_rewards_by_partition,
-                }) = epoch_reward_status
-                {
-                    assert_eq!(*start_block_height, 1);
-                    assert_eq!(&rewards[..], &stake_rewards_by_partition[..]);
-                } else {
-                    unreachable!("Epoch reward status should NOT be inactive.");
-                }
-            } else {
-                assert_matches!(epoch_reward_status, EpochRewardStatus::Inactive);
-            }
+        let bank0 = Arc::new(Bank::new_for_tests(&genesis_config));
+        let mut bank = Bank::new_from_parent(bank0, &Pubkey::default(), 1);
+        while !bank.is_complete() {
+            bank.fill_bank_with_ticks_for_tests();
         }
+
+        // Set extra field
+        bank.fee_rate_governor.lamports_per_signature = 7000;
+
+        let (_tmp_dir, accounts_dir) = create_tmp_accounts_dir_for_tests();
+        let bank_snapshots_dir = TempDir::new().unwrap();
+        let full_snapshot_archives_dir = TempDir::new().unwrap();
+        let incremental_snapshot_archives_dir = TempDir::new().unwrap();
+
+        // Serialize
+        let snapshot_archive_info = snapshot_bank_utils::bank_to_full_snapshot_archive(
+            &bank_snapshots_dir,
+            &bank,
+            None,
+            full_snapshot_archives_dir.path(),
+            incremental_snapshot_archives_dir.path(),
+            ArchiveFormat::Tar,
+        )
+        .unwrap();
+
+        // Deserialize
+        let (dbank, _) = snapshot_bank_utils::bank_from_snapshot_archives(
+            &[accounts_dir],
+            bank_snapshots_dir.path(),
+            &snapshot_archive_info,
+            None,
+            &genesis_config,
+            &RuntimeConfig::default(),
+            None,
+            None,
+            AccountSecondaryIndexes::default(),
+            None,
+            AccountShrinkThreshold::default(),
+            false,
+            false,
+            false,
+            false,
+            Some(solana_accounts_db::accounts_db::ACCOUNTS_DB_CONFIG_FOR_TESTING),
+            None,
+            Arc::default(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            bank.fee_rate_governor.lamports_per_signature,
+            dbank.fee_rate_governor.lamports_per_signature
+        );
     }
 
-    #[test]
-    fn test_blank_extra_fields() {
+    #[test_case(StorageAccess::Mmap)]
+    fn test_blank_extra_fields(storage_access: StorageAccess) {
         solana_logger::setup();
         let (genesis_config, _) = create_genesis_config(500);
 
@@ -569,8 +518,12 @@ mod tests {
         };
         let (_accounts_dir, dbank_paths) = get_temp_accounts_paths(4).unwrap();
         let copied_accounts = TempDir::new().unwrap();
-        let storage_and_next_append_vec_id =
-            copy_append_vecs(&bank.rc.accounts.accounts_db, copied_accounts.path()).unwrap();
+        let storage_and_next_append_vec_id = copy_append_vecs(
+            &bank.rc.accounts.accounts_db,
+            copied_accounts.path(),
+            storage_access,
+        )
+        .unwrap();
         let dbank = crate::serde_snapshot::bank_from_streams(
             SerdeStyle::Newer,
             &mut snapshot_streams,
@@ -593,11 +546,9 @@ mod tests {
         // Defaults to 0
         assert_eq!(0, dbank.fee_rate_governor.lamports_per_signature);
 
-        // epoch_reward status should default to `Inactive`
-        let epoch_reward_status = dbank
-            .get_epoch_reward_status_to_serialize()
-            .unwrap_or(&EpochRewardStatus::Inactive);
-        assert_matches!(epoch_reward_status, EpochRewardStatus::Inactive);
+        // The snapshot epoch_reward_status always equals `None`, so the bank
+        // field should default to `Inactive`
+        assert_eq!(dbank.epoch_reward_status, EpochRewardStatus::Inactive);
     }
 
     #[cfg(RUSTC_WITH_SPECIALIZATION)]
@@ -606,7 +557,7 @@ mod tests {
 
         // This some what long test harness is required to freeze the ABI of
         // Bank's serialization due to versioned nature
-        #[frozen_abi(digest = "8BVfyLYrPt1ranknjF4sLePjZaZjpKXXrHt4wKf47g3W")]
+        #[frozen_abi(digest = "8pZwgyMdvxExLgN9GMKnCdofb5CQJgsZ8Dt88hfVd9bf")]
         #[derive(Serialize, AbiExample)]
         pub struct BankAbiTestWrapperNewer {
             #[serde(serialize_with = "wrapper_newer")]

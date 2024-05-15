@@ -53,7 +53,10 @@ use {
 };
 
 pub mod thread_args;
-use thread_args::{thread_args, DefaultThreadArgs};
+use {
+    solana_streamer::nonblocking::quic::DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
+    thread_args::{thread_args, DefaultThreadArgs},
+};
 
 const EXCLUDE_KEY: &str = "account-index-exclude-key";
 const INCLUDE_KEY: &str = "account-index-include-key";
@@ -882,6 +885,15 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .help("Controls the TPU connection pool size per remote address"),
         )
         .arg(
+            Arg::with_name("tpu_max_connections_per_ipaddr_per_minute")
+                .long("tpu-max-connections-per-ipaddr-per-minute")
+                .takes_value(true)
+                .default_value(&default_args.tpu_max_connections_per_ipaddr_per_minute)
+                .validator(is_parsable::<u32>)
+                .hidden(hidden_unless_forced())
+                .help("Controls the rate of the clients connections per IpAddr per minute."),
+        )
+        .arg(
             Arg::with_name("staked_nodes_overrides")
                 .long("staked-nodes-overrides")
                 .value_name("PATH")
@@ -990,55 +1002,6 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .long("rpc-pubsub-enable-vote-subscription")
                 .takes_value(false)
                 .help("Enable the unstable RPC PubSub `voteSubscribe` subscription"),
-        )
-        .arg(
-            Arg::with_name("rpc_pubsub_max_connections")
-                .long("rpc-pubsub-max-connections")
-                .value_name("NUMBER")
-                .takes_value(true)
-                .validator(is_parsable::<usize>)
-                .hidden(hidden_unless_forced())
-                .help(
-                    "The maximum number of connections that RPC PubSub will support. This is a \
-                     hard limit and no new connections beyond this limit can be made until an old \
-                     connection is dropped. (Obsolete)",
-                ),
-        )
-        .arg(
-            Arg::with_name("rpc_pubsub_max_fragment_size")
-                .long("rpc-pubsub-max-fragment-size")
-                .value_name("BYTES")
-                .takes_value(true)
-                .validator(is_parsable::<usize>)
-                .hidden(hidden_unless_forced())
-                .help(
-                    "The maximum length in bytes of acceptable incoming frames. Messages longer \
-                     than this will be rejected. (Obsolete)",
-                ),
-        )
-        .arg(
-            Arg::with_name("rpc_pubsub_max_in_buffer_capacity")
-                .long("rpc-pubsub-max-in-buffer-capacity")
-                .value_name("BYTES")
-                .takes_value(true)
-                .validator(is_parsable::<usize>)
-                .hidden(hidden_unless_forced())
-                .help(
-                    "The maximum size in bytes to which the incoming websocket buffer can grow. \
-                     (Obsolete)",
-                ),
-        )
-        .arg(
-            Arg::with_name("rpc_pubsub_max_out_buffer_capacity")
-                .long("rpc-pubsub-max-out-buffer-capacity")
-                .value_name("BYTES")
-                .takes_value(true)
-                .validator(is_parsable::<usize>)
-                .hidden(hidden_unless_forced())
-                .help(
-                    "The maximum size in bytes to which the outgoing websocket buffer can grow. \
-                     (Obsolete)",
-                ),
         )
         .arg(
             Arg::with_name("rpc_pubsub_max_active_subscriptions")
@@ -1327,9 +1290,12 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .conflicts_with("accounts_db_skip_shrink"),
         )
         .arg(
-            Arg::with_name("accounts_db_create_ancient_storage_packed")
-                .long("accounts-db-create-ancient-storage-packed")
-                .help("Create ancient storages in one shot instead of appending.")
+            Arg::with_name("accounts_db_squash_storages_method")
+                .long("accounts-db-squash-storages-method")
+                .value_name("METHOD")
+                .takes_value(true)
+                .possible_values(&["pack", "append"])
+                .help("Squash multiple account storage files together using this method")
                 .hidden(hidden_unless_forced()),
         )
         .arg(
@@ -1354,6 +1320,25 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                     "How large the write cache for account data can become. If this is exceeded, \
                      the cache is flushed more aggressively.",
                 ),
+        )
+        .arg(
+            Arg::with_name("accounts_db_read_cache_limit_mb")
+                .long("accounts-db-read-cache-limit-mb")
+                .value_name("MAX | LOW,HIGH")
+                .takes_value(true)
+                .min_values(1)
+                .max_values(2)
+                .multiple(false)
+                .require_delimiter(true)
+                .help("How large the read cache for account data can become, in mebibytes")
+                .long_help(
+                    "How large the read cache for account data can become, in mebibytes. \
+                     If given a single value, it will be the maximum size for the cache. \
+                     If given a pair of values, they will be the low and high watermarks \
+                     for the cache. When the cache exceeds the high watermark, entries will \
+                     be evicted until the size reaches the low watermark."
+                )
+                .hidden(hidden_unless_forced()),
         )
         .arg(
             Arg::with_name("accounts_index_scan_results_limit_mb")
@@ -2102,6 +2087,37 @@ fn deprecated_arguments() -> Vec<DeprecatedArg> {
         .value_name("ROCKSDB_MAX_COMPACTION_JITTER_SLOTS")
         .takes_value(true)
         .help("Introduce jitter into the compaction to offset compaction operation"));
+    add_arg!(Arg::with_name("rpc_pubsub_max_connections")
+        .long("rpc-pubsub-max-connections")
+        .value_name("NUMBER")
+        .takes_value(true)
+        .validator(is_parsable::<usize>)
+        .help(
+            "The maximum number of connections that RPC PubSub will support. This is a \
+             hard limit and no new connections beyond this limit can be made until an old \
+             connection is dropped."
+        ));
+    add_arg!(Arg::with_name("rpc_pubsub_max_fragment_size")
+        .long("rpc-pubsub-max-fragment-size")
+        .value_name("BYTES")
+        .takes_value(true)
+        .validator(is_parsable::<usize>)
+        .help(
+            "The maximum length in bytes of acceptable incoming frames. Messages longer \
+             than this will be rejected"
+        ));
+    add_arg!(Arg::with_name("rpc_pubsub_max_in_buffer_capacity")
+        .long("rpc-pubsub-max-in-buffer-capacity")
+        .value_name("BYTES")
+        .takes_value(true)
+        .validator(is_parsable::<usize>)
+        .help("The maximum size in bytes to which the incoming websocket buffer can grow."));
+    add_arg!(Arg::with_name("rpc_pubsub_max_out_buffer_capacity")
+        .long("rpc-pubsub-max-out-buffer-capacity")
+        .value_name("BYTES")
+        .takes_value(true)
+        .validator(is_parsable::<usize>)
+        .help("The maximum size in bytes to which the outgoing websocket buffer can grow."));
     add_arg!(
         Arg::with_name("skip_poh_verify")
             .long("skip-poh-verify")
@@ -2202,6 +2218,7 @@ pub struct DefaultArgs {
     pub accounts_shrink_optimize_total_space: String,
     pub accounts_shrink_ratio: String,
     pub tpu_connection_pool_size: String,
+    pub tpu_max_connections_per_ipaddr_per_minute: String,
 
     // Exit subcommand
     pub exit_min_idle_time: String,
@@ -2291,6 +2308,8 @@ impl DefaultArgs {
                 .to_string(),
             accounts_shrink_ratio: DEFAULT_ACCOUNTS_SHRINK_RATIO.to_string(),
             tpu_connection_pool_size: DEFAULT_TPU_CONNECTION_POOL_SIZE.to_string(),
+            tpu_max_connections_per_ipaddr_per_minute:
+                DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE.to_string(),
             rpc_max_request_body_size: MAX_REQUEST_BODY_SIZE.to_string(),
             exit_min_idle_time: "10".to_string(),
             exit_max_delinquent_stake: "5".to_string(),
@@ -2453,6 +2472,13 @@ pub fn test_app<'a>(version: &'a str, default_args: &'a DefaultTestArgs) -> App<
                     "Fetch historical transaction info from a BigTable instance as a fallback to \
                      local ledger data",
                 ),
+        )
+        .arg(
+            Arg::with_name("enable_bigtable_ledger_upload")
+                .long("enable-bigtable-ledger-upload")
+                .takes_value(false)
+                .hidden(hidden_unless_forced())
+                .help("Upload new confirmed blocks into a BigTable instance"),
         )
         .arg(
             Arg::with_name("rpc_bigtable_instance")

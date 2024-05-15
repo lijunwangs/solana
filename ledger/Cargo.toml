@@ -12,7 +12,7 @@ edition = { workspace = true }
 [dependencies]
 assert_matches = { workspace = true }
 bincode = { workspace = true }
-bitflags = { workspace = true }
+bitflags = { workspace = true, features = ["serde"] }
 byteorder = { workspace = true }
 chrono = { workspace = true, features = ["default", "serde"] }
 chrono-humanize = { workspace = true }
@@ -74,7 +74,7 @@ trees = { workspace = true }
 [dependencies.rocksdb]
 # Avoid the vendored bzip2 within rocksdb-sys that can cause linker conflicts
 # when also using the bzip2 crate
-version = "0.21.0"
+version = "0.22.0"
 default-features = false
 features = ["lz4"]
 

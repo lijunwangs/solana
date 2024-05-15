@@ -66,16 +66,6 @@ impl TieredStorageReader {
     }
 
     /// Returns the account located at the specified index offset.
-    pub fn get_stored_account_meta(
-        &self,
-        index_offset: IndexOffset,
-    ) -> TieredStorageResult<Option<(StoredAccountMeta<'_>, IndexOffset)>> {
-        match self {
-            Self::Hot(hot) => hot.get_stored_account_meta(index_offset),
-        }
-    }
-
-    /// Returns the account located at the specified index offset.
     pub fn get_account_shared_data(
         &self,
         index_offset: IndexOffset,
@@ -86,10 +76,10 @@ impl TieredStorageReader {
     }
 
     /// calls `callback` with the account located at the specified index offset.
-    pub fn get_stored_account_meta_callback<'a, Ret>(
-        &'a self,
+    pub fn get_stored_account_meta_callback<Ret>(
+        &self,
         index_offset: IndexOffset,
-        callback: impl FnMut(StoredAccountMeta<'a>) -> Ret,
+        callback: impl for<'local> FnMut(StoredAccountMeta<'local>) -> Ret,
     ) -> TieredStorageResult<Option<Ret>> {
         match self {
             Self::Hot(hot) => hot.get_stored_account_meta_callback(index_offset, callback),
@@ -120,17 +110,6 @@ impl TieredStorageReader {
         }
     }
 
-    /// Return a vector of account metadata for each account, starting from
-    /// `index_offset`
-    pub fn accounts(
-        &self,
-        index_offset: IndexOffset,
-    ) -> TieredStorageResult<Vec<StoredAccountMeta>> {
-        match self {
-            Self::Hot(hot) => hot.accounts(index_offset),
-        }
-    }
-
     /// iterate over all pubkeys
     pub fn scan_pubkeys(&self, callback: impl FnMut(&Pubkey)) -> TieredStorageResult<()> {
         match self {
@@ -148,7 +127,7 @@ impl TieredStorageReader {
     /// Iterate over all accounts and call `callback` with each account.
     pub(crate) fn scan_accounts(
         &self,
-        callback: impl for<'a> FnMut(StoredAccountMeta<'a>),
+        callback: impl for<'local> FnMut(StoredAccountMeta<'local>),
     ) -> TieredStorageResult<()> {
         match self {
             Self::Hot(hot) => hot.scan_accounts(callback),
