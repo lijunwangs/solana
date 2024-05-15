@@ -17,8 +17,7 @@ use {
     solana_bpf_loader_program::serialization::serialize_parameters,
     solana_program_runtime::{
         compute_budget::ComputeBudget, ic_msg, invoke_context::BuiltinFunctionWithContext,
-        loaded_programs::LoadedProgram, runtime_config::RuntimeConfig, stable_log,
-        timings::ExecuteTimings,
+        loaded_programs::ProgramCacheEntry, stable_log, timings::ExecuteTimings,
     },
     solana_runtime::{
         accounts_background_service::{AbsRequestSender, SnapshotRequestKind},
@@ -26,6 +25,7 @@ use {
         bank_forks::BankForks,
         commitment::BlockCommitmentCache,
         genesis_utils::{create_genesis_config_with_leader_ex, GenesisConfigInfo},
+        runtime_config::RuntimeConfig,
     },
     solana_sdk::{
         account::{create_account_shared_data_for_test, Account, AccountSharedData},
@@ -87,7 +87,7 @@ pub enum ProgramTestError {
 }
 
 thread_local! {
-    static INVOKE_CONTEXT: RefCell<Option<usize>> = RefCell::new(None);
+    static INVOKE_CONTEXT: RefCell<Option<usize>> = const { RefCell::new(None) };
 }
 fn set_invoke_context(new: &mut InvokeContext) {
     INVOKE_CONTEXT
@@ -133,7 +133,6 @@ pub fn invoke_builtin_function(
             .transaction_context
             .get_current_instruction_context()?,
         true, // copy_account_data // There is no VM so direct mapping can not be implemented here
-        &invoke_context.feature_set,
     )?;
 
     // Deserialize data back into instruction params
@@ -164,25 +163,18 @@ pub fn invoke_builtin_function(
         if borrowed_account.is_writable() {
             if let Some(account_info) = account_info_map.get(borrowed_account.get_key()) {
                 if borrowed_account.get_lamports() != account_info.lamports() {
-                    borrowed_account
-                        .set_lamports(account_info.lamports(), &invoke_context.feature_set)?;
+                    borrowed_account.set_lamports(account_info.lamports())?;
                 }
 
                 if borrowed_account
                     .can_data_be_resized(account_info.data_len())
                     .is_ok()
-                    && borrowed_account
-                        .can_data_be_changed(&invoke_context.feature_set)
-                        .is_ok()
+                    && borrowed_account.can_data_be_changed().is_ok()
                 {
-                    borrowed_account.set_data_from_slice(
-                        &account_info.data.borrow(),
-                        &invoke_context.feature_set,
-                    )?;
+                    borrowed_account.set_data_from_slice(&account_info.data.borrow())?;
                 }
                 if borrowed_account.get_owner() != account_info.owner {
-                    borrowed_account
-                        .set_owner(account_info.owner.as_ref(), &invoke_context.feature_set)?;
+                    borrowed_account.set_owner(account_info.owner.as_ref())?;
                 }
             }
         }
@@ -293,17 +285,17 @@ impl solana_sdk::program_stubs::SyscallStubs for SyscallStubs {
                 .unwrap();
             if borrowed_account.get_lamports() != account_info.lamports() {
                 borrowed_account
-                    .set_lamports(account_info.lamports(), &invoke_context.feature_set)
+                    .set_lamports(account_info.lamports())
                     .unwrap();
             }
             let account_info_data = account_info.try_borrow_data().unwrap();
             // The redundant check helps to avoid the expensive data comparison if we can
             match borrowed_account
                 .can_data_be_resized(account_info_data.len())
-                .and_then(|_| borrowed_account.can_data_be_changed(&invoke_context.feature_set))
+                .and_then(|_| borrowed_account.can_data_be_changed())
             {
                 Ok(()) => borrowed_account
-                    .set_data_from_slice(&account_info_data, &invoke_context.feature_set)
+                    .set_data_from_slice(&account_info_data)
                     .unwrap(),
                 Err(err) if borrowed_account.get_data() != *account_info_data => {
                     panic!("{err:?}");
@@ -313,7 +305,7 @@ impl solana_sdk::program_stubs::SyscallStubs for SyscallStubs {
             // Change the owner at the end so that we are allowed to change the lamports and data before
             if borrowed_account.get_owner() != account_info.owner {
                 borrowed_account
-                    .set_owner(account_info.owner.as_ref(), &invoke_context.feature_set)
+                    .set_owner(account_info.owner.as_ref())
                     .unwrap();
             }
             if instruction_account.is_writable {
@@ -471,7 +463,7 @@ pub fn read_file<P: AsRef<Path>>(path: P) -> Vec<u8> {
 
 pub struct ProgramTest {
     accounts: Vec<(Pubkey, AccountSharedData)>,
-    builtin_programs: Vec<(Pubkey, String, LoadedProgram)>,
+    builtin_programs: Vec<(Pubkey, &'static str, ProgramCacheEntry)>,
     compute_max_units: Option<u64>,
     prefer_bpf: bool,
     deactivate_feature_set: HashSet<Pubkey>,
@@ -521,7 +513,7 @@ impl ProgramTest {
     /// [`default`]: #method.default
     /// [`add_program`]: #method.add_program
     pub fn new(
-        program_name: &str,
+        program_name: &'static str,
         program_id: Pubkey,
         builtin_function: Option<BuiltinFunctionWithContext>,
     ) -> Self {
@@ -621,7 +613,7 @@ impl ProgramTest {
     /// SBF shared object depending on the `BPF_OUT_DIR` environment variable.
     pub fn add_program(
         &mut self,
-        program_name: &str,
+        program_name: &'static str,
         program_id: Pubkey,
         builtin_function: Option<BuiltinFunctionWithContext>,
     ) {
@@ -728,15 +720,15 @@ impl ProgramTest {
     /// Note that builtin programs are responsible for their own `stable_log` output.
     pub fn add_builtin_program(
         &mut self,
-        program_name: &str,
+        program_name: &'static str,
         program_id: Pubkey,
         builtin_function: BuiltinFunctionWithContext,
     ) {
         info!("\"{}\" builtin program", program_name);
         self.builtin_programs.push((
             program_id,
-            program_name.to_string(),
-            LoadedProgram::new_builtin(0, program_name.len(), builtin_function),
+            program_name,
+            ProgramCacheEntry::new_builtin(0, program_name.len(), builtin_function),
         ));
     }
 
@@ -814,7 +806,7 @@ impl ProgramTest {
         debug!("Payer address: {}", mint_keypair.pubkey());
         debug!("Genesis config: {}", genesis_config);
 
-        let mut bank = Bank::new_with_paths(
+        let bank = Bank::new_with_paths(
             &genesis_config,
             Arc::new(RuntimeConfig {
                 compute_budget: self.compute_max_units.map(|max_units| ComputeBudget {
@@ -1162,7 +1154,9 @@ impl ProgramTestContext {
         let (snapshot_request_sender, snapshot_request_receiver) = crossbeam_channel::unbounded();
         let abs_request_sender = AbsRequestSender::new(snapshot_request_sender);
 
-        bank_forks.set_root(pre_warp_slot, &abs_request_sender, Some(pre_warp_slot));
+        bank_forks
+            .set_root(pre_warp_slot, &abs_request_sender, Some(pre_warp_slot))
+            .unwrap();
 
         // The call to `set_root()` above will send an EAH request.  Need to intercept and handle
         // all EpochAccountsHash requests so future rooted banks do not hang in Bank::freeze()
@@ -1224,11 +1218,13 @@ impl ProgramTestContext {
         bank.fill_bank_with_ticks_for_tests();
         let pre_warp_slot = bank.slot();
 
-        bank_forks.set_root(
-            pre_warp_slot,
-            &solana_runtime::accounts_background_service::AbsRequestSender::default(),
-            Some(pre_warp_slot),
-        );
+        bank_forks
+            .set_root(
+                pre_warp_slot,
+                &solana_runtime::accounts_background_service::AbsRequestSender::default(),
+                Some(pre_warp_slot),
+            )
+            .unwrap();
 
         // warp_bank is frozen so go forward to get unfrozen bank at warp_slot
         let warp_slot = pre_warp_slot + 1;

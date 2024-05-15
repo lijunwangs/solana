@@ -6,7 +6,7 @@ use {
         admin_rpc_service,
         admin_rpc_service::{load_staked_nodes_overrides, StakedNodesOverrides},
         bootstrap,
-        cli::{app, warn_for_deprecated_arguments, DefaultArgs},
+        cli::{self, app, warn_for_deprecated_arguments, DefaultArgs},
         dashboard::Dashboard,
         ledger_lockfile, lock_ledger, new_spinner_progress_bar, println_name_value,
         redirect_stderr_to_file,
@@ -36,7 +36,10 @@ use {
             ValidatorConfig, ValidatorStartProgress,
         },
     },
-    solana_gossip::{cluster_info::Node, legacy_contact_info::LegacyContactInfo as ContactInfo},
+    solana_gossip::{
+        cluster_info::{Node, NodeConfig},
+        legacy_contact_info::LegacyContactInfo as ContactInfo,
+    },
     solana_ledger::{
         blockstore_cleanup_service::{DEFAULT_MAX_LEDGER_SHREDS, DEFAULT_MIN_MAX_LEDGER_SHREDS},
         blockstore_options::{
@@ -47,7 +50,6 @@ use {
     },
     solana_perf::recycler::enable_recycler_warming,
     solana_poh::poh_service,
-    solana_program_runtime::runtime_config::RuntimeConfig,
     solana_rpc::{
         rpc::{JsonRpcConfig, RpcBigtableConfig},
         rpc_pubsub_service::PubSubConfig,
@@ -55,6 +57,7 @@ use {
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::config::RpcLeaderScheduleConfig,
     solana_runtime::{
+        runtime_config::RuntimeConfig,
         snapshot_bank_utils::DISABLED_SNAPSHOT_ARCHIVE_INTERVAL,
         snapshot_config::{SnapshotConfig, SnapshotUsage},
         snapshot_utils::{self, ArchiveFormat, SnapshotVersion},
@@ -1308,7 +1311,35 @@ pub fn main() {
         );
         exit(1);
     }
+    let rpc_send_transaction_tpu_peers = matches
+        .values_of("rpc_send_transaction_tpu_peer")
+        .map(|values| {
+            values
+                .map(solana_net_utils::parse_host_port)
+                .collect::<Result<Vec<SocketAddr>, String>>()
+        })
+        .transpose()
+        .unwrap_or_else(|e| {
+            eprintln!("failed to parse rpc send-transaction-service tpu peer address: {e}");
+            exit(1);
+        });
+    let rpc_send_transaction_also_leader = matches.is_present("rpc_send_transaction_also_leader");
+    let leader_forward_count =
+        if rpc_send_transaction_tpu_peers.is_some() && !rpc_send_transaction_also_leader {
+            // rpc-sts is configured to send only to specific tpu peers. disable leader forwards
+            0
+        } else {
+            value_t_or_exit!(matches, "rpc_send_transaction_leader_forward_count", u64)
+        };
+
     let full_api = matches.is_present("full_rpc_api");
+
+    let cli::thread_args::NumThreadConfig {
+        ip_echo_server_threads,
+        replay_forks_threads,
+        replay_transactions_threads,
+        tvu_receive_threads,
+    } = cli::thread_args::parse_num_threads_args(&matches);
 
     let mut validator_config = ValidatorConfig {
         require_tower: matches.is_present("require_tower"),
@@ -1399,11 +1430,7 @@ pub fn main() {
         contact_debug_interval,
         send_transaction_service_config: send_transaction_service::Config {
             retry_rate_ms: rpc_send_retry_rate_ms,
-            leader_forward_count: value_t_or_exit!(
-                matches,
-                "rpc_send_transaction_leader_forward_count",
-                u64
-            ),
+            leader_forward_count,
             default_max_retries: value_t!(
                 matches,
                 "rpc_send_transaction_default_max_retries",
@@ -1422,6 +1449,7 @@ pub fn main() {
                 "rpc_send_transaction_retry_pool_max_size",
                 usize
             ),
+            tpu_peers: rpc_send_transaction_tpu_peers,
         },
         no_poh_speed_test: matches.is_present("no_poh_speed_test"),
         no_os_memory_stats_reporting: matches.is_present("no_os_memory_stats_reporting"),
@@ -1446,12 +1474,16 @@ pub fn main() {
             ..RuntimeConfig::default()
         },
         staked_nodes_overrides: staked_nodes_overrides.clone(),
-        replay_slots_concurrently: matches.is_present("replay_slots_concurrently"),
         use_snapshot_archives_at_startup: value_t_or_exit!(
             matches,
             use_snapshot_archives_at_startup::cli::NAME,
             UseSnapshotArchivesAtStartup
         ),
+        ip_echo_server_threads,
+        replay_forks_threads,
+        replay_transactions_threads,
+        delay_leader_block_for_pending_fork: matches
+            .is_present("delay_leader_block_for_pending_fork"),
         ..ValidatorConfig::default()
     };
 
@@ -1818,19 +1850,21 @@ pub fn main() {
                 })
             });
 
+    let node_config = NodeConfig {
+        gossip_addr,
+        port_range: dynamic_port_range,
+        bind_ip_addr: bind_address,
+        public_tpu_addr,
+        public_tpu_forwards_addr,
+        num_tvu_sockets: tvu_receive_threads,
+    };
+
     let cluster_entrypoints = entrypoint_addrs
         .iter()
         .map(ContactInfo::new_gossip_entry_point)
         .collect::<Vec<_>>();
 
-    let mut node = Node::new_with_external_ip(
-        &identity_keypair.pubkey(),
-        &gossip_addr,
-        dynamic_port_range,
-        bind_address,
-        public_tpu_addr,
-        public_tpu_forwards_addr,
-    );
+    let mut node = Node::new_with_external_ip(&identity_keypair.pubkey(), node_config);
 
     if restricted_repair_only_mode {
         // When in --restricted_repair_only_mode is enabled only the gossip and repair ports

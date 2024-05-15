@@ -12,7 +12,9 @@ use {
     solana_ledger::{blockstore_options::AccessType, use_snapshot_archives_at_startup},
     solana_program_runtime::{
         invoke_context::InvokeContext,
-        loaded_programs::{LoadProgramMetrics, LoadedProgramType, DELAY_VISIBILITY_SLOT_OFFSET},
+        loaded_programs::{
+            LoadProgramMetrics, ProgramCacheEntryType, DELAY_VISIBILITY_SLOT_OFFSET,
+        },
         with_mock_invoke_context,
     },
     solana_rbpf::{
@@ -21,11 +23,12 @@ use {
     },
     solana_runtime::bank::Bank,
     solana_sdk::{
-        account::AccountSharedData,
+        account::{create_account_shared_data_for_test, AccountSharedData},
         account_utils::StateMut,
         bpf_loader_upgradeable::{self, UpgradeableLoaderState},
         pubkey::Pubkey,
         slot_history::Slot,
+        sysvar,
         transaction_context::{IndexOfAccount, InstructionAccount},
     },
     std::{
@@ -343,7 +346,7 @@ fn load_program<'a>(
         );
         match result {
             Ok(loaded_program) => match loaded_program.program {
-                LoadedProgramType::LegacyV1(program) => Ok(program),
+                ProgramCacheEntryType::Loaded(program) => Ok(program),
                 _ => unreachable!(),
             },
             Err(err) => Err(format!("Loading executable failed: {err:?}")),
@@ -510,20 +513,22 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
         program_id, // ID of the loaded program. It can modify accounts with the same owner key
         AccountSharedData::new(0, 0, &loader_id),
     ));
+    transaction_accounts.push((
+        sysvar::epoch_schedule::id(),
+        create_account_shared_data_for_test(bank.epoch_schedule()),
+    ));
     let interpreted = matches.value_of("mode").unwrap() != "jit";
     with_mock_invoke_context!(invoke_context, transaction_context, transaction_accounts);
 
     // Adding `DELAY_VISIBILITY_SLOT_OFFSET` to slots to accommodate for delay visibility of the program
-    let mut loaded_programs = LoadedProgramsForTxBatch::new(
-        bank.slot() + DELAY_VISIBILITY_SLOT_OFFSET,
-        bank.loaded_programs_cache
-            .read()
-            .unwrap()
-            .environments
-            .clone(),
-    );
+    let mut loaded_programs =
+        bank.new_program_cache_for_tx_batch_for_slot(bank.slot() + DELAY_VISIBILITY_SLOT_OFFSET);
     for key in cached_account_keys {
-        loaded_programs.replenish(key, bank.load_program(&key, false, bank.epoch()));
+        loaded_programs.replenish(
+            key,
+            bank.load_program(&key, false, bank.epoch())
+                .expect("Couldn't find program account"),
+        );
         debug!("Loaded program {}", key);
     }
     invoke_context.programs_loaded_for_tx_batch = &loaded_programs;
@@ -545,7 +550,6 @@ pub fn program(ledger_path: &Path, matches: &ArgMatches<'_>) {
             .get_current_instruction_context()
             .unwrap(),
         true, // copy_account_data
-        &invoke_context.feature_set,
     )
     .unwrap();
 

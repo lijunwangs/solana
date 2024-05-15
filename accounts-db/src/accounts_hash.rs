@@ -167,8 +167,6 @@ impl AccountHashesFile {
 pub struct CalcAccountsHashConfig<'a> {
     /// true to use a thread pool dedicated to bg operations
     pub use_bg_thread_pool: bool,
-    /// verify every hash in append vec/write cache with a recalculated hash
-    pub check_hash: bool,
     /// 'ancestors' is used to get storages
     pub ancestors: Option<&'a Ancestors>,
     /// does hash calc need to consider account data that exists in the write cache?
@@ -1609,7 +1607,7 @@ mod tests {
 
     #[test]
     fn test_accountsdb_de_dup_accounts_zero_chunks() {
-        let vec = vec![vec![CalculateHashIntermediate {
+        let vec = [vec![CalculateHashIntermediate {
             lamports: 1,
             hash: AccountHash(Hash::default()),
             pubkey: Pubkey::default(),

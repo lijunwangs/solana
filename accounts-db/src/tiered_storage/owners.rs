@@ -1,6 +1,6 @@
 use {
     crate::tiered_storage::{
-        file::TieredStorageFile, footer::TieredStorageFooter, mmap_utils::get_pod,
+        file::TieredWritableFile, footer::TieredStorageFooter, mmap_utils::get_pod,
         TieredStorageResult,
     },
     indexmap::set::IndexSet,
@@ -15,10 +15,6 @@ use {
 /// unique owners in one TieredStorageFile is 2^32.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 pub struct OwnerOffset(pub u32);
-
-lazy_static! {
-    pub static ref OWNER_NO_OWNER: Pubkey = Pubkey::default();
-}
 
 /// Owner block holds a set of unique addresses of account owners,
 /// and an account meta has a owner_offset field for accessing
@@ -47,14 +43,14 @@ impl OwnersBlockFormat {
     /// Persists the provided owners' addresses into the specified file.
     pub fn write_owners_block(
         &self,
-        file: &TieredStorageFile,
+        file: &mut TieredWritableFile,
         owners_table: &OwnersTable,
     ) -> TieredStorageResult<usize> {
         match self {
             Self::AddressesOnly => {
                 let mut bytes_written = 0;
                 for address in &owners_table.owners_set {
-                    bytes_written += file.write_pod(*address)?;
+                    bytes_written += file.write_pod(address)?;
                 }
 
                 Ok(bytes_written)
@@ -85,19 +81,19 @@ impl OwnersBlockFormat {
 /// The in-memory representation of owners block for write.
 /// It manages a set of unique addresses of account owners.
 #[derive(Debug, Default)]
-pub struct OwnersTable<'a> {
-    owners_set: IndexSet<&'a Pubkey>,
+pub struct OwnersTable {
+    owners_set: IndexSet<Pubkey>,
 }
 
 /// OwnersBlock is persisted as a consecutive bytes of pubkeys without any
 /// meta-data.  For each account meta, it has a owner_offset field to
 /// access its owner's address in the OwnersBlock.
-impl<'a> OwnersTable<'a> {
+impl OwnersTable {
     /// Add the specified pubkey as the owner into the OwnersWriterTable
     /// if the specified pubkey has not existed in the OwnersWriterTable
     /// yet.  In any case, the function returns its OwnerOffset.
-    pub fn insert(&mut self, pubkey: &'a Pubkey) -> OwnerOffset {
-        let (offset, _existed) = self.owners_set.insert_full(pubkey);
+    pub fn insert(&mut self, pubkey: &Pubkey) -> OwnerOffset {
+        let (offset, _existed) = self.owners_set.insert_full(*pubkey);
 
         OwnerOffset(offset as u32)
     }
@@ -116,7 +112,7 @@ impl<'a> OwnersTable<'a> {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, crate::tiered_storage::file::TieredStorageFile, memmap2::MmapOptions,
+        super::*, crate::tiered_storage::file::TieredWritableFile, memmap2::MmapOptions,
         std::fs::OpenOptions, tempfile::TempDir,
     };
 
@@ -139,7 +135,7 @@ mod tests {
         };
 
         {
-            let file = TieredStorageFile::new_writable(&path).unwrap();
+            let mut file = TieredWritableFile::new(&path).unwrap();
 
             let mut owners_table = OwnersTable::default();
             addresses.iter().for_each(|owner_address| {
@@ -147,12 +143,12 @@ mod tests {
             });
             footer
                 .owners_block_format
-                .write_owners_block(&file, &owners_table)
+                .write_owners_block(&mut file, &owners_table)
                 .unwrap();
 
             // while the test only focuses on account metas, writing a footer
             // here is necessary to make it a valid tiered-storage file.
-            footer.write_footer_block(&file).unwrap();
+            footer.write_footer_block(&mut file).unwrap();
         }
 
         let file = OpenOptions::new().read(true).open(path).unwrap();

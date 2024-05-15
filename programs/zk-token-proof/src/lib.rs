@@ -31,6 +31,8 @@ pub const VERIFY_CIPHERTEXT_COMMITMENT_EQUALITY_COMPUTE_UNITS: u64 = 6_400;
 pub const VERIFY_GROUPED_CIPHERTEXT_2_HANDLES_VALIDITY_COMPUTE_UNITS: u64 = 6_400;
 pub const VERIFY_BATCHED_GROUPED_CIPHERTEXT_2_HANDLES_VALIDITY_COMPUTE_UNITS: u64 = 13_000;
 pub const VERIFY_FEE_SIGMA_COMPUTE_UNITS: u64 = 6_500;
+pub const VERIFY_GROUPED_CIPHERTEXT_3_HANDLES_VALIDITY_COMPUTE_UNITS: u64 = 8_100;
+pub const VERIFY_BATCHED_GROUPED_CIPHERTEXT_3_HANDLES_VALIDITY_COMPUTE_UNITS: u64 = 16_400;
 
 const INSTRUCTION_DATA_LENGTH_WITH_PROOF_ACCOUNT: usize = 5;
 
@@ -130,8 +132,7 @@ where
             return Err(InstructionError::InvalidAccountData);
         }
 
-        proof_context_account
-            .set_data_from_slice(&context_state_data, &invoke_context.feature_set)?;
+        proof_context_account.set_data_from_slice(&context_state_data)?;
     }
 
     Ok(())
@@ -173,13 +174,10 @@ fn process_close_proof_context(invoke_context: &mut InvokeContext) -> Result<(),
 
     let mut destination_account =
         instruction_context.try_borrow_instruction_account(transaction_context, 1)?;
-    destination_account.checked_add_lamports(
-        proof_context_account.get_lamports(),
-        &invoke_context.feature_set,
-    )?;
-    proof_context_account.set_lamports(0, &invoke_context.feature_set)?;
-    proof_context_account.set_data_length(0, &invoke_context.feature_set)?;
-    proof_context_account.set_owner(system_program::id().as_ref(), &invoke_context.feature_set)?;
+    destination_account.checked_add_lamports(proof_context_account.get_lamports())?;
+    proof_context_account.set_lamports(0)?;
+    proof_context_account.set_data_length(0)?;
+    proof_context_account.set_owner(system_program::id().as_ref())?;
 
     Ok(())
 }
@@ -343,6 +341,29 @@ declare_process_instruction!(Entrypoint, 0, |invoke_context| {
                 .map_err(|_| InstructionError::ComputationalBudgetExceeded)?;
             ic_msg!(invoke_context, "VerifyFeeSigma");
             process_verify_proof::<FeeSigmaProofData, FeeSigmaProofContext>(invoke_context)
+        }
+        ProofInstruction::VerifyGroupedCiphertext3HandlesValidity => {
+            invoke_context
+                .consume_checked(VERIFY_GROUPED_CIPHERTEXT_3_HANDLES_VALIDITY_COMPUTE_UNITS)
+                .map_err(|_| InstructionError::ComputationalBudgetExceeded)?;
+            ic_msg!(invoke_context, "VerifyGroupedCiphertext3HandlesValidity");
+            process_verify_proof::<
+                GroupedCiphertext3HandlesValidityProofData,
+                GroupedCiphertext3HandlesValidityProofContext,
+            >(invoke_context)
+        }
+        ProofInstruction::VerifyBatchedGroupedCiphertext3HandlesValidity => {
+            invoke_context
+                .consume_checked(VERIFY_BATCHED_GROUPED_CIPHERTEXT_3_HANDLES_VALIDITY_COMPUTE_UNITS)
+                .map_err(|_| InstructionError::ComputationalBudgetExceeded)?;
+            ic_msg!(
+                invoke_context,
+                "VerifyBatchedGroupedCiphertext3HandlesValidity"
+            );
+            process_verify_proof::<
+                BatchedGroupedCiphertext3HandlesValidityProofData,
+                BatchedGroupedCiphertext3HandlesValidityProofContext,
+            >(invoke_context)
         }
     }
 });

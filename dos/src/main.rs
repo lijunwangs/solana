@@ -795,6 +795,7 @@ fn main() {
                 DEFAULT_TPU_CONNECTION_POOL_SIZE,
             ),
         };
+
         let client = get_client(&validators, Arc::new(connection_cache));
         (gossip_nodes, Some(client))
     } else {
@@ -818,7 +819,6 @@ fn main() {
 pub mod test {
     use {
         super::*,
-        solana_client::tpu_client::TpuClient,
         solana_core::validator::ValidatorConfig,
         solana_faucet::faucet::run_local_faucet,
         solana_gossip::contact_info::LegacyContactInfo,
@@ -830,7 +830,7 @@ pub mod test {
         solana_quic_client::{QuicConfig, QuicConnectionManager, QuicPool},
         solana_rpc::rpc::JsonRpcConfig,
         solana_sdk::timing::timestamp,
-        solana_tpu_client::tpu_client::TpuClientConfig,
+        solana_tpu_client::tpu_client::TpuClient,
     };
 
     const TEST_SEND_BATCH_SIZE: usize = 1;
@@ -841,29 +841,6 @@ pub mod test {
         run_dos::<TpuClient<QuicPool, QuicConnectionManager, QuicConfig>>(
             nodes, iterations, None, params,
         );
-    }
-
-    fn build_tpu_quic_client(
-        cluster: &LocalCluster,
-    ) -> Arc<TpuClient<QuicPool, QuicConnectionManager, QuicConfig>> {
-        let rpc_pubsub_url = format!("ws://{}/", cluster.entry_point_info.rpc_pubsub().unwrap());
-        let rpc_url = format!("http://{}", cluster.entry_point_info.rpc().unwrap());
-
-        let ConnectionCache::Quic(cache) = &*cluster.connection_cache else {
-            panic!("Expected a Quic ConnectionCache.");
-        };
-
-        Arc::new(
-            TpuClient::new_with_connection_cache(
-                Arc::new(RpcClient::new(rpc_url)),
-                rpc_pubsub_url.as_str(),
-                TpuClientConfig::default(),
-                cache.clone(),
-            )
-            .unwrap_or_else(|err| {
-                panic!("Could not create TpuClient with Quic Cache {err:?}");
-            }),
-        )
     }
 
     #[test]
@@ -1003,7 +980,9 @@ pub mod test {
             .unwrap();
         let nodes_slice = [node];
 
-        let client = build_tpu_quic_client(&cluster);
+        let client = Arc::new(cluster.build_tpu_quic_client().unwrap_or_else(|err| {
+            panic!("Could not create TpuClient with Quic Cache {err:?}");
+        }));
 
         // creates one transaction with 8 valid signatures and sends it 10 times
         run_dos(
@@ -1135,7 +1114,9 @@ pub mod test {
             .unwrap();
         let nodes_slice = [node];
 
-        let client = build_tpu_quic_client(&cluster);
+        let client = Arc::new(cluster.build_tpu_quic_client().unwrap_or_else(|err| {
+            panic!("Could not create TpuClient with Quic Cache {err:?}");
+        }));
 
         // creates one transaction and sends it 10 times
         // this is done in single thread

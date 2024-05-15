@@ -4,7 +4,7 @@ use {
     crate::tiered_storage::owners::OwnerOffset,
     bytemuck::{Pod, Zeroable},
     modular_bitfield::prelude::*,
-    solana_sdk::stake_history::Epoch,
+    solana_sdk::{pubkey::Pubkey, stake_history::Epoch},
 };
 
 /// The struct that handles the account meta flags.
@@ -68,6 +68,14 @@ pub trait TieredAccountMeta: Sized {
     /// does not persist this optional field.
     fn rent_epoch(&self, _account_block: &[u8]) -> Option<Epoch>;
 
+    /// Returns the epoch that this account will next owe rent by parsing
+    /// the specified account block.  RENT_EXEMPT_RENT_EPOCH will be returned
+    /// if the account is rent-exempt.
+    ///
+    /// For a zero-lamport account, Epoch::default() will be returned to
+    /// default states of an AccountSharedData.
+    fn final_rent_epoch(&self, account_block: &[u8]) -> Epoch;
+
     /// Returns the offset of the optional fields based on the specified account
     /// block.
     fn optional_fields_offset(&self, _account_block: &[u8]) -> usize;
@@ -121,6 +129,38 @@ impl AccountMetaOptionalFields {
     /// of its rent_epoch field to the offset of its optional fields entry.
     pub fn rent_epoch_offset(_flags: &AccountMetaFlags) -> usize {
         0
+    }
+}
+
+const MIN_ACCOUNT_ADDRESS: Pubkey = Pubkey::new_from_array([0x00u8; 32]);
+const MAX_ACCOUNT_ADDRESS: Pubkey = Pubkey::new_from_array([0xFFu8; 32]);
+
+#[derive(Debug)]
+/// A struct that maintains an address-range using its min and max fields.
+pub struct AccountAddressRange {
+    /// The minimum address observed via update()
+    pub min: Pubkey,
+    /// The maximum address observed via update()
+    pub max: Pubkey,
+}
+
+impl Default for AccountAddressRange {
+    fn default() -> Self {
+        Self {
+            min: MAX_ACCOUNT_ADDRESS,
+            max: MIN_ACCOUNT_ADDRESS,
+        }
+    }
+}
+
+impl AccountAddressRange {
+    pub fn update(&mut self, address: &Pubkey) {
+        if self.min > *address {
+            self.min = *address;
+        }
+        if self.max < *address {
+            self.max = *address;
+        }
     }
 }
 
@@ -220,5 +260,48 @@ pub mod tests {
                 derived_size
             );
         }
+    }
+
+    #[test]
+    fn test_pubkey_range_update_single() {
+        let address = solana_sdk::pubkey::new_rand();
+        let mut address_range = AccountAddressRange::default();
+
+        address_range.update(&address);
+        // For a single update, the min and max should equal to the address
+        assert_eq!(address_range.min, address);
+        assert_eq!(address_range.max, address);
+    }
+
+    #[test]
+    fn test_pubkey_range_update_multiple() {
+        const NUM_PUBKEYS: usize = 20;
+
+        let mut address_range = AccountAddressRange::default();
+        let mut addresses = Vec::with_capacity(NUM_PUBKEYS);
+
+        let mut min_index = 0;
+        let mut max_index = 0;
+
+        // Generate random addresses and track expected min and max indices
+        for i in 0..NUM_PUBKEYS {
+            let address = solana_sdk::pubkey::new_rand();
+            addresses.push(address);
+
+            // Update expected min and max indices
+            if address < addresses[min_index] {
+                min_index = i;
+            }
+            if address > addresses[max_index] {
+                max_index = i;
+            }
+        }
+
+        addresses
+            .iter()
+            .for_each(|address| address_range.update(address));
+
+        assert_eq!(address_range.min, addresses[min_index]);
+        assert_eq!(address_range.max, addresses[max_index]);
     }
 }

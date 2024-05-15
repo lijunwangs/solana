@@ -89,6 +89,7 @@ use {
         io::BufReader,
         iter::repeat,
         net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, UdpSocket},
+        num::NonZeroUsize,
         ops::{Deref, Div},
         path::{Path, PathBuf},
         result::Result,
@@ -143,6 +144,11 @@ pub(crate) const CRDS_UNIQUE_PUBKEY_CAPACITY: usize = 8192;
 const MIN_STAKE_FOR_GOSSIP: u64 = solana_sdk::native_token::LAMPORTS_PER_SOL;
 /// Minimum number of staked nodes for enforcing stakes in gossip.
 const MIN_NUM_STAKED_NODES: usize = 500;
+
+// Must have at least one socket to monitor the TVU port
+// The unsafes are safe because we're using fixed, known non-zero values
+pub const MINIMUM_NUM_TVU_SOCKETS: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(1) };
+pub const DEFAULT_NUM_TVU_SOCKETS: NonZeroUsize = unsafe { NonZeroUsize::new_unchecked(8) };
 
 #[derive(Debug, PartialEq, Eq, Error)]
 pub enum ClusterInfoError {
@@ -1045,30 +1051,9 @@ impl ClusterInfo {
         }
     }
 
-    pub fn push_vote(&self, tower: &[Slot], vote: Transaction) {
-        debug_assert!(tower.iter().tuple_windows().all(|(a, b)| a < b));
-        // Find a crds vote which is evicted from the tower, and recycle its
-        // vote-index. This can be either an old vote which is popped off the
-        // deque, or recent vote which has expired before getting enough
-        // confirmations.
-        // If all votes are still in the tower, add a new vote-index. If more
-        // than one vote is evicted, the oldest one by wallclock is returned in
-        // order to allow more recent votes more time to propagate through
-        // gossip.
-        // TODO: When there are more than one vote evicted from the tower, only
-        // one crds vote is overwritten here. Decide what to do with the rest.
-        let mut num_crds_votes = 0;
+    fn find_vote_index_to_evict(&self, should_evict_vote: impl Fn(&Vote) -> bool) -> u8 {
         let self_pubkey = self.id();
-        // Returns true if the tower does not contain the vote.slot.
-        let should_evict_vote = |vote: &Vote| -> bool {
-            match vote.slot() {
-                Some(slot) => !tower.contains(&slot),
-                None => {
-                    error!("crds vote with no slots!");
-                    true
-                }
-            }
-        };
+        let mut num_crds_votes = 0;
         let vote_index = {
             let gossip_crds =
                 self.time_gossip_read_lock("gossip_read_push_vote", &self.stats.push_vote_read);
@@ -1088,7 +1073,33 @@ impl ClusterInfo {
                 .min() // Boot the oldest evicted vote by wallclock.
                 .map(|(_ /*wallclock*/, ix)| ix)
         };
-        let vote_index = vote_index.unwrap_or(num_crds_votes);
+        vote_index.unwrap_or(num_crds_votes)
+    }
+
+    pub fn push_vote(&self, tower: &[Slot], vote: Transaction) {
+        debug_assert!(tower.iter().tuple_windows().all(|(a, b)| a < b));
+        // Find a crds vote which is evicted from the tower, and recycle its
+        // vote-index. This can be either an old vote which is popped off the
+        // deque, or recent vote which has expired before getting enough
+        // confirmations.
+        // If all votes are still in the tower, add a new vote-index. If more
+        // than one vote is evicted, the oldest one by wallclock is returned in
+        // order to allow more recent votes more time to propagate through
+        // gossip.
+        // TODO: When there are more than one vote evicted from the tower, only
+        // one crds vote is overwritten here. Decide what to do with the rest.
+
+        // Returns true if the tower does not contain the vote.slot.
+        let should_evict_vote = |vote: &Vote| -> bool {
+            match vote.slot() {
+                Some(slot) => !tower.contains(&slot),
+                None => {
+                    error!("crds vote with no slots!");
+                    true
+                }
+            }
+        };
+        let vote_index = self.find_vote_index_to_evict(should_evict_vote);
         if (vote_index as usize) >= MAX_LOCKOUT_HISTORY {
             let (_, vote, hash, _) = vote_parser::parse_vote_transaction(&vote).unwrap();
             panic!(
@@ -1102,7 +1113,7 @@ impl ClusterInfo {
         self.push_vote_at_index(vote, vote_index);
     }
 
-    pub fn refresh_vote(&self, vote: Transaction, vote_slot: Slot) {
+    pub fn refresh_vote(&self, refresh_vote: Transaction, refresh_vote_slot: Slot) {
         let vote_index = {
             let self_pubkey = self.id();
             let gossip_crds =
@@ -1116,7 +1127,7 @@ impl ClusterInfo {
                     panic!("this should not happen!");
                 };
                 match prev_vote.slot() {
-                    Some(prev_vote_slot) => prev_vote_slot == vote_slot,
+                    Some(prev_vote_slot) => prev_vote_slot == refresh_vote_slot,
                     None => {
                         error!("crds vote with no slots!");
                         false
@@ -1125,13 +1136,27 @@ impl ClusterInfo {
             })
         };
 
-        // If you don't see a vote with the same slot yet, this means you probably
-        // restarted, and need to wait for your oldest vote to propagate back to you.
-        //
         // We don't write to an arbitrary index, because it may replace one of this validator's
         // existing votes on the network.
         if let Some(vote_index) = vote_index {
-            self.push_vote_at_index(vote, vote_index);
+            self.push_vote_at_index(refresh_vote, vote_index);
+        } else {
+            // If you don't see a vote with the same slot yet, this means you probably
+            // restarted, and need to repush and evict the oldest vote
+            let should_evict_vote = |vote: &Vote| -> bool {
+                vote.slot()
+                    .map(|slot| refresh_vote_slot > slot)
+                    .unwrap_or(true)
+            };
+            let vote_index = self.find_vote_index_to_evict(should_evict_vote);
+            if (vote_index as usize) >= MAX_LOCKOUT_HISTORY {
+                warn!(
+                    "trying to refresh slot {} but all votes in gossip table are for newer slots",
+                    refresh_vote_slot,
+                );
+                return;
+            }
+            self.push_vote_at_index(refresh_vote, vote_index);
         }
     }
 
@@ -1419,7 +1444,7 @@ impl ClusterInfo {
     fn append_entrypoint_to_pulls(
         &self,
         thread_pool: &ThreadPool,
-        pulls: &mut HashMap<LegacyContactInfo, Vec<CrdsFilter>>,
+        pulls: &mut Vec<(LegacyContactInfo, Vec<CrdsFilter>)>,
     ) {
         const THROTTLE_DELAY: u64 = CRDS_GOSSIP_PULL_CRDS_TIMEOUT_MS / 2;
         let entrypoint = {
@@ -1451,10 +1476,14 @@ impl ClusterInfo {
                 .pull
                 .build_crds_filters(thread_pool, &self.gossip.crds, MAX_BLOOM_SIZE)
         } else {
-            pulls.values().flatten().cloned().collect()
+            pulls
+                .iter()
+                .flat_map(|(_, filters)| filters)
+                .cloned()
+                .collect()
         };
         self.stats.pull_from_entrypoint_count.add_relaxed(1);
-        pulls.insert(entrypoint, filters);
+        pulls.push((entrypoint, filters));
     }
 
     /// Splits an input feed of serializable data into chunks where the sum of
@@ -1537,7 +1566,10 @@ impl ClusterInfo {
                 .unwrap_or_default()
         };
         self.append_entrypoint_to_pulls(thread_pool, &mut pulls);
-        let num_requests = pulls.values().map(Vec::len).sum::<usize>() as u64;
+        let num_requests = pulls
+            .iter()
+            .map(|(_, filters)| filters.len())
+            .sum::<usize>() as u64;
         self.stats.new_pull_requests_count.add_relaxed(num_requests);
         let self_info = LegacyContactInfo::try_from(&self.my_contact_info())
             .map(CrdsData::LegacyContactInfo)
@@ -1936,14 +1968,17 @@ impl ClusterInfo {
             requests
                 .into_par_iter()
                 .with_min_len(1024)
-                .filter(|(_, _, caller)| match caller.contact_info() {
-                    None => false,
-                    Some(caller) if caller.pubkey() == &self_pubkey => {
-                        warn!("PullRequest ignored, I'm talking to myself");
-                        self.stats.window_request_loopback.add_relaxed(1);
-                        false
+                .filter(|(_, _, caller)| match &caller.data {
+                    CrdsData::LegacyContactInfo(_) | CrdsData::ContactInfo(_) => {
+                        if caller.pubkey() == self_pubkey {
+                            warn!("PullRequest ignored, I'm talking to myself");
+                            self.stats.window_request_loopback.add_relaxed(1);
+                            false
+                        } else {
+                            true
+                        }
                     }
-                    Some(_) => true,
+                    _ => false,
                 })
                 .map(|(from_addr, filter, caller)| PullData {
                     from_addr,
@@ -2767,6 +2802,16 @@ pub struct Sockets {
     pub tpu_forwards_quic: UdpSocket,
 }
 
+pub struct NodeConfig {
+    pub gossip_addr: SocketAddr,
+    pub port_range: PortRange,
+    pub bind_ip_addr: IpAddr,
+    pub public_tpu_addr: Option<SocketAddr>,
+    pub public_tpu_forwards_addr: Option<SocketAddr>,
+    /// The number of TVU sockets to create
+    pub num_tvu_sockets: NonZeroUsize,
+}
+
 #[derive(Debug)]
 pub struct Node {
     pub info: ContactInfo,
@@ -2959,19 +3004,22 @@ impl Node {
         }
     }
 
-    pub fn new_with_external_ip(
-        pubkey: &Pubkey,
-        gossip_addr: &SocketAddr,
-        port_range: PortRange,
-        bind_ip_addr: IpAddr,
-        public_tpu_addr: Option<SocketAddr>,
-        public_tpu_forwards_addr: Option<SocketAddr>,
-    ) -> Node {
+    pub fn new_with_external_ip(pubkey: &Pubkey, config: NodeConfig) -> Node {
+        let NodeConfig {
+            gossip_addr,
+            port_range,
+            bind_ip_addr,
+            public_tpu_addr,
+            public_tpu_forwards_addr,
+            num_tvu_sockets,
+        } = config;
+
         let (gossip_port, (gossip, ip_echo)) =
-            Self::get_gossip_port(gossip_addr, port_range, bind_ip_addr);
+            Self::get_gossip_port(&gossip_addr, port_range, bind_ip_addr);
 
         let (tvu_port, tvu_sockets) =
-            multi_bind_in_range(bind_ip_addr, port_range, 8).expect("tvu multi_bind");
+            multi_bind_in_range(bind_ip_addr, port_range, num_tvu_sockets.get())
+                .expect("tvu multi_bind");
         let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range);
         let (tpu_port, tpu_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 32).expect("tpu multi_bind");
@@ -3548,7 +3596,7 @@ mod tests {
     }
 
     fn check_sockets(sockets: &[UdpSocket], ip: IpAddr, range: (u16, u16)) {
-        assert!(sockets.len() > 1);
+        assert!(!sockets.is_empty());
         let port = sockets[0].local_addr().unwrap().port();
         for socket in sockets.iter() {
             check_socket(socket, ip, range);
@@ -3574,14 +3622,16 @@ mod tests {
     #[test]
     fn new_with_external_ip_test_random() {
         let ip = Ipv4Addr::LOCALHOST;
-        let node = Node::new_with_external_ip(
-            &solana_sdk::pubkey::new_rand(),
-            &socketaddr!(ip, 0),
-            VALIDATOR_PORT_RANGE,
-            IpAddr::V4(ip),
-            None,
-            None,
-        );
+        let config = NodeConfig {
+            gossip_addr: socketaddr!(ip, 0),
+            port_range: VALIDATOR_PORT_RANGE,
+            bind_ip_addr: IpAddr::V4(ip),
+            public_tpu_addr: None,
+            public_tpu_forwards_addr: None,
+            num_tvu_sockets: MINIMUM_NUM_TVU_SOCKETS,
+        };
+
+        let node = Node::new_with_external_ip(&solana_sdk::pubkey::new_rand(), config);
 
         check_node_sockets(&node, IpAddr::V4(ip), VALIDATOR_PORT_RANGE);
     }
@@ -3594,17 +3644,18 @@ mod tests {
             VALIDATOR_PORT_RANGE.1 + MINIMUM_VALIDATOR_PORT_RANGE_WIDTH,
             VALIDATOR_PORT_RANGE.1 + (2 * MINIMUM_VALIDATOR_PORT_RANGE_WIDTH),
         );
-
         let ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let port = bind_in_range(ip, port_range).expect("Failed to bind").0;
-        let node = Node::new_with_external_ip(
-            &solana_sdk::pubkey::new_rand(),
-            &socketaddr!(Ipv4Addr::LOCALHOST, port),
+        let config = NodeConfig {
+            gossip_addr: socketaddr!(Ipv4Addr::LOCALHOST, port),
             port_range,
-            ip,
-            None,
-            None,
-        );
+            bind_ip_addr: ip,
+            public_tpu_addr: None,
+            public_tpu_forwards_addr: None,
+            num_tvu_sockets: MINIMUM_NUM_TVU_SOCKETS,
+        };
+
+        let node = Node::new_with_external_ip(&solana_sdk::pubkey::new_rand(), config);
 
         check_node_sockets(&node, ip, port_range);
 
@@ -3674,6 +3725,77 @@ mod tests {
     }
 
     #[test]
+    fn test_refresh_vote_eviction() {
+        let keypair = Arc::new(Keypair::new());
+        let contact_info = ContactInfo::new_localhost(&keypair.pubkey(), 0);
+        let cluster_info = ClusterInfo::new(contact_info, keypair, SocketAddrSpace::Unspecified);
+
+        // Push MAX_LOCKOUT_HISTORY votes into gossip, one for each slot between
+        // [lowest_vote_slot, lowest_vote_slot + MAX_LOCKOUT_HISTORY)
+        let lowest_vote_slot = 1;
+        let max_vote_slot = lowest_vote_slot + MAX_LOCKOUT_HISTORY as Slot;
+        let mut first_vote = None;
+        let mut prev_votes = vec![];
+        for slot in 1..max_vote_slot {
+            prev_votes.push(slot);
+            let unrefresh_vote = Vote::new(vec![slot], Hash::new_unique());
+            let vote_ix = vote_instruction::vote(
+                &Pubkey::new_unique(), // vote_pubkey
+                &Pubkey::new_unique(), // authorized_voter_pubkey
+                unrefresh_vote,
+            );
+            let vote_tx = Transaction::new_with_payer(
+                &[vote_ix], // instructions
+                None,       // payer
+            );
+            if first_vote.is_none() {
+                first_vote = Some(vote_tx.clone());
+            }
+            cluster_info.push_vote(&prev_votes, vote_tx);
+        }
+
+        let initial_votes = cluster_info.get_votes(&mut Cursor::default());
+        assert_eq!(initial_votes.len(), MAX_LOCKOUT_HISTORY);
+
+        // Trying to refresh a vote less than all votes in gossip should do nothing
+        let refresh_slot = lowest_vote_slot - 1;
+        let refresh_vote = Vote::new(vec![refresh_slot], Hash::new_unique());
+        let refresh_ix = vote_instruction::vote(
+            &Pubkey::new_unique(), // vote_pubkey
+            &Pubkey::new_unique(), // authorized_voter_pubkey
+            refresh_vote.clone(),
+        );
+        let refresh_tx = Transaction::new_with_payer(
+            &[refresh_ix], // instructions
+            None,          // payer
+        );
+        cluster_info.refresh_vote(refresh_tx.clone(), refresh_slot);
+        let current_votes = cluster_info.get_votes(&mut Cursor::default());
+        assert_eq!(initial_votes, current_votes);
+        assert!(!current_votes.contains(&refresh_tx));
+
+        // Trying to refresh a vote should evict the first slot less than the refreshed vote slot
+        let refresh_slot = max_vote_slot + 1;
+        let refresh_vote = Vote::new(vec![refresh_slot], Hash::new_unique());
+        let refresh_ix = vote_instruction::vote(
+            &Pubkey::new_unique(), // vote_pubkey
+            &Pubkey::new_unique(), // authorized_voter_pubkey
+            refresh_vote.clone(),
+        );
+        let refresh_tx = Transaction::new_with_payer(
+            &[refresh_ix], // instructions
+            None,          // payer
+        );
+        cluster_info.refresh_vote(refresh_tx.clone(), refresh_slot);
+
+        // This should evict the latest vote since it's for a slot less than refresh_slot
+        let votes = cluster_info.get_votes(&mut Cursor::default());
+        assert_eq!(votes.len(), MAX_LOCKOUT_HISTORY);
+        assert!(votes.contains(&refresh_tx));
+        assert!(!votes.contains(&first_vote.unwrap()));
+    }
+
+    #[test]
     fn test_refresh_vote() {
         let keypair = Arc::new(Keypair::new());
         let contact_info = ContactInfo::new_localhost(&keypair.pubkey(), 0);
@@ -3697,8 +3819,9 @@ mod tests {
         let votes = cluster_info.get_votes(&mut cursor);
         assert_eq!(votes, vec![unrefresh_tx.clone()]);
 
-        // Now construct vote for the slot to be refreshed later
-        let refresh_slot = 7;
+        // Now construct vote for the slot to be refreshed later. Has to be less than the `unrefresh_slot`,
+        // otherwise it will evict that slot
+        let refresh_slot = unrefresh_slot - 1;
         let refresh_tower = vec![1, 3, unrefresh_slot, refresh_slot];
         let refresh_vote = Vote::new(refresh_tower.clone(), Hash::new_unique());
         let refresh_ix = vote_instruction::vote(
@@ -3712,19 +3835,12 @@ mod tests {
         );
 
         // Trying to refresh vote when it doesn't yet exist in gossip
-        // shouldn't add the vote
+        // should add the vote without eviction if there is room in the gossip table.
         cluster_info.refresh_vote(refresh_tx.clone(), refresh_slot);
-        let votes = cluster_info.get_votes(&mut cursor);
-        assert_eq!(votes, vec![]);
-        let votes = cluster_info.get_votes(&mut Cursor::default());
-        assert_eq!(votes.len(), 1);
-        assert!(votes.contains(&unrefresh_tx));
-
-        // Push the new vote for `refresh_slot`
-        cluster_info.push_vote(&refresh_tower, refresh_tx.clone());
 
         // Should be two votes in gossip
-        let votes = cluster_info.get_votes(&mut Cursor::default());
+        cursor = Cursor::default();
+        let votes = cluster_info.get_votes(&mut cursor);
         assert_eq!(votes.len(), 2);
         assert!(votes.contains(&unrefresh_tx));
         assert!(votes.contains(&refresh_tx));

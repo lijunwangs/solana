@@ -740,7 +740,7 @@ impl Consumer {
         let fee_payer = message.fee_payer();
         let budget_limits =
             process_compute_budget_instructions(message.program_instructions_iter())?.into();
-        let fee = bank.fee_structure.calculate_fee(
+        let fee = bank.fee_structure().calculate_fee(
             message,
             bank.get_lamports_per_signature(),
             &budget_limits,
@@ -772,7 +772,9 @@ impl Consumer {
             (0, 0),
             |(units, times), program_timings| {
                 (
-                    units.saturating_add(program_timings.accumulated_units),
+                    units
+                        .saturating_add(program_timings.accumulated_units)
+                        .saturating_add(program_timings.total_errored_units),
                     times.saturating_add(program_timings.accumulated_us),
                 )
             },
@@ -866,6 +868,7 @@ mod tests {
             nonce_account::verify_nonce_account,
             poh_config::PohConfig,
             pubkey::Pubkey,
+            reserved_account_keys::ReservedAccountKeys,
             signature::Keypair,
             signer::Signer,
             system_instruction, system_program, system_transaction,
@@ -898,7 +901,6 @@ mod tests {
             bank.clone(),
             Some((4, 4)),
             bank.ticks_per_slot(),
-            &Pubkey::new_unique(),
             Arc::new(blockstore),
             &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
             &PohConfig::default(),
@@ -1005,7 +1007,6 @@ mod tests {
             bank.clone(),
             Some((4, 4)),
             bank.ticks_per_slot(),
-            &solana_sdk::pubkey::new_rand(),
             Arc::new(blockstore),
             &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
             &PohConfig::default(),
@@ -1074,7 +1075,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &pubkey,
                 Arc::new(blockstore),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -1219,7 +1219,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &pubkey,
                 Arc::new(blockstore),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -1361,7 +1360,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &pubkey,
                 Arc::new(blockstore),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -1451,7 +1449,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &pubkey,
                 Arc::new(blockstore),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -1606,7 +1603,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &pubkey,
                 Arc::new(blockstore),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -1806,7 +1802,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &solana_sdk::pubkey::new_rand(),
                 Arc::new(blockstore),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -1907,7 +1902,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &pubkey,
                 blockstore.clone(),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),
@@ -2033,6 +2027,7 @@ mod tests {
             MessageHash::Compute,
             Some(false),
             bank.as_ref(),
+            &ReservedAccountKeys::empty_key_set(),
         )
         .unwrap();
 
@@ -2052,7 +2047,6 @@ mod tests {
                 bank.clone(),
                 Some((4, 4)),
                 bank.ticks_per_slot(),
-                &Pubkey::new_unique(),
                 blockstore.clone(),
                 &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
                 &PohConfig::default(),

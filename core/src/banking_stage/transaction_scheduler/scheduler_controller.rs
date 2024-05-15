@@ -5,7 +5,9 @@ use {
     super::{
         prio_graph_scheduler::PrioGraphScheduler,
         scheduler_error::SchedulerError,
-        scheduler_metrics::{SchedulerCountMetrics, SchedulerTimingMetrics},
+        scheduler_metrics::{
+            SchedulerCountMetrics, SchedulerLeaderDetectionMetrics, SchedulerTimingMetrics,
+        },
         transaction_id_generator::TransactionIdGenerator,
         transaction_state::SanitizedTransactionTTL,
         transaction_state_container::TransactionStateContainer,
@@ -24,13 +26,7 @@ use {
     solana_program_runtime::compute_budget_processor::process_compute_budget_instructions,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
     solana_sdk::{
-        clock::MAX_PROCESSING_AGE,
-        feature_set::{
-            include_loaded_accounts_data_size_in_fee_calculation,
-            remove_rounding_in_fee_calculation,
-        },
-        fee::FeeBudgetLimits,
-        saturating_add_assign,
+        clock::MAX_PROCESSING_AGE, fee::FeeBudgetLimits, saturating_add_assign,
         transaction::SanitizedTransaction,
     },
     solana_svm::transaction_error_metrics::TransactionErrorMetrics,
@@ -54,6 +50,8 @@ pub(crate) struct SchedulerController {
     container: TransactionStateContainer,
     /// State for scheduling and communicating with worker threads.
     scheduler: PrioGraphScheduler,
+    /// Metrics tracking time for leader bank detection.
+    leader_detection_metrics: SchedulerLeaderDetectionMetrics,
     /// Metrics tracking counts on transactions in different states
     /// over an interval and during a leader slot.
     count_metrics: SchedulerCountMetrics,
@@ -79,6 +77,7 @@ impl SchedulerController {
             transaction_id_generator: TransactionIdGenerator::default(),
             container: TransactionStateContainer::with_capacity(TOTAL_BUFFERED_PACKETS),
             scheduler,
+            leader_detection_metrics: SchedulerLeaderDetectionMetrics::default(),
             count_metrics: SchedulerCountMetrics::default(),
             timing_metrics: SchedulerTimingMetrics::default(),
             worker_metrics,
@@ -102,8 +101,9 @@ impl SchedulerController {
             self.timing_metrics.update(|timing_metrics| {
                 saturating_add_assign!(timing_metrics.decision_time_us, decision_time_us);
             });
-
             let new_leader_slot = decision.bank_start().map(|b| b.working_bank.slot());
+            self.leader_detection_metrics
+                .update_and_maybe_report(decision.bank_start());
             self.count_metrics
                 .maybe_report_and_reset_slot(new_leader_slot);
             self.timing_metrics
@@ -322,7 +322,7 @@ impl SchedulerController {
 
         let (received_packet_results, receive_time_us) = measure_us!(self
             .packet_receiver
-            .receive_packets(recv_timeout, remaining_queue_capacity));
+            .receive_packets(recv_timeout, remaining_queue_capacity, |_| true));
 
         self.timing_metrics.update(|timing_metrics| {
             saturating_add_assign!(timing_metrics.receive_time_us, receive_time_us);
@@ -375,7 +375,12 @@ impl SchedulerController {
             let (transactions, fee_budget_limits_vec): (Vec<_>, Vec<_>) = chunk
                 .iter()
                 .filter_map(|packet| {
-                    packet.build_sanitized_transaction(feature_set, vote_only, bank.as_ref())
+                    packet.build_sanitized_transaction(
+                        feature_set,
+                        vote_only,
+                        bank.as_ref(),
+                        bank.get_reserved_account_keys(),
+                    )
                 })
                 .inspect(|_| saturating_add_assign!(post_sanitization_count, 1))
                 .filter(|tx| {
@@ -483,15 +488,7 @@ impl SchedulerController {
         bank: &Bank,
     ) -> (u64, u64) {
         let cost = CostModel::calculate_cost(transaction, &bank.feature_set).sum();
-        let fee = bank.fee_structure.calculate_fee(
-            transaction.message(),
-            5_000, // this just needs to be non-zero
-            fee_budget_limits,
-            bank.feature_set
-                .is_active(&include_loaded_accounts_data_size_in_fee_calculation::id()),
-            bank.feature_set
-                .is_active(&remove_rounding_in_fee_calculation::id()),
-        );
+        let reward = bank.calculate_reward_for_transaction(transaction, fee_budget_limits);
 
         // We need a multiplier here to avoid rounding down too aggressively.
         // For many transactions, the cost will be greater than the fees in terms of raw lamports.
@@ -500,7 +497,8 @@ impl SchedulerController {
         // An offset of 1 is used in the denominator to explicitly avoid division by zero.
         const MULTIPLIER: u64 = 1_000_000;
         (
-            fee.saturating_mul(MULTIPLIER)
+            reward
+                .saturating_mul(MULTIPLIER)
                 .saturating_div(cost.saturating_add(1)),
             cost,
         )
@@ -574,7 +572,6 @@ mod tests {
             bank.clone(),
             Some((4, 4)),
             bank.ticks_per_slot(),
-            &Pubkey::new_unique(),
             Arc::new(blockstore),
             &Arc::new(LeaderScheduleCache::new_from_bank(&bank)),
             &PohConfig::default(),

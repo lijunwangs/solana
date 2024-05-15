@@ -22,8 +22,8 @@ pub use {
 };
 
 pub enum TpuClientWrapper {
-    Quic(TpuClient<QuicPool, QuicConnectionManager, QuicConfig>),
-    Udp(TpuClient<UdpPool, UdpConnectionManager, UdpConfig>),
+    Quic(BackendTpuClient<QuicPool, QuicConnectionManager, QuicConfig>),
+    Udp(BackendTpuClient<UdpPool, UdpConnectionManager, UdpConfig>),
 }
 
 /// Client which sends transactions directly to the current leader's TPU port over UDP.
