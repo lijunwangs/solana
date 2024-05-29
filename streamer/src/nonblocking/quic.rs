@@ -79,8 +79,8 @@ const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] = b"exceed_max_stre
 const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
 
-/// Limit to 500K PPS
-pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 500;
+/// Limit to 50K PPS
+pub const DEFAULT_MAX_STREAMS_PER_MS: u64 = 50;
 
 /// The new connections per minute from a particular IP address.
 /// Heuristically set to the default maximum concurrent connections
