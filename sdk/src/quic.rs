@@ -5,8 +5,8 @@ pub const QUIC_PORT_OFFSET: u16 = 6;
 // Empirically found max number of concurrent streams
 // that seems to maximize TPS on GCE (higher values don't seem to
 // give significant improvement or seem to impact stability)
-pub const QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS: usize = 128;
-pub const QUIC_MIN_STAKED_CONCURRENT_STREAMS: usize = 128;
+pub const QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS: usize = 1;
+pub const QUIC_MIN_STAKED_CONCURRENT_STREAMS: usize = 1;
 
 pub const QUIC_TOTAL_STAKED_CONCURRENT_STREAMS: usize = 100_000;
 
@@ -14,7 +14,7 @@ pub const QUIC_TOTAL_STAKED_CONCURRENT_STREAMS: usize = 100_000;
 // The value was lowered from 2048 to reduce contention of the limited
 // receive_window among the streams which is observed in CI bench-tests with
 // forwarded packets from staked nodes.
-pub const QUIC_MAX_STAKED_CONCURRENT_STREAMS: usize = 512;
+pub const QUIC_MAX_STAKED_CONCURRENT_STREAMS: usize = 4;
 
 pub const QUIC_MAX_TIMEOUT: Duration = Duration::from_secs(2);
 pub const QUIC_KEEP_ALIVE: Duration = Duration::from_secs(1);
