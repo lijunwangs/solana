@@ -195,7 +195,8 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
-    let concurrent_connections = max_staked_connections + max_unstaked_connections;
+    let concurrent_connections =
+        (max_staked_connections + max_unstaked_connections) / sockets.len();
     let max_concurrent_connections = concurrent_connections + concurrent_connections / 4;
     let (config, _cert) = configure_server(keypair, max_concurrent_connections)?;
 
