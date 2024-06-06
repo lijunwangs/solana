@@ -28,7 +28,7 @@ quinn = { workspace = true }
 quinn-proto = { workspace = true }
 rand = { workspace = true }
 rcgen = { workspace = true }
-rustls = { workspace = true, features = ["dangerous_configuration"] }
+rustls = { workspace = true }
 smallvec = { workspace = true }
 solana-metrics = { workspace = true }
 solana-perf = { workspace = true }

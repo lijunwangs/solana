@@ -7,9 +7,14 @@ use {
 };
 
 pub fn new_self_signed_tls_certificate(
+    
     keypair: &Keypair,
     san: IpAddr,
-) -> Result<(rustls::Certificate, rustls::PrivateKey), RcgenError> {
+,
+) -> Result<(
+    rustls::pki_types::CertificateDer<'static>,
+    rustls::pki_types::PrivateKeyDer<'static>,
+), RcgenError> {
     // TODO(terorie): Is it safe to sign the TLS cert with the identity private key?
 
     // Unfortunately, rcgen does not accept a "raw" Ed25519 key.
@@ -51,11 +56,13 @@ pub fn new_self_signed_tls_certificate(
     let cert = rcgen::Certificate::from_params(cert_params)?;
     let cert_der = cert.serialize_der().unwrap();
     let priv_key = cert.serialize_private_key_der();
-    let priv_key = rustls::PrivateKey(priv_key);
-    Ok((rustls::Certificate(cert_der), priv_key))
+    let priv_key = rustls::pki_types::PrivateKeyDer::try_from(priv_key).unwrap();
+    Ok((rustls::pki_types::CertificateDer::try_from(cert_der).unwrap(), priv_key))
 }
 
-pub fn get_pubkey_from_tls_certificate(der_cert: &rustls::Certificate) -> Option<Pubkey> {
+pub fn get_pubkey_from_tls_certificate(
+    der_cert: &rustls::pki_types::CertificateDer,
+) -> Option<Pubkey> {
     let (_, cert) = X509Certificate::from_der(der_cert.as_ref()).ok()?;
     match cert.public_key().parsed().ok()? {
         PublicKey::Unknown(key) => Pubkey::try_from(key).ok(),
