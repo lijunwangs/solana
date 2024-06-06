@@ -291,9 +291,10 @@ impl QuicClient {
         let mut connection_try_count = 0;
         let mut last_connection_id = 0;
         let mut last_error = None;
+        let mut conn_guard = self.connection.lock().await;
+
         while connection_try_count < 2 {
             let connection = {
-                let mut conn_guard = self.connection.lock().await;
 
                 let maybe_conn = conn_guard.as_mut();
                 match maybe_conn {
