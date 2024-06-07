@@ -657,9 +657,9 @@ struct TurbineQuicStats {
     send_datagram_error_connection_lost: AtomicU64,
     send_datagram_error_too_large: AtomicU64,
     send_datagram_error_unsupported_by_peer: AtomicU64,
+    connect_error_cids_exhausted: AtomicU64,
+    connect_error_invalid_server_name: AtomicU64,
     connection_error_cids_exhausted: AtomicU64,
-    connection_error_invalid_server_name: AtomicU64,
-    
 }
 
 async fn report_metrics_task(name: &'static str, stats: Arc<TurbineQuicStats>) {
@@ -717,10 +717,13 @@ fn record_error(err: &Error, stats: &TurbineQuicStats) {
         }
         Error::TlsError(_) => (),
         Error::ConnectError(ConnectError::CidsExhausted) => {
-            add_metric!(stats.connection_error_cids_exhausted)
+            add_metric!(stats.connect_error_cids_exhausted)
         }
         Error::ConnectError(ConnectError::InvalidServerName(_)) => {
-            add_metric!(stats.connection_error_invalid_server_name)
+            add_metric!(stats.connect_error_invalid_server_name)
+        }
+        Error::ConnectionError(ConnectionError::CidsExhausted) => {
+            add_metric!(stats.connection_error_cids_exhausted)
         }
     }
 }
