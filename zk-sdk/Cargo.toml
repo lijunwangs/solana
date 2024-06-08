@@ -38,3 +38,8 @@ zeroize = { workspace = true, features = ["zeroize_derive"] }
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+
+[patch.crates-io.curve25519-dalek]
+git = "https://github.com/lijunwangs/curve25519-dalek.git"
+rev = "173055ae3f3ccffd306bfb3629ce3b3580fa2837"
