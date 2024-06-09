@@ -1248,12 +1248,12 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
-version = "4.0.0-pre.2"
-source = "git+https://github.com/lijunwangs/curve25519-dalek.git?rev=51572dae8d11345d1b0f27c6497aed475be68e2d#51572dae8d11345d1b0f27c6497aed475be68e2d"
+version = "3.2.1"
+source = "git+https://github.com/solana-labs/curve25519-dalek.git?rev=b500cdc2a920cd5bff9e2dd974d7b97349d61464#b500cdc2a920cd5bff9e2dd974d7b97349d61464"
 dependencies = [
  "byteorder 1.5.0",
- "digest 0.10.7",
- "rand_core 0.6.4",
+ "digest 0.9.0",
+ "rand_core 0.5.1",
  "serde",
  "subtle",
  "zeroize",
@@ -5343,7 +5343,7 @@ dependencies = [
  "bincode",
  "bv",
  "caps",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "dlopen2",
  "fnv",
  "lazy_static",
@@ -5405,7 +5405,7 @@ dependencies = [
  "cc",
  "console_error_panic_hook",
  "console_log",
- "curve25519-dalek",
+ "curve25519-dalek 3.2.1",
  "getrandom 0.2.10",
  "itertools 0.12.1",
  "js-sys",
@@ -6642,7 +6642,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "byteorder 1.5.0",
- "curve25519-dalek",
+ "curve25519-dalek 3.2.1",
  "getrandom 0.1.14",
  "itertools 0.12.1",
  "lazy_static",

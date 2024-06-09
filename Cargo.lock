@@ -1731,12 +1731,12 @@ dependencies = [
 
 [[package]]
 name = "curve25519-dalek"
-version = "4.0.0-pre.2"
-source = "git+https://github.com/lijunwangs/curve25519-dalek.git?rev=51572dae8d11345d1b0f27c6497aed475be68e2d#51572dae8d11345d1b0f27c6497aed475be68e2d"
+version = "3.2.1"
+source = "git+https://github.com/solana-labs/curve25519-dalek.git?rev=b500cdc2a920cd5bff9e2dd974d7b97349d61464#b500cdc2a920cd5bff9e2dd974d7b97349d61464"
 dependencies = [
  "byteorder",
- "digest 0.10.7",
- "rand_core 0.6.4",
+ "digest 0.9.0",
+ "rand_core 0.5.1",
  "serde",
  "subtle",
  "zeroize",
@@ -5356,9 +5356,9 @@ dependencies = [
 
 [[package]]
 name = "slab"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9def91fd1e018fe007022791f865d0ccc9b3a0d5001e01aabb8b40e46000afb5"
+checksum = "eb703cfe953bccee95685111adeedb76fabe4e97549a58d16f03ea7b9367bb32"
 
 [[package]]
 name = "smallvec"
@@ -6701,7 +6701,7 @@ dependencies = [
  "bincode",
  "bv",
  "caps",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "dlopen2",
  "fnv",
  "lazy_static",
@@ -6794,7 +6794,7 @@ dependencies = [
  "cc",
  "console_error_panic_hook",
  "console_log",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "getrandom 0.2.10",
  "itertools 0.12.1",
  "js-sys",
@@ -7233,7 +7233,7 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "chrono",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "derivation-path",
  "digest 0.10.7",
  "ed25519-dalek",
@@ -7868,7 +7868,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "bytemuck",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "itertools 0.12.1",
  "lazy_static",
  "merlin",
@@ -7893,7 +7893,7 @@ version = "2.0.0"
 dependencies = [
  "bytemuck",
  "criterion",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "num-derive",
  "num-traits",
  "solana-program-runtime",
@@ -7906,7 +7906,7 @@ name = "solana-zk-token-proof-program-tests"
 version = "2.0.0"
 dependencies = [
  "bytemuck",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "solana-compute-budget",
  "solana-program-test",
  "solana-sdk",
@@ -7922,7 +7922,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "byteorder",
- "curve25519-dalek 4.0.0-pre.2",
+ "curve25519-dalek 3.2.1",
  "getrandom 0.1.16",
  "itertools 0.12.1",
  "lazy_static",
