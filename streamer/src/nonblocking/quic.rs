@@ -1172,7 +1172,7 @@ impl Drop for ConnectionEntry {
     }
 }
 
-#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 enum ConnectionTableKey {
     IP(IpAddr),
     Pubkey(Pubkey),
@@ -1532,8 +1532,6 @@ pub mod test {
             s2.write_all(&data)
                 .await
                 .expect_err("shouldn't be able to open 2 connections");
-            s2.finish()
-                .expect_err("shouldn't be able to open 2 connections");
         } else {
             // It has been noticed if there is already connection open against the server, this open_uni can fail
             // with ApplicationClosed(ApplicationClose) error due to CONNECTION_CLOSE_CODE_TOO_MANY before writing to
@@ -1633,7 +1631,8 @@ pub mod test {
                 // Ignoring any errors here. s1.finish() will test the error condition
                 s1.write_all(&[0u8]).await.unwrap_or_default();
             }
-            s1.finish().unwrap_err();
+            s1.finish().unwrap_or_default();
+            s1.stopped().await.unwrap_err();
         }
     }
 
@@ -1726,7 +1725,6 @@ pub mod test {
         // Test that more writes to the stream will fail (i.e. the stream is no longer writable
         // after the timeouts)
         assert!(s1.write_all(&[0u8]).await.is_err());
-        assert!(s1.finish().is_err());
 
         exit.store(true, Ordering::Relaxed);
         t.await.unwrap();

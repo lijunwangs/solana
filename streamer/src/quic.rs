@@ -61,7 +61,7 @@ impl rustls::server::danger::ClientCertVerifier for SkipClientVerification {
     }
 
     fn root_hint_subjects(&self) -> &[DistinguishedName] {
-        todo!()
+        &[]
     }
 
     fn verify_tls12_signature(
