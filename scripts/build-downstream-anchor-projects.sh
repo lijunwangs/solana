@@ -49,6 +49,7 @@ anchor() {
   git clone https://github.com/solana-labs/solana-program-library.git spl
   cd spl || exit 1
   ./patch.crates-io.sh "$solana_dir"
+  sed -i '/\[patch.crates-io\]/a curve25519-dalek = { git = "https://github.com/solana-labs/curve25519-dalek.git", rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464" }' ./Cargo.toml
   spl_dir=$PWD
   get_spl_versions "$spl_dir"
   cd ..
