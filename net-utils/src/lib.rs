@@ -386,7 +386,6 @@ pub fn is_host_port(string: String) -> Result<(), String> {
 
 #[derive(Clone, Debug)]
 pub struct SocketConfig {
-    pub reuseaddr: bool,
     pub reuseport: bool,
 }
 
@@ -394,7 +393,6 @@ impl Default for SocketConfig {
     #[allow(clippy::derivable_impls)]
     fn default() -> Self {
         Self {
-            reuseaddr: false,
             reuseport: false,
         }
     }
@@ -413,10 +411,9 @@ fn udp_socket_with_config(_config: SocketConfig) -> io::Result<Socket> {
 }
 
 #[cfg(not(any(windows, target_os = "ios")))]
-fn udp_socket(reuseaddr: bool) -> io::Result<Socket> {
+fn udp_socket(reuseport: bool) -> io::Result<Socket> {
     let config = SocketConfig {
-        reuseaddr,
-        reuseport: false,
+        reuseport,
     };
     udp_socket_with_config(config)
 }
@@ -425,20 +422,14 @@ fn udp_socket(reuseaddr: bool) -> io::Result<Socket> {
 fn udp_socket_with_config(config: SocketConfig) -> io::Result<Socket> {
     use nix::sys::socket::{
         setsockopt,
-        sockopt::{ReuseAddr, ReusePort},
+        sockopt::ReusePort,
     };
     let SocketConfig {
-        reuseaddr,
-        mut reuseport,
+        reuseport,
     } = config;
 
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, None)?;
 
-    // best effort, i.e. ignore setsockopt() errors, we'll get the failure in caller
-    if reuseaddr {
-        setsockopt(&sock, ReuseAddr, &true).ok();
-        reuseport = true;
-    }
     if reuseport {
         setsockopt(&sock, ReusePort, &true).ok();
     }
@@ -452,7 +443,7 @@ pub fn bind_common_in_range(
     range: PortRange,
 ) -> io::Result<(u16, (UdpSocket, TcpListener))> {
     for port in range.0..range.1 {
-        if let Ok((sock, listener)) = bind_common(ip_addr, port, false) {
+        if let Ok((sock, listener)) = bind_common(ip_addr, port) {
             return Result::Ok((sock.local_addr().unwrap().port(), (sock, listener)));
         }
     }
@@ -528,7 +519,6 @@ pub fn multi_bind_in_range(
         }; // drop the probe, port should be available... briefly.
 
         let config = SocketConfig {
-            reuseaddr: true,
             reuseport: true,
         };
         for _ in 0..num {
@@ -552,10 +542,9 @@ pub fn multi_bind_in_range(
     Ok((port, sockets))
 }
 
-pub fn bind_to(ip_addr: IpAddr, port: u16, reuseaddr: bool) -> io::Result<UdpSocket> {
+pub fn bind_to(ip_addr: IpAddr, port: u16, reuseport: bool) -> io::Result<UdpSocket> {
     let config = SocketConfig {
-        reuseaddr,
-        reuseport: false,
+        reuseport,
     };
     bind_to_with_config(ip_addr, port, config)
 }
@@ -576,10 +565,8 @@ pub fn bind_to_with_config(
 pub fn bind_common(
     ip_addr: IpAddr,
     port: u16,
-    reuseaddr: bool,
 ) -> io::Result<(UdpSocket, TcpListener)> {
     let config = SocketConfig {
-        reuseaddr,
         reuseport: false,
     };
     bind_common_with_config(ip_addr, port, config)
@@ -649,7 +636,7 @@ pub fn find_available_port_in_range(ip_addr: IpAddr, range: PortRange) -> io::Re
     let mut tries_left = end - start;
     let mut rand_port = thread_rng().gen_range(start..end);
     loop {
-        match bind_common(ip_addr, rand_port, false) {
+        match bind_common(ip_addr, rand_port) {
             Ok(_) => {
                 break Ok(rand_port);
             }
@@ -784,7 +771,6 @@ mod tests {
         assert_eq!(bind_in_range(ip_addr, (2000, 2001)).unwrap().0, 2000);
         let ip_addr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
         let config = SocketConfig {
-            reuseaddr: true,
             reuseport: true,
         };
         let x = bind_to_with_config(ip_addr, 2002, config.clone()).unwrap();
