@@ -2926,11 +2926,9 @@ impl Node {
         let port_range = (1024, 65535);
 
         let udp_config = SocketConfig {
-            reuseaddr: false,
             reuseport: false,
         };
         let quic_config = SocketConfig {
-            reuseaddr: false,
             reuseport: true,
         };
         let ((tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
@@ -3040,7 +3038,7 @@ impl Node {
         if gossip_addr.port() != 0 {
             (
                 gossip_addr.port(),
-                bind_common(bind_ip_addr, gossip_addr.port(), false).unwrap_or_else(|e| {
+                bind_common(bind_ip_addr, gossip_addr.port()).unwrap_or_else(|e| {
                     panic!("gossip_addr bind_to port {}: {}", gossip_addr.port(), e)
                 }),
             )
@@ -3050,7 +3048,6 @@ impl Node {
     }
     fn bind(bind_ip_addr: IpAddr, port_range: PortRange) -> (u16, UdpSocket) {
         let config = SocketConfig {
-            reuseaddr: false,
             reuseport: false,
         };
         Self::bind_with_config(bind_ip_addr, port_range, config)
@@ -3075,11 +3072,9 @@ impl Node {
         let (tvu_port, tvu) = Self::bind(bind_ip_addr, port_range);
         let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range);
         let udp_config = SocketConfig {
-            reuseaddr: false,
             reuseport: false,
         };
         let quic_config = SocketConfig {
-            reuseaddr: false,
             reuseport: true,
         };
         let ((tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
@@ -3191,7 +3186,6 @@ impl Node {
             multi_bind_in_range(bind_ip_addr, port_range, 32).expect("tpu multi_bind");
 
         let quic_config = SocketConfig {
-            reuseaddr: false,
             reuseport: true,
         };
         let port_range = (tpu_port + 1, port_range.1);
