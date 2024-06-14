@@ -392,9 +392,7 @@ pub struct SocketConfig {
 impl Default for SocketConfig {
     #[allow(clippy::derivable_impls)]
     fn default() -> Self {
-        Self {
-            reuseport: false,
-        }
+        Self { reuseport: false }
     }
 }
 
@@ -412,21 +410,14 @@ fn udp_socket_with_config(_config: SocketConfig) -> io::Result<Socket> {
 
 #[cfg(not(any(windows, target_os = "ios")))]
 fn udp_socket(reuseport: bool) -> io::Result<Socket> {
-    let config = SocketConfig {
-        reuseport,
-    };
+    let config = SocketConfig { reuseport };
     udp_socket_with_config(config)
 }
 
 #[cfg(not(any(windows, target_os = "ios")))]
 fn udp_socket_with_config(config: SocketConfig) -> io::Result<Socket> {
-    use nix::sys::socket::{
-        setsockopt,
-        sockopt::ReusePort,
-    };
-    let SocketConfig {
-        reuseport,
-    } = config;
+    use nix::sys::socket::{setsockopt, sockopt::ReusePort};
+    let SocketConfig { reuseport } = config;
 
     let sock = Socket::new(Domain::IPV4, Type::DGRAM, None)?;
 
@@ -518,9 +509,7 @@ pub fn multi_bind_in_range(
             port
         }; // drop the probe, port should be available... briefly.
 
-        let config = SocketConfig {
-            reuseport: true,
-        };
+        let config = SocketConfig { reuseport: true };
         for _ in 0..num {
             let sock = bind_to_with_config(ip_addr, port, config.clone());
             if let Ok(sock) = sock {
@@ -543,9 +532,7 @@ pub fn multi_bind_in_range(
 }
 
 pub fn bind_to(ip_addr: IpAddr, port: u16, reuseport: bool) -> io::Result<UdpSocket> {
-    let config = SocketConfig {
-        reuseport,
-    };
+    let config = SocketConfig { reuseport };
     bind_to_with_config(ip_addr, port, config)
 }
 
@@ -562,13 +549,8 @@ pub fn bind_to_with_config(
 }
 
 // binds both a UdpSocket and a TcpListener
-pub fn bind_common(
-    ip_addr: IpAddr,
-    port: u16,
-) -> io::Result<(UdpSocket, TcpListener)> {
-    let config = SocketConfig {
-        reuseport: false,
-    };
+pub fn bind_common(ip_addr: IpAddr, port: u16) -> io::Result<(UdpSocket, TcpListener)> {
+    let config = SocketConfig { reuseport: false };
     bind_common_with_config(ip_addr, port, config)
 }
 
@@ -770,9 +752,7 @@ mod tests {
         let ip_addr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
         assert_eq!(bind_in_range(ip_addr, (2000, 2001)).unwrap().0, 2000);
         let ip_addr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-        let config = SocketConfig {
-            reuseport: true,
-        };
+        let config = SocketConfig { reuseport: true };
         let x = bind_to_with_config(ip_addr, 2002, config.clone()).unwrap();
         let y = bind_to_with_config(ip_addr, 2002, config).unwrap();
         assert_eq!(

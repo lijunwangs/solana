@@ -2925,12 +2925,8 @@ impl Node {
         let unspecified_bind_addr = format!("{:?}:0", IpAddr::V4(Ipv4Addr::UNSPECIFIED));
         let port_range = (1024, 65535);
 
-        let udp_config = SocketConfig {
-            reuseport: false,
-        };
-        let quic_config = SocketConfig {
-            reuseport: true,
-        };
+        let udp_config = SocketConfig { reuseport: false };
+        let quic_config = SocketConfig { reuseport: true };
         let ((tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
             bind_two_in_range_with_offset_and_config(
                 localhost_ip_addr,
@@ -3047,9 +3043,7 @@ impl Node {
         }
     }
     fn bind(bind_ip_addr: IpAddr, port_range: PortRange) -> (u16, UdpSocket) {
-        let config = SocketConfig {
-            reuseport: false,
-        };
+        let config = SocketConfig { reuseport: false };
         Self::bind_with_config(bind_ip_addr, port_range, config)
     }
 
@@ -3071,12 +3065,8 @@ impl Node {
             Self::get_gossip_port(gossip_addr, port_range, bind_ip_addr);
         let (tvu_port, tvu) = Self::bind(bind_ip_addr, port_range);
         let (tvu_quic_port, tvu_quic) = Self::bind(bind_ip_addr, port_range);
-        let udp_config = SocketConfig {
-            reuseport: false,
-        };
-        let quic_config = SocketConfig {
-            reuseport: true,
-        };
+        let udp_config = SocketConfig { reuseport: false };
+        let quic_config = SocketConfig { reuseport: true };
         let ((tpu_port, tpu), (_tpu_quic_port, tpu_quic)) =
             bind_two_in_range_with_offset_and_config(
                 bind_ip_addr,
@@ -3185,9 +3175,7 @@ impl Node {
         let (tpu_port, tpu_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 32).expect("tpu multi_bind");
 
-        let quic_config = SocketConfig {
-            reuseport: true,
-        };
+        let quic_config = SocketConfig { reuseport: true };
         let port_range = (tpu_port + 1, port_range.1);
         let (tpu_port_quic, tpu_quic) = Self::bind_with_config(
             bind_ip_addr,
