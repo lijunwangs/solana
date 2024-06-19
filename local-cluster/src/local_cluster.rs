@@ -337,7 +337,7 @@ impl LocalCluster {
             socket_addr_space,
             DEFAULT_TPU_USE_QUIC,
             DEFAULT_TPU_CONNECTION_POOL_SIZE,
-            true,
+            DEFAULT_TPU_ENABLE_UDP,
             32, // max connections per IpAddr per minute
             Arc::new(RwLock::new(None)),
         )
