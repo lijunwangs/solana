@@ -2906,7 +2906,8 @@ pub struct NodeConfig {
     pub num_tvu_sockets: NonZeroUsize,
 }
 
-const QUIC_ENDPOINTS: usize = 10;
+// This will be adjusted and parameterized in follow-on PRs.
+const QUIC_ENDPOINTS: usize = 1;
 
 #[derive(Debug)]
 pub struct Node {
