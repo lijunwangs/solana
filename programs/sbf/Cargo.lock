@@ -5044,7 +5044,7 @@ name = "solana-curve25519"
 version = "2.0.0"
 dependencies = [
  "bytemuck",
- "curve25519-dalek",
+ "curve25519-dalek 3.2.1",
  "solana-program",
  "thiserror",
 ]
@@ -6693,7 +6693,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "bytemuck",
- "curve25519-dalek",
+ "curve25519-dalek 3.2.1",
  "itertools 0.12.1",
  "lazy_static",
  "merlin",
