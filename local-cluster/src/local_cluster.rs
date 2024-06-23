@@ -14,7 +14,7 @@ use {
         validator::{Validator, ValidatorConfig, ValidatorStartProgress},
     },
     solana_gossip::{
-        cluster_info::Node,
+        cluster_info::{Node, DEFAULT_QUIC_ENDPOINTS},
         contact_info::{ContactInfo, Protocol},
         gossip_service::discover_cluster,
     },
@@ -283,7 +283,7 @@ impl LocalCluster {
         let leader_keypair = &keys_in_genesis[0].node_keypair;
         let leader_vote_keypair = &keys_in_genesis[0].vote_keypair;
         let leader_pubkey = leader_keypair.pubkey();
-        let leader_node = Node::new_localhost_with_pubkey(&leader_pubkey);
+        let leader_node = Node::new_localhost_with_pubkey(&leader_pubkey, DEFAULT_QUIC_ENDPOINTS);
 
         let GenesisConfigInfo {
             mut genesis_config,
@@ -492,7 +492,8 @@ impl LocalCluster {
             voting_keypair = Some(Arc::new(Keypair::new()));
         }
         let validator_pubkey = validator_keypair.pubkey();
-        let validator_node = Node::new_localhost_with_pubkey(&validator_keypair.pubkey());
+        let validator_node =
+            Node::new_localhost_with_pubkey(&validator_keypair.pubkey(), DEFAULT_QUIC_ENDPOINTS);
         let contact_info = validator_node.info.clone();
         let (ledger_path, _blockhash) = create_new_tmp_ledger!(&self.genesis_config);
 
@@ -1009,7 +1010,7 @@ impl Cluster for LocalCluster {
         cluster_validator_info: &mut ClusterValidatorInfo,
     ) -> (Node, Vec<ContactInfo>) {
         // Update the stored ContactInfo for this node
-        let node = Node::new_localhost_with_pubkey(pubkey);
+        let node = Node::new_localhost_with_pubkey(pubkey, DEFAULT_QUIC_ENDPOINTS);
         cluster_validator_info.info.contact_info = node.info.clone();
         cluster_validator_info.config.rpc_addrs =
             Some((node.info.rpc().unwrap(), node.info.rpc_pubsub().unwrap()));

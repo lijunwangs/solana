@@ -11,7 +11,7 @@ use {
         banking_trace::{BankingPacketBatch, BankingTracer, BANKING_TRACE_DIR_DEFAULT_BYTE_LIMIT},
         validator::BlockProductionMethod,
     },
-    solana_gossip::cluster_info::{ClusterInfo, Node},
+    solana_gossip::cluster_info::{ClusterInfo, Node, DEFAULT_QUIC_ENDPOINTS},
     solana_ledger::{
         blockstore::Blockstore,
         genesis_utils::{create_genesis_config, GenesisConfigInfo},
@@ -445,7 +445,7 @@ fn main() {
     let (gossip_vote_sender, gossip_vote_receiver) = banking_tracer.create_channel_gossip_vote();
     let cluster_info = {
         let keypair = Arc::new(Keypair::new());
-        let node = Node::new_localhost_with_pubkey(&keypair.pubkey());
+        let node = Node::new_localhost_with_pubkey(&keypair.pubkey(), DEFAULT_QUIC_ENDPOINTS);
         ClusterInfo::new(node.info, keypair, SocketAddrSpace::Unspecified)
     };
     let cluster_info = Arc::new(cluster_info);

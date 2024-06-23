@@ -2897,10 +2897,12 @@ pub struct NodeConfig {
     pub public_tpu_forwards_addr: Option<SocketAddr>,
     /// The number of TVU sockets to create
     pub num_tvu_sockets: NonZeroUsize,
+    /// The number of QUIC tpu endpoints
+    pub num_quic_endpoints: NonZeroUsize,
 }
 
 // This will be adjusted and parameterized in follow-on PRs.
-const QUIC_ENDPOINTS: usize = 1;
+pub const DEFAULT_QUIC_ENDPOINTS: usize = 1;
 
 #[derive(Debug)]
 pub struct Node {
@@ -2909,11 +2911,11 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new_localhost() -> Self {
+    pub fn new_localhost(num_quic_endpoints: usize) -> Self {
         let pubkey = solana_sdk::pubkey::new_rand();
-        Self::new_localhost_with_pubkey(&pubkey)
+        Self::new_localhost_with_pubkey(&pubkey, num_quic_endpoints)
     }
-    pub fn new_localhost_with_pubkey(pubkey: &Pubkey) -> Self {
+    pub fn new_localhost_with_pubkey(pubkey: &Pubkey, num_quic_endpoints: usize) -> Self {
         let localhost_ip_addr = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let localhost_bind_addr = format!("{localhost_ip_addr:?}:0");
         let unspecified_bind_addr = format!("{:?}:0", IpAddr::V4(Ipv4Addr::UNSPECIFIED));
@@ -2931,7 +2933,7 @@ impl Node {
             )
             .unwrap();
         let tpu_quic =
-            bind_more_with_config(tpu_quic, QUIC_ENDPOINTS, quic_config.clone()).unwrap();
+            bind_more_with_config(tpu_quic, num_quic_endpoints, quic_config.clone()).unwrap();
         let (gossip_port, (gossip, ip_echo)) =
             bind_common_in_range(localhost_ip_addr, port_range).unwrap();
         let gossip_addr = SocketAddr::new(localhost_ip_addr, gossip_port);
@@ -2947,7 +2949,7 @@ impl Node {
             )
             .unwrap();
         let tpu_forwards_quic =
-            bind_more_with_config(tpu_forwards_quic, QUIC_ENDPOINTS, quic_config).unwrap();
+            bind_more_with_config(tpu_forwards_quic, DEFAULT_QUIC_ENDPOINTS, quic_config).unwrap();
         let tpu_vote = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let repair = UdpSocket::bind(&localhost_bind_addr).unwrap();
         let rpc_port = find_available_port_in_range(localhost_ip_addr, port_range).unwrap();
@@ -3068,7 +3070,7 @@ impl Node {
             )
             .unwrap();
         let tpu_quic =
-            bind_more_with_config(tpu_quic, QUIC_ENDPOINTS, quic_config.clone()).unwrap();
+            bind_more_with_config(tpu_quic, DEFAULT_QUIC_ENDPOINTS, quic_config.clone()).unwrap();
         let ((tpu_forwards_port, tpu_forwards), (_tpu_forwards_quic_port, tpu_forwards_quic)) =
             bind_two_in_range_with_offset_and_config(
                 bind_ip_addr,
@@ -3079,7 +3081,7 @@ impl Node {
             )
             .unwrap();
         let tpu_forwards_quic =
-            bind_more_with_config(tpu_forwards_quic, QUIC_ENDPOINTS, quic_config).unwrap();
+            bind_more_with_config(tpu_forwards_quic, DEFAULT_QUIC_ENDPOINTS, quic_config).unwrap();
         let (tpu_vote_port, tpu_vote) = Self::bind(bind_ip_addr, port_range);
         let (_, retransmit_socket) = Self::bind(bind_ip_addr, port_range);
         let (_, repair) = Self::bind(bind_ip_addr, port_range);
@@ -3151,6 +3153,7 @@ impl Node {
             public_tpu_addr,
             public_tpu_forwards_addr,
             num_tvu_sockets,
+            num_quic_endpoints,
         } = config;
 
         let (gossip_port, (gossip, ip_echo)) =
@@ -3170,7 +3173,7 @@ impl Node {
             quic_config.clone(),
         );
         let tpu_quic =
-            bind_more_with_config(tpu_quic, QUIC_ENDPOINTS, quic_config.clone()).unwrap();
+            bind_more_with_config(tpu_quic, num_quic_endpoints.get(), quic_config.clone()).unwrap();
 
         let (tpu_forwards_port, tpu_forwards_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 8).expect("tpu_forwards multi_bind");
@@ -3183,8 +3186,12 @@ impl Node {
             ),
             quic_config.clone(),
         );
-        let tpu_forwards_quic =
-            bind_more_with_config(tpu_forwards_quic, QUIC_ENDPOINTS, quic_config.clone()).unwrap();
+        let tpu_forwards_quic = bind_more_with_config(
+            tpu_forwards_quic,
+            num_quic_endpoints.get(),
+            quic_config.clone(),
+        )
+        .unwrap();
 
         let (tpu_vote_port, tpu_vote_sockets) =
             multi_bind_in_range(bind_ip_addr, port_range, 1).expect("tpu_vote multi_bind");
