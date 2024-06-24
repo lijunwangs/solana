@@ -914,7 +914,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .hidden(hidden_unless_forced())
                 .help("Control the number of TPU QUIC endpoints. Higher QUIC endpoints offers better \
                        throughput at the higher CPU cost"),
-        )    
+        )
         .arg(
             Arg::with_name("staked_nodes_overrides")
                 .long("staked-nodes-overrides")

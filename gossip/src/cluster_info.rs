@@ -2911,11 +2911,19 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new_localhost(num_quic_endpoints: usize) -> Self {
+    pub fn new_localhost() -> Self {
         let pubkey = solana_sdk::pubkey::new_rand();
-        Self::new_localhost_with_pubkey(&pubkey, num_quic_endpoints)
+        Self::new_localhost_with_pubkey(&pubkey)
     }
-    pub fn new_localhost_with_pubkey(pubkey: &Pubkey, num_quic_endpoints: usize) -> Self {
+
+    pub fn new_localhost_with_pubkey(pubkey: &Pubkey) -> Self {
+        Self::new_localhost_with_pubkey_and_quic_endpoints(pubkey, DEFAULT_QUIC_ENDPOINTS)
+    }
+
+    pub fn new_localhost_with_pubkey_and_quic_endpoints(
+        pubkey: &Pubkey,
+        num_quic_endpoints: usize,
+    ) -> Self {
         let localhost_ip_addr = IpAddr::V4(Ipv4Addr::LOCALHOST);
         let localhost_bind_addr = format!("{localhost_ip_addr:?}:0");
         let unspecified_bind_addr = format!("{:?}:0", IpAddr::V4(Ipv4Addr::UNSPECIFIED));
@@ -3406,6 +3414,8 @@ mod tests {
             sync::Arc,
         },
     };
+    const DEFAULT_NUM_QUIC_ENDPOINTS: NonZeroUsize =
+        unsafe { NonZeroUsize::new_unchecked(DEFAULT_QUIC_ENDPOINTS) };
 
     #[test]
     fn test_gossip_node() {
@@ -3820,6 +3830,7 @@ mod tests {
             public_tpu_addr: None,
             public_tpu_forwards_addr: None,
             num_tvu_sockets: MINIMUM_NUM_TVU_SOCKETS,
+            num_quic_endpoints: DEFAULT_NUM_QUIC_ENDPOINTS,
         };
 
         let node = Node::new_with_external_ip(&solana_sdk::pubkey::new_rand(), config);
@@ -3842,6 +3853,7 @@ mod tests {
             public_tpu_addr: None,
             public_tpu_forwards_addr: None,
             num_tvu_sockets: MINIMUM_NUM_TVU_SOCKETS,
+            num_quic_endpoints: DEFAULT_NUM_QUIC_ENDPOINTS,
         };
 
         let node = Node::new_with_external_ip(&solana_sdk::pubkey::new_rand(), config);
