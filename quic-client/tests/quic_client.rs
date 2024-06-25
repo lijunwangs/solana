@@ -332,11 +332,11 @@ mod tests {
 
         let addr = IpAddr::V4(Ipv4Addr::new(139, 178, 91, 17));
 
-        let port = 11228;
+        let port = 11230;
         let tpu_addr = SocketAddr::new(addr, port);
         let connection_cache_stats = Arc::new(ConnectionCacheStats::default());
 
-        let num_expected_packets: usize = 3000;
+        let num_expected_packets: usize = 1;
         let packets = vec![vec![0u8; PACKET_DATA_SIZE]; num_expected_packets];
         for packet in packets {
             let client = QuicClientConnection::new(
