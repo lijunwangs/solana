@@ -72,6 +72,7 @@ use {
     },
     solana_streamer::{
         packet,
+        quic::DEFAULT_QUIC_ENDPOINTS,
         socket::SocketAddrSpace,
         streamer::{PacketBatchReceiver, PacketBatchSender},
     },
@@ -2900,9 +2901,6 @@ pub struct NodeConfig {
     /// The number of QUIC tpu endpoints
     pub num_quic_endpoints: NonZeroUsize,
 }
-
-// This will be adjusted and parameterized in follow-on PRs.
-pub const DEFAULT_QUIC_ENDPOINTS: usize = 1;
 
 #[derive(Debug)]
 pub struct Node {

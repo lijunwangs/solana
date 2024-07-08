@@ -1,5 +1,3 @@
-use solana_gossip::cluster_info::DEFAULT_QUIC_ENDPOINTS;
-
 use {
     clap::{
         crate_description, crate_name, App, AppSettings, Arg, ArgGroup, ArgMatches, SubCommand,
@@ -49,6 +47,7 @@ use {
     solana_send_transaction_service::send_transaction_service::{
         self, MAX_BATCH_SEND_RATE_MS, MAX_TRANSACTION_BATCH_SIZE,
     },
+    solana_streamer::quic::DEFAULT_QUIC_ENDPOINTS,
     solana_tpu_client::tpu_client::DEFAULT_TPU_CONNECTION_POOL_SIZE,
     solana_unified_scheduler_pool::DefaultSchedulerPool,
     std::{path::PathBuf, str::FromStr},
