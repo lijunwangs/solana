@@ -5,7 +5,7 @@ use {
     },
     crossbeam_channel::Sender,
     pem::Pem,
-    quinn::{Endpoint, IdleTimeout, ServerConfig},
+    quinn::{Endpoint, IdleTimeout, /*MtuDiscoveryConfig,*/ ServerConfig},
     rustls::{server::ClientCertVerified, Certificate, DistinguishedName},
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -81,6 +81,10 @@ pub(crate) fn configure_server(
     server_config.use_retry(true);
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
+    // let mut mtu_discovery_config =  MtuDiscoveryConfig::default();
+    // mtu_discovery_config.upper_bound(1450);
+    // config.mtu_discovery_config(Some(mtu_discovery_config));
+    config.mtu_discovery_config(None);
     // QUIC_MAX_CONCURRENT_STREAMS doubled, which was found to improve reliability
     const MAX_CONCURRENT_UNI_STREAMS: u32 =
         (QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS.saturating_mul(2)) as u32;
