@@ -131,6 +131,8 @@ impl QuicLazyInitializedEndpoint {
         let timeout = IdleTimeout::try_from(QUIC_MAX_TIMEOUT).unwrap();
         transport_config.max_idle_timeout(Some(timeout));
         transport_config.keep_alive_interval(Some(QUIC_KEEP_ALIVE));
+        transport_config.mtu_discovery_config(None);
+
         config.transport_config(Arc::new(transport_config));
 
         endpoint.set_default_client_config(config);
