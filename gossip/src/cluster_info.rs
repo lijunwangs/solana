@@ -3412,8 +3412,8 @@ mod tests {
             sync::Arc,
         },
     };
-    const DEFAULT_NUM_QUIC_ENDPOINTS: NonZeroUsize = NonZeroUsize::new(DEFAULT_QUIC_ENDPOINTS)
-        .expect("DEFAULT_QUIC_ENDPOINTS should be non-zero");
+    const DEFAULT_NUM_QUIC_ENDPOINTS: NonZeroUsize =
+        NonZeroUsize::new(DEFAULT_QUIC_ENDPOINTS).unwrap();
 
     #[test]
     fn test_gossip_node() {
