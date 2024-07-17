@@ -3413,7 +3413,7 @@ mod tests {
         },
     };
     const DEFAULT_NUM_QUIC_ENDPOINTS: NonZeroUsize =
-        NonZeroUsize::new(DEFAULT_QUIC_ENDPOINTS).unwrap();
+        unsafe { NonZeroUsize::new_unchecked(DEFAULT_QUIC_ENDPOINTS) };
 
     #[test]
     fn test_gossip_node() {
