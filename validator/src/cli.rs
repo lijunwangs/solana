@@ -905,14 +905,15 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .help("Controls the rate of the clients connections per IpAddr per minute."),
         )
         .arg(
-            Arg::with_name("tpu_num_quic_endpoints")
-                .long("tpu-num-quic-endpoints")
+            Arg::with_name("num_quic_endpoints")
+                .long("num-quic-endpoints")
                 .takes_value(true)
-                .default_value(&default_args.tpu_num_quic_endpoints)
+                .default_value(&default_args.num_quic_endpoints)
                 .validator(is_parsable::<usize>)
                 .hidden(hidden_unless_forced())
-                .help("Control the number of TPU QUIC endpoints. Higher QUIC endpoints offers better \
-                       throughput at the higher CPU cost"),
+                .help("The number of QUIC endpoints used for TPU and TPU-Forward. It can be increased to \
+                       increase network ingest throughput, at the expense of higher CPU and general \
+                       validator load."),
         )
         .arg(
             Arg::with_name("staked_nodes_overrides")
@@ -2224,7 +2225,7 @@ pub struct DefaultArgs {
     pub accounts_shrink_ratio: String,
     pub tpu_connection_pool_size: String,
     pub tpu_max_connections_per_ipaddr_per_minute: String,
-    pub tpu_num_quic_endpoints: String,
+    pub num_quic_endpoints: String,
 
     // Exit subcommand
     pub exit_min_idle_time: String,
@@ -2316,7 +2317,7 @@ impl DefaultArgs {
             tpu_connection_pool_size: DEFAULT_TPU_CONNECTION_POOL_SIZE.to_string(),
             tpu_max_connections_per_ipaddr_per_minute:
                 DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE.to_string(),
-            tpu_num_quic_endpoints: DEFAULT_QUIC_ENDPOINTS.to_string(),
+            num_quic_endpoints: DEFAULT_QUIC_ENDPOINTS.to_string(),
             rpc_max_request_body_size: MAX_REQUEST_BODY_SIZE.to_string(),
             exit_min_idle_time: "10".to_string(),
             exit_max_delinquent_stake: "5".to_string(),
