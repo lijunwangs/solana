@@ -331,6 +331,7 @@ async fn run_server(
                 stats
                     .connection_rate_limited_across_all
                     .fetch_add(1, Ordering::Relaxed);
+                connection.ignore();
                 continue;
             }
 
@@ -349,6 +350,7 @@ async fn run_server(
                 stats
                     .connection_rate_limited_per_ipaddr
                     .fetch_add(1, Ordering::Relaxed);
+                connection.ignore();
                 continue;
             }
 
