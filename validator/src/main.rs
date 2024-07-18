@@ -1946,7 +1946,7 @@ pub fn main() {
                 })
             });
 
-    let num_quic_endpoints = value_t_or_exit!(matches, "tpu_num_quic_endpoints", NonZeroUsize);
+    let num_quic_endpoints = value_t_or_exit!(matches, "num_quic_endpoints", NonZeroUsize);
     let node_config = NodeConfig {
         gossip_addr,
         port_range: dynamic_port_range,
