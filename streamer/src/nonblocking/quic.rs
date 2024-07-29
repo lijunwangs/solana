@@ -136,7 +136,7 @@ impl ConnectionPeerType {
 
 pub struct SpawnNonBlockingServerResult {
     pub endpoint: Endpoint,
-    pub stats: Arc<StreamStats>,
+    pub stats: Arc<StreamerStats>,
     pub thread: JoinHandle<()>,
     pub max_concurrent_connections: usize,
 }
@@ -170,7 +170,7 @@ pub fn spawn_server(
     )
     .map_err(QuicServerError::EndpointFailed)?;
 
-    let stats = Arc::<StreamStats>::default();
+    let stats = Arc::<StreamerStats>::default();
     let handle = tokio::spawn(run_server(
         name,
         endpoint.clone(),

@@ -49,7 +49,7 @@ use {
     solana_measure::measure::Measure,
     solana_net_utils::{
         bind_common, bind_common_in_range, bind_in_range, bind_two_in_range_with_offset,
-        find_available_port_in_range, multi_bind_in_range, PortRange,
+        find_available_port_in_range, multi_bind_in_range, PortRange, VALIDATOR_PORT_RANGE,
     },
     solana_perf::{
         data_budget::DataBudget,

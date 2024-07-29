@@ -175,12 +175,11 @@ pub enum QuicServerError {
 
 pub struct EndpointKeyUpdater {
     endpoint: Endpoint,
-    max_concurrent_connections: usize,
 }
 
 impl NotifyKeyUpdate for EndpointKeyUpdater {
     fn update_key(&self, key: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
-        let (config, _) = configure_server(key, self.max_concurrent_connections)?;
+        let (config, _) = configure_server(key)?;
         self.endpoint.set_server_config(Some(config));
         Ok(())
     }
@@ -638,7 +637,6 @@ pub fn spawn_server(
         .unwrap();
     let updater = EndpointKeyUpdater {
         endpoint: result.endpoint.clone(),
-        max_concurrent_connections: result.max_concurrent_connections,
     };
     Ok(SpawnServerResult {
         endpoint: result.endpoint,
