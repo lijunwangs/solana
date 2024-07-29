@@ -337,9 +337,7 @@ impl LocalCluster {
             socket_addr_space,
             DEFAULT_TPU_USE_QUIC,
             DEFAULT_TPU_CONNECTION_POOL_SIZE,
-            // We are turning tpu_enable_udp to true in order to prevent concurrent local cluster tests
-            // to use the same QUIC ports due to SO_REUSEPORT.
-            true,
+            DEFAULT_TPU_ENABLE_UDP,
             32, // max connections per IpAddr per minute
             Arc::new(RwLock::new(None)),
         )

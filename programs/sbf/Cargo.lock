@@ -6388,7 +6388,6 @@ dependencies = [
  "bytes",
  "crossbeam-channel",
  "dashmap",
- "futures 0.3.30",
  "futures-util",
  "histogram",
  "indexmap 2.2.6",

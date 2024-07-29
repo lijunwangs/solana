@@ -16,10 +16,9 @@ use {
     },
     bytes::Bytes,
     crossbeam_channel::Sender,
-    futures::{stream::FuturesUnordered, Future, StreamExt as _},
     indexmap::map::{Entry, IndexMap},
     percentage::Percentage,
-    quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
+    quinn::{Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
     rand::{thread_rng, Rng},
     smallvec::SmallVec,
@@ -41,13 +40,11 @@ use {
     std::{
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
-        pin::Pin,
         // CAUTION: be careful not to introduce any awaits while holding an RwLock.
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, RwLock,
         },
-        task::Poll,
         time::{Duration, Instant},
     },
     tokio::{
@@ -59,7 +56,6 @@ use {
         // but if we do, the scope of the RwLock must always be a subset of the async Mutex
         // (i.e. lock order is always async Mutex -> RwLock). Also, be careful not to
         // introduce any other awaits while holding the RwLock.
-        select,
         sync::{Mutex, MutexGuard},
         task::JoinHandle,
         time::{sleep, timeout},
@@ -139,8 +135,8 @@ impl ConnectionPeerType {
 }
 
 pub struct SpawnNonBlockingServerResult {
-    pub endpoints: Vec<Endpoint>,
-    pub stats: Arc<StreamerStats>,
+    pub endpoint: Endpoint,
+    pub stats: Arc<StreamStats>,
     pub thread: JoinHandle<()>,
     pub max_concurrent_connections: usize,
 }
@@ -161,61 +157,23 @@ pub fn spawn_server(
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
-    spawn_server_multi(
-        name,
-        vec![sock],
-        keypair,
-        packet_sender,
-        exit,
-        max_connections_per_peer,
-        staked_nodes,
-        max_staked_connections,
-        max_unstaked_connections,
-        max_streams_per_ms,
-        max_connections_per_ipaddr_per_min,
-        wait_for_chunk_timeout,
-        coalesce,
-    )
-}
-
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-pub fn spawn_server_multi(
-    name: &'static str,
-    sockets: Vec<UdpSocket>,
-    keypair: &Keypair,
-    packet_sender: Sender<PacketBatch>,
-    exit: Arc<AtomicBool>,
-    max_connections_per_peer: usize,
-    staked_nodes: Arc<RwLock<StakedNodes>>,
-    max_staked_connections: usize,
-    max_unstaked_connections: usize,
-    max_streams_per_ms: u64,
-    max_connections_per_ipaddr_per_min: u64,
-    wait_for_chunk_timeout: Duration,
-    coalesce: Duration,
-) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
-    info!("Start {name} quic server on {sockets:?}");
-    let concurrent_connections =
-        (max_staked_connections + max_unstaked_connections) / sockets.len();
+    info!("Start {name} quic server on {sock:?}");
+    let concurrent_connections = max_staked_connections + max_unstaked_connections;
     let max_concurrent_connections = concurrent_connections + concurrent_connections / 4;
     let (config, _) = configure_server(keypair)?;
 
-    let endpoints = sockets
-        .into_iter()
-        .map(|sock| {
-            Endpoint::new(
-                EndpointConfig::default(),
-                Some(config.clone()),
-                sock,
-                Arc::new(TokioRuntime),
-            )
-            .map_err(QuicServerError::EndpointFailed)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let stats = Arc::<StreamerStats>::default();
+    let endpoint = Endpoint::new(
+        EndpointConfig::default(),
+        Some(config),
+        sock,
+        Arc::new(TokioRuntime),
+    )
+    .map_err(QuicServerError::EndpointFailed)?;
+
+    let stats = Arc::<StreamStats>::default();
     let handle = tokio::spawn(run_server(
         name,
-        endpoints.clone(),
+        endpoint.clone(),
         packet_sender,
         exit,
         max_connections_per_peer,
@@ -229,7 +187,7 @@ pub fn spawn_server_multi(
         coalesce,
     ));
     Ok(SpawnNonBlockingServerResult {
-        endpoints,
+        endpoint,
         stats,
         thread: handle,
         max_concurrent_connections,
@@ -239,7 +197,7 @@ pub fn spawn_server_multi(
 #[allow(clippy::too_many_arguments)]
 async fn run_server(
     name: &'static str,
-    incoming: Vec<Endpoint>,
+    incoming: Endpoint,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
     max_connections_per_peer: usize,
@@ -276,37 +234,8 @@ async fn run_server(
         stats.clone(),
         coalesce,
     ));
-
-    let mut accepts = incoming
-        .iter()
-        .enumerate()
-        .map(|(i, incoming)| {
-            Box::pin(EndpointAccept {
-                accept: incoming.accept(),
-                endpoint: i,
-            })
-        })
-        .collect::<FuturesUnordered<_>>();
     while !exit.load(Ordering::Relaxed) {
-        let timeout_connection = select! {
-            ready = accepts.next() => {
-                if let Some((connecting, i)) = ready {
-                    accepts.push(
-                        Box::pin(EndpointAccept {
-                            accept: incoming[i].accept(),
-                            endpoint: i,
-                        }
-                    ));
-                    Ok(connecting)
-                } else {
-                    // we can't really get here - we never poll an empty FuturesUnordered
-                    continue
-                }
-            }
-            _ = tokio::time::sleep(WAIT_FOR_CONNECTION_TIMEOUT) => {
-                Err(())
-            }
-        };
+        let timeout_connection = timeout(WAIT_FOR_CONNECTION_TIMEOUT, incoming.accept()).await;
 
         if last_datapoint.elapsed().as_secs() >= 5 {
             stats.report(name);
@@ -1422,25 +1351,6 @@ impl ConnectionTable {
     }
 }
 
-struct EndpointAccept<'a> {
-    endpoint: usize,
-    accept: Accept<'a>,
-}
-
-impl<'a> Future for EndpointAccept<'a> {
-    type Output = (Option<quinn::Incoming>, usize);
-
-    fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context) -> Poll<Self::Output> {
-        let i = self.endpoint;
-        // Safety:
-        // self is pinned and accept is a field so it can't get moved out. See safety docs of
-        // map_unchecked_mut.
-        unsafe { self.map_unchecked_mut(|this| &mut this.accept) }
-            .poll(cx)
-            .map(|r| (r, i))
-    }
-}
-
 #[cfg(test)]
 pub mod test {
     use {
@@ -1556,47 +1466,20 @@ pub mod test {
         SocketAddr,
         Arc<StreamerStats>,
     ) {
-        let sockets = {
-            #[cfg(not(target_os = "windows"))]
-            {
-                use std::{
-                    os::fd::{FromRawFd, IntoRawFd},
-                    str::FromStr as _,
-                };
-                (0..10)
-                    .map(|_| {
-                        let sock = socket2::Socket::new(
-                            socket2::Domain::IPV4,
-                            socket2::Type::DGRAM,
-                            Some(socket2::Protocol::UDP),
-                        )
-                        .unwrap();
-                        sock.set_reuse_port(true).unwrap();
-                        sock.bind(&SocketAddr::from_str("127.0.0.1:0").unwrap().into())
-                            .unwrap();
-                        unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
-                    })
-                    .collect::<Vec<_>>()
-            }
-            #[cfg(target_os = "windows")]
-            {
-                vec![UdpSocket::bind("127.0.0.1:0").unwrap()]
-            }
-        };
-
+        let s = UdpSocket::bind("127.0.0.1:0").unwrap();
         let exit = Arc::new(AtomicBool::new(false));
         let (sender, receiver) = unbounded();
         let keypair = Keypair::new();
-        let server_address = sockets[0].local_addr().unwrap();
+        let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
         let SpawnNonBlockingServerResult {
-            endpoints: _,
+            endpoint: _,
             stats,
             thread: t,
             max_concurrent_connections: _,
-        } = spawn_server_multi(
+        } = spawn_server(
             "quic_streamer_test",
-            sockets,
+            s,
             &keypair,
             sender,
             exit.clone(),
@@ -2031,7 +1914,7 @@ pub mod test {
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let SpawnNonBlockingServerResult {
-            endpoints: _,
+            endpoint: _,
             stats: _,
             thread: t,
             max_concurrent_connections: _,
@@ -2067,7 +1950,7 @@ pub mod test {
         let server_address = s.local_addr().unwrap();
         let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
         let SpawnNonBlockingServerResult {
-            endpoints: _,
+            endpoint: _,
             stats,
             thread: t,
             max_concurrent_connections: _,
