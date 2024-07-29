@@ -157,7 +157,7 @@ fn new_server_config(cert: Certificate, key: PrivateKey) -> Result<ServerConfig,
     let mut config = ServerConfig::with_crypto(Arc::new(config));
     config
         .transport_config(Arc::new(new_transport_config()))
-        .use_retry(true)
+        //.use_retry(true)
         .migration(false);
     Ok(config)
 }
@@ -202,16 +202,24 @@ async fn run_server(
     let report_metrics_task =
         tokio::task::spawn(report_metrics_task("repair_quic_server", stats.clone()));
     while let Some(connecting) = endpoint.accept().await {
-        tokio::task::spawn(handle_connecting_task(
-            endpoint.clone(),
-            connecting,
-            sender.clone(),
-            bank_forks.clone(),
-            prune_cache_pending.clone(),
-            router.clone(),
-            cache.clone(),
-            stats.clone(),
-        ));
+        let connection = connecting.accept();
+        match connection {
+            Ok(connecting) => {
+                tokio::task::spawn(handle_connecting_task(
+                    endpoint.clone(),
+                    connecting,
+                    sender.clone(),
+                    bank_forks.clone(),
+                    prune_cache_pending.clone(),
+                    router.clone(),
+                    cache.clone(),
+                    stats.clone(),
+                ));        
+            },
+            Err(error) => {
+                debug!("Error while accepting connection {error:?}");
+            },
+        }
     }
     report_metrics_task.abort();
 }
@@ -648,9 +656,6 @@ fn record_error(err: &Error, stats: &TurbineQuicStats) {
         Error::ConnectError(ConnectError::EndpointStopping) => {
             add_metric!(stats.connect_error_other)
         }
-        Error::ConnectError(ConnectError::TooManyConnections) => {
-            add_metric!(stats.connect_error_too_many_connections)
-        }
         Error::ConnectError(ConnectError::InvalidDnsName(_)) => {
             add_metric!(stats.connect_error_other)
         }
@@ -695,6 +700,12 @@ fn record_error(err: &Error, stats: &TurbineQuicStats) {
             add_metric!(stats.send_datagram_error_connection_lost)
         }
         Error::TlsError(_) => (),
+        Error::ConnectError(ConnectError::CidsExhausted) => {
+            todo!(); //add_metric!(stats.connect_error_cids_exhausted)
+        }
+        Error::ConnectionError(ConnectionError::CidsExhausted) => {
+            todo!(); //add_metric!(stats.connection_error_cids_exhausted)
+        }
     }
 }
 

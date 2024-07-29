@@ -354,20 +354,28 @@ async fn run_server(
             stats
                 .outstanding_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);
-            tokio::spawn(setup_connection(
-                connection,
-                unstaked_connection_table.clone(),
-                staked_connection_table.clone(),
-                sender.clone(),
-                max_connections_per_peer,
-                staked_nodes.clone(),
-                max_staked_connections,
-                max_unstaked_connections,
-                max_streams_per_ms,
-                stats.clone(),
-                wait_for_chunk_timeout,
-                stream_load_ema.clone(),
-            ));
+            let connection = connection.accept();
+            match connection {
+                Ok(connection) => {
+                    tokio::spawn(setup_connection(
+                        connection,
+                        unstaked_connection_table.clone(),
+                        staked_connection_table.clone(),
+                        sender.clone(),
+                        max_connections_per_peer,
+                        staked_nodes.clone(),
+                        max_staked_connections,
+                        max_unstaked_connections,
+                        max_streams_per_ms,
+                        stats.clone(),
+                        wait_for_chunk_timeout,
+                        stream_load_ema.clone(),
+                    ));
+                }
+                Err(err) => {
+                    debug!("accept(): Ran into an error while accepting connection {err:?}");
+                }
+            }
         } else {
             debug!("accept(): Timed out waiting for connection");
         }
@@ -1421,7 +1429,7 @@ struct EndpointAccept<'a> {
 }
 
 impl<'a> Future for EndpointAccept<'a> {
-    type Output = (Option<quinn::Connecting>, usize);
+    type Output = (Option<quinn::Incoming>, usize);
 
     fn poll(self: Pin<&mut Self>, cx: &mut std::task::Context) -> Poll<Self::Output> {
         let i = self.endpoint;
