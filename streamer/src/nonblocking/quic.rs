@@ -352,10 +352,6 @@ async fn run_server(
                 continue;
             }
 
-            // if remote_address.ip() == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
-            //     connection.ignore();
-            //     continue;
-            // }
             stats
                 .outstanding_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);

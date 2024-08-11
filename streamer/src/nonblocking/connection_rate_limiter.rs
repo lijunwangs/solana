@@ -12,9 +12,9 @@ impl ConnectionRateLimiter {
     /// less frequent connections.
     pub fn new(limit_per_minute: u64) -> Self {
         let quota = Quota::per_minute(NonZeroU32::new(limit_per_minute as u32).unwrap()); // Adjust the rate limit as needed
-         Self {
-             limiter: DefaultKeyedRateLimiter::keyed(quota),
-         }
+        Self {
+            limiter: DefaultKeyedRateLimiter::keyed(quota),
+        }
     }
 
     /// Check if the connection from the said `ip` is allowed.
@@ -56,9 +56,9 @@ impl TotalConnectionRateLimiter {
     /// Create a new rate limiter. The rate is specified as the count per second.
     pub fn new(limit_per_second: u64) -> Self {
         let quota = Quota::per_second(NonZeroU32::new(limit_per_second as u32).unwrap()); // Adjust the rate limit as needed
-         Self {
-             limiter: RateLimiter::direct(quota),
-         }
+        Self {
+            limiter: RateLimiter::direct(quota),
+        }
     }
 
     /// Check if a connection is allowed.
