@@ -40,7 +40,7 @@ use {
     solana_transaction_metrics_tracker::signature_if_should_track_packet,
     std::{
         iter::repeat_with,
-        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+        net::{IpAddr, SocketAddr, UdpSocket},
         pin::Pin,
         // CAUTION: be careful not to introduce any awaits while holding an RwLock.
         sync::{
