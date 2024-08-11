@@ -322,38 +322,34 @@ async fn run_server(
                 .fetch_add(1, Ordering::Relaxed);
             let remote_address = connection.remote_address();
 
-            // // first check overall connection rate limit:
-            // if !overall_connection_rate_limiter.is_allowed() {
-            //     debug!(
-            //         "Reject connection from {:?} -- total rate limiting exceeded",
-            //         remote_address.ip()
-            //     );
-            //     stats
-            //         .connection_rate_limited_across_all
-            //         .fetch_add(1, Ordering::Relaxed);
-            //     connection.ignore();
-            //     continue;
-            // }
+            // first check overall connection rate limit:
+            if !overall_connection_rate_limiter.is_allowed() {
+                debug!(
+                    "Reject connection from {:?} -- total rate limiting exceeded",
+                    remote_address.ip()
+                );
+                stats
+                    .connection_rate_limited_across_all
+                    .fetch_add(1, Ordering::Relaxed);
+                connection.ignore();
+                continue;
+            }
 
-            // if rate_limiter.len() > CONNECTION_RATE_LIMITER_CLEANUP_SIZE_THRESHOLD {
-            //     rate_limiter.retain_recent();
-            // }
-            // stats
-            //     .connection_rate_limiter_length
-            //     .store(rate_limiter.len(), Ordering::Relaxed);
-            // debug!("Got a connection {remote_address:?}");
-            // if !rate_limiter.is_allowed(&remote_address.ip()) {
-            //     debug!(
-            //         "Reject connection from {:?} -- rate limiting exceeded",
-            //         remote_address
-            //     );
-            //     stats
-            //         .connection_rate_limited_per_ipaddr
-            //         .fetch_add(1, Ordering::Relaxed);
-            //     connection.ignore();
-            //     continue;
-            // }
-            if remote_address.ip() == IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)) {
+            if rate_limiter.len() > CONNECTION_RATE_LIMITER_CLEANUP_SIZE_THRESHOLD {
+                rate_limiter.retain_recent();
+            }
+            stats
+                .connection_rate_limiter_length
+                .store(rate_limiter.len(), Ordering::Relaxed);
+            debug!("Got a connection {remote_address:?}");
+            if !rate_limiter.is_allowed(&remote_address.ip()) {
+                debug!(
+                    "Reject connection from {:?} -- rate limiting exceeded",
+                    remote_address
+                );
+                stats
+                    .connection_rate_limited_per_ipaddr
+                    .fetch_add(1, Ordering::Relaxed);
                 connection.ignore();
                 continue;
             }
