@@ -11,7 +11,8 @@ impl ConnectionRateLimiter {
     /// Create a new rate limiter per IpAddr. The rate is specified as the count per minute to allow for
     /// less frequent connections.
     pub fn new(limit_per_minute: u64) -> Self {
-        let quota = Quota::per_minute(NonZeroU32::new(limit_per_minute as u32).unwrap()); // Adjust the rate limit as needed
+        let quota =
+            Quota::per_minute(NonZeroU32::new(u32::try_from(limit_per_minute).unwrap()).unwrap());
         Self {
             limiter: DefaultKeyedRateLimiter::keyed(quota),
         }
