@@ -56,7 +56,8 @@ pub struct TotalConnectionRateLimiter {
 impl TotalConnectionRateLimiter {
     /// Create a new rate limiter. The rate is specified as the count per second.
     pub fn new(limit_per_second: u64) -> Self {
-        let quota = Quota::per_second(NonZeroU32::new(limit_per_second as u32).unwrap()); // Adjust the rate limit as needed
+        let quota =
+            Quota::per_second(NonZeroU32::new(u32::try_from(limit_per_second).unwrap()).unwrap());
         Self {
             limiter: RateLimiter::direct(quota),
         }
