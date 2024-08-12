@@ -77,7 +77,7 @@ pub mod test {
 
     #[tokio::test]
     async fn test_total_connection_rate_limiter() {
-        let mut limiter = TotalConnectionRateLimiter::new(2);
+        let limiter = TotalConnectionRateLimiter::new(2);
         assert!(limiter.is_allowed());
         assert!(limiter.is_allowed());
         assert!(!limiter.is_allowed());
