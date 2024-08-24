@@ -239,7 +239,7 @@ pub fn spawn_server_multi(
 #[allow(clippy::too_many_arguments)]
 async fn run_server(
     name: &'static str,
-    incoming: Vec<Endpoint>,
+    endpoints: Vec<Endpoint>,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
     max_connections_per_peer: usize,
@@ -268,7 +268,7 @@ async fn run_server(
     ));
     stats
         .quic_endpoints_count
-        .store(incoming.len(), Ordering::Relaxed);
+        .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
     let (sender, receiver) = async_unbounded();
@@ -280,7 +280,7 @@ async fn run_server(
         coalesce,
     ));
 
-    let mut accepts = incoming
+    let mut accepts = endpoints
         .iter()
         .enumerate()
         .map(|(i, incoming)| {
@@ -296,7 +296,7 @@ async fn run_server(
                 if let Some((connecting, i)) = ready {
                     accepts.push(
                         Box::pin(EndpointAccept {
-                            accept: incoming[i].accept(),
+                            accept: endpoints[i].accept(),
                             endpoint: i,
                         }
                     ));
@@ -351,6 +351,14 @@ async fn run_server(
                     .connection_rate_limited_per_ipaddr
                     .fetch_add(1, Ordering::Relaxed);
                 incoming.ignore();
+                continue;
+            }
+
+            // Use retry to make it harder to have stateless initial packet attack.
+            if !incoming.remote_address_validated() {
+                // The unwrap below is safe as we can only have error when the remote
+                // address is already validated.
+                incoming.retry().unwrap();
                 continue;
             }
 
