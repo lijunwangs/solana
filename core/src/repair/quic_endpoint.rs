@@ -179,7 +179,7 @@ fn new_server_config(
     key: PrivateKeyDer<'static>,
 ) -> Result<ServerConfig, rustls::Error> {
     let mut config = rustls::ServerConfig::builder()
-        .with_client_cert_verifier(Arc::new(SkipClientVerification {}))
+        .with_client_cert_verifier(SkipClientVerification::new())
         .with_single_cert(vec![cert], key)?;
     config.alpn_protocols = vec![ALPN_REPAIR_PROTOCOL_ID.to_vec()];
     let quic_server_config = QuicServerConfig::try_from(config)
@@ -198,7 +198,7 @@ fn new_client_config(
 ) -> Result<ClientConfig, rustls::Error> {
     let mut config = rustls::ClientConfig::builder()
         .dangerous()
-        .with_custom_certificate_verifier(Arc::new(SkipServerVerification {}))
+        .with_custom_certificate_verifier(SkipServerVerification::new())
         .with_client_auth_cert(vec![cert], key)?;
     config.enable_early_data = true;
     config.alpn_protocols = vec![ALPN_REPAIR_PROTOCOL_ID.to_vec()];
