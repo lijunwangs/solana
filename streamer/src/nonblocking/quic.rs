@@ -391,6 +391,7 @@ async fn run_server(
             debug!("accept(): Timed out waiting for connection");
         }
     }
+    println!("Quit quic server");
 }
 
 fn prune_unstaked_connection_table(
