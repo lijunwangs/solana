@@ -2521,6 +2521,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
     let on_partition_before_resolved = |_: &mut LocalCluster, _: &mut ()| {};
 
     let on_partition_resolved = |cluster: &mut LocalCluster, _: &mut ()| {
+        println!("Killing one validator!");
         cluster.check_for_new_roots(
             20,
             "run_test_load_program_accounts_partition",
