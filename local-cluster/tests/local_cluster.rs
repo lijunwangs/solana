@@ -2508,6 +2508,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
     );
 
     let on_partition_start = |cluster: &mut LocalCluster, _: &mut ()| {
+        println!("partition started....!");
         let update_client = cluster
             .get_validator_client(cluster.entry_point_info.pubkey())
             .unwrap();
@@ -2516,6 +2517,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
             .get_validator_client(cluster.entry_point_info.pubkey())
             .unwrap();
         scan_client_sender.send(scan_client).unwrap();
+        println!("is partition done??");
     };
 
     let on_partition_before_resolved = |_: &mut LocalCluster, _: &mut ()| {};
