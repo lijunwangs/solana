@@ -406,7 +406,11 @@ pub fn run_cluster_partition<C>(
     on_partition_start(&mut cluster, &mut context);
     turbine_disabled.store(true, Ordering::Relaxed);
 
+    println!("PARTITION_TEST sleep {:?}", partition_duration);
+
     sleep(partition_duration);
+
+    println!("PARTITION_TEST on_before_partition_resolved");
 
     on_before_partition_resolved(&mut cluster, &mut context);
     println!("PARTITION_TEST remove partition");
