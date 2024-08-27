@@ -241,7 +241,7 @@ pub fn run_kill_partition_switch_threshold<C>(
             [0..stakes_to_kill.len()]
             .iter()
             .map(|validator_to_kill| {
-                info!("Killing validator with id: {}", validator_to_kill);
+                println!("Killing validator with id: {}", validator_to_kill);
                 cluster.exit_node(validator_to_kill)
             })
             .collect();
@@ -313,6 +313,7 @@ pub fn run_cluster_partition<C>(
     additional_accounts: Vec<(Pubkey, AccountSharedData)>,
 ) {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
+    println!("run_cluster_partition");
     info!("PARTITION_TEST!");
     let num_nodes = partitions.len();
     let node_stakes: Vec<_> = partitions
@@ -370,13 +371,13 @@ pub fn run_cluster_partition<C>(
         ..ClusterConfig::default()
     };
 
-    info!(
+    println!(
         "PARTITION_TEST starting cluster with {:?} partitions slots_per_epoch: {}",
         partitions, config.slots_per_epoch,
     );
     let mut cluster = LocalCluster::new(&mut config, SocketAddrSpace::Unspecified);
 
-    info!("PARTITION_TEST spend_and_verify_all_nodes(), ensure all nodes are caught up");
+    println!("PARTITION_TEST spend_and_verify_all_nodes(), ensure all nodes are caught up");
     cluster_tests::spend_and_verify_all_nodes(
         &cluster.entry_point_info,
         &cluster.funding_keypair,
@@ -394,28 +395,28 @@ pub fn run_cluster_partition<C>(
     .unwrap();
 
     // Check epochs have correct number of slots
-    info!("PARTITION_TEST sleeping until partition starting condition",);
+    println!("PARTITION_TEST sleeping until partition starting condition",);
     for node in &cluster_nodes {
         let node_client = RpcClient::new_socket(node.rpc().unwrap());
         let epoch_info = node_client.get_epoch_info().unwrap();
         assert_eq!(epoch_info.slots_in_epoch, slots_per_epoch);
     }
 
-    info!("PARTITION_TEST start partition");
+    println!("PARTITION_TEST start partition");
     on_partition_start(&mut cluster, &mut context);
     turbine_disabled.store(true, Ordering::Relaxed);
 
     sleep(partition_duration);
 
     on_before_partition_resolved(&mut cluster, &mut context);
-    info!("PARTITION_TEST remove partition");
+    println!("PARTITION_TEST remove partition");
     turbine_disabled.store(false, Ordering::Relaxed);
 
     // Give partitions time to propagate their blocks from during the partition
     // after the partition resolves
     let timeout_duration = Duration::from_secs(10);
     let propagation_duration = partition_duration;
-    info!(
+    println!(
         "PARTITION_TEST resolving partition. sleeping {} ms",
         timeout_duration.as_millis()
     );
@@ -425,7 +426,7 @@ pub fn run_cluster_partition<C>(
         propagation_duration.as_millis()
     );
     sleep(propagation_duration);
-    info!("PARTITION_TEST resuming normal operation");
+    println!("PARTITION_TEST resuming normal operation");
     on_partition_resolved(&mut cluster, &mut context);
 }
 
