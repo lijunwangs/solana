@@ -4450,8 +4450,7 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 [[package]]
 name = "quinn"
 version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b22d8e7369034b9a7132bc2008cac12f2013c8132b45e0554e6e20e2617f2156"
+source = "git+https://github.com/lijunwangs/quinn.git?rev=5b5c6d97a0f6086f668f7adb11d7091bc2aa4fa5#5b5c6d97a0f6086f668f7adb11d7091bc2aa4fa5"
 dependencies = [
  "bytes",
  "pin-project-lite",
@@ -4468,8 +4467,7 @@ dependencies = [
 [[package]]
 name = "quinn-proto"
 version = "0.11.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba92fb39ec7ad06ca2582c0ca834dfeadcaf06ddfc8e635c80aa7e1c05315fdd"
+source = "git+https://github.com/lijunwangs/quinn.git?rev=5b5c6d97a0f6086f668f7adb11d7091bc2aa4fa5#5b5c6d97a0f6086f668f7adb11d7091bc2aa4fa5"
 dependencies = [
  "bytes",
  "rand 0.8.5",
@@ -4486,8 +4484,7 @@ dependencies = [
 [[package]]
 name = "quinn-udp"
 version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bffec3605b73c6f1754535084a85229fa8a30f86014e6c81aeec4abb68b0285"
+source = "git+https://github.com/lijunwangs/quinn.git?rev=5b5c6d97a0f6086f668f7adb11d7091bc2aa4fa5#5b5c6d97a0f6086f668f7adb11d7091bc2aa4fa5"
 dependencies = [
  "libc",
  "once_cell",
