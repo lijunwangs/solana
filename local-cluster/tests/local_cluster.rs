@@ -2910,6 +2910,7 @@ fn setup_transfer_scan_threads(
             let client = update_client_receiver.recv().unwrap();
             loop {
                 if exit_.load(Ordering::Relaxed) {
+                    println!("The client is shutting down...");
                     return;
                 }
                 let (blockhash, _) = client
