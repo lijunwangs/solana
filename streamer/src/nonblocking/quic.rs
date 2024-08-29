@@ -359,6 +359,7 @@ async fn run_server(
             if !incoming.remote_address_validated() {
                 // The unwrap below is safe as we can only have error when the remote
                 // address is already validated.
+                println!("retry connection from {:?}", incoming.remote_address());
                 let _ = incoming.retry();
                 continue;
             }
@@ -369,6 +370,7 @@ async fn run_server(
             let connecting = incoming.accept();
             match connecting {
                 Ok(connecting) => {
+                    println!("setup connection from {:?}", connecting.remote_address());
                     tokio::spawn(setup_connection(
                         connecting,
                         unstaked_connection_table.clone(),
