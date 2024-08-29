@@ -2919,7 +2919,7 @@ fn setup_transfer_scan_threads(
                     .get_latest_blockhash_with_commitment(CommitmentConfig::processed())
                     .unwrap();
                 for i in 0..starting_keypairs_.len() {
-                    println!("Doing async_transfer");
+                    //println!("Doing async_transfer");
                     let result = client.async_transfer(
                         1,
                         &starting_keypairs_[i],
@@ -2931,7 +2931,7 @@ fn setup_transfer_scan_threads(
                     }
                 }
                 for i in 0..starting_keypairs_.len() {
-                    println!("Doing async_transfer2");
+                    //println!("Doing async_transfer2");
                     let result = client.async_transfer(
                         1,
                         &target_keypairs_[i],
