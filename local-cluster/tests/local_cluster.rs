@@ -2908,6 +2908,7 @@ fn setup_transfer_scan_threads(
         .name("update".to_string())
         .spawn(move || {
             let client = update_client_receiver.recv().unwrap();
+            println!("Got the client");
             loop {
                 if exit_.load(Ordering::Relaxed) {
                     println!("The client is shutting down...");
@@ -2918,6 +2919,7 @@ fn setup_transfer_scan_threads(
                     .get_latest_blockhash_with_commitment(CommitmentConfig::processed())
                     .unwrap();
                 for i in 0..starting_keypairs_.len() {
+                    println!("Doing async_transfer");
                     let result = client.async_transfer(
                         1,
                         &starting_keypairs_[i],
@@ -2929,6 +2931,7 @@ fn setup_transfer_scan_threads(
                     }
                 }
                 for i in 0..starting_keypairs_.len() {
+                    println!("Doing async_transfer2");
                     let result = client.async_transfer(
                         1,
                         &target_keypairs_[i],
