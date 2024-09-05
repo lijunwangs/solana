@@ -6620,7 +6620,7 @@ dependencies = [
  "bytemuck",
  "bytemuck_derive",
  "js-sys",
- "rustc_version 0.4.1",
+ "rustc_version",
  "serde",
  "serde_derive",
  "solana-atomic-u64",
@@ -7236,7 +7236,7 @@ dependencies = [
  "num-traits",
  "parking_lot 0.12.2",
  "qstring",
- "semver 1.0.23",
+ "semver",
  "solana-derivation-path",
  "solana-sdk",
  "thiserror",
@@ -9221,7 +9221,6 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
- "tracing",
 ]
 
 [[package]]
