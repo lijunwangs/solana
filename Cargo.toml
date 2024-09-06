@@ -564,6 +564,8 @@ solana-zk-token-sdk = { path = "zk-token-sdk" }
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
 
+curve25519-dalek = { git = "https://github.com/anza-xyz/curve25519-dalek.git", rev = "b500cdc2a920cd5bff9e2dd974d7b97349d61464" }
+
 # Solana RPC nodes experience stalls when running with `tokio` containing this
 # commit:
 # https://github.com/tokio-rs/tokio/commit/4eed411519783ef6f58cbf74f886f91142b5cfa6
