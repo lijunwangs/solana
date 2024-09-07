@@ -354,14 +354,6 @@ async fn run_server(
                 continue;
             }
 
-            // Use retry to make it harder to have stateless initial packet attack.
-            if !incoming.remote_address_validated() {
-                // The unwrap below is safe as we can only have error when the remote
-                // address is already validated.
-                let _ = incoming.retry();
-                continue;
-            }
-
             stats
                 .outstanding_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);
