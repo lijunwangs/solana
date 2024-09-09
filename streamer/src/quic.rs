@@ -245,6 +245,8 @@ pub struct StreamerStats {
     pub(crate) throttled_staked_streams: AtomicUsize,
     pub(crate) throttled_unstaked_streams: AtomicUsize,
     pub(crate) connection_rate_limiter_length: AtomicUsize,
+    // All connections in various states such as Incoming, Connecting, Connection
+    pub(crate) open_connections: AtomicUsize,
     pub(crate) outstanding_incoming_connection_attempts: AtomicUsize,
     pub(crate) total_incoming_connection_attempts: AtomicUsize,
     pub(crate) quic_endpoints_count: AtomicUsize,
@@ -591,6 +593,11 @@ impl StreamerStats {
             (
                 "quic_endpoints_count",
                 self.quic_endpoints_count.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "open_connections",
+                self.open_connections.load(Ordering::Relaxed),
                 i64
             ),
         );

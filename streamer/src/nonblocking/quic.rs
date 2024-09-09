@@ -195,8 +195,7 @@ pub fn spawn_server_multi(
     coalesce: Duration,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
     info!("Start {name} quic server on {sockets:?}");
-    let concurrent_connections =
-        (max_staked_connections + max_unstaked_connections) / sockets.len();
+    let concurrent_connections = max_staked_connections + max_unstaked_connections;
     let max_concurrent_connections = concurrent_connections + concurrent_connections / 4;
     let (config, _) = configure_server(keypair)?;
 
@@ -227,6 +226,7 @@ pub fn spawn_server_multi(
         stats.clone(),
         wait_for_chunk_timeout,
         coalesce,
+        max_concurrent_connections,
     ));
     Ok(SpawnNonBlockingServerResult {
         endpoints,
@@ -251,6 +251,7 @@ async fn run_server(
     stats: Arc<StreamerStats>,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
+    max_concurrent_connections: usize,
 ) {
     let rate_limiter = ConnectionRateLimiter::new(max_connections_per_ipaddr_per_min);
     let overall_connection_rate_limiter =
@@ -290,6 +291,7 @@ async fn run_server(
             })
         })
         .collect::<FuturesUnordered<_>>();
+
     while !exit.load(Ordering::Relaxed) {
         let timeout_connection = select! {
             ready = accepts.next() => {
@@ -320,6 +322,18 @@ async fn run_server(
             stats
                 .total_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);
+
+            let open_connections = stats.open_connections.load(Ordering::Relaxed);
+            if open_connections >= max_concurrent_connections {
+                debug!(
+                    "There are too many concurrent connections opened already: open: {}, max: {}",
+                    open_connections, max_concurrent_connections
+                );
+                incoming.refuse();
+                continue;
+            }
+            stats.open_connections.fetch_add(1, Ordering::Relaxed);
+
             let remote_address = incoming.remote_address();
 
             // first check overall connection rate limit:
@@ -397,6 +411,9 @@ fn prune_unstaked_connection_table(
         let max_connections = max_percentage_full.apply_to(max_unstaked_connections);
         let num_pruned = unstaked_connection_table.prune_oldest(max_connections);
         stats.num_evictions.fetch_add(num_pruned, Ordering::Relaxed);
+        stats
+            .open_connections
+            .fetch_sub(num_pruned, Ordering::Relaxed);
     }
 }
 
@@ -555,6 +572,10 @@ fn handle_and_cache_new_connection(
                 .stats
                 .connection_add_failed
                 .fetch_add(1, Ordering::Relaxed);
+            params
+                .stats
+                .open_connections
+                .fetch_sub(1, Ordering::Relaxed);
             Err(ConnectionHandlerError::ConnectionAddError)
         }
     } else {
@@ -566,6 +587,10 @@ fn handle_and_cache_new_connection(
             .stats
             .connection_add_failed_invalid_stream_count
             .fetch_add(1, Ordering::Relaxed);
+        params
+            .stats
+            .open_connections
+            .fetch_sub(1, Ordering::Relaxed);
         Err(ConnectionHandlerError::MaxStreamError)
     }
 }
@@ -708,6 +733,9 @@ async fn setup_connection(
                             let num_pruned =
                                 connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
                             stats.num_evictions.fetch_add(num_pruned, Ordering::Relaxed);
+                            stats
+                                .open_connections
+                                .fetch_sub(num_pruned, Ordering::Relaxed);
                         }
 
                         if connection_table_l.total_size < max_staked_connections {
@@ -774,12 +802,14 @@ async fn setup_connection(
             }
             Err(e) => {
                 handle_connection_error(e, &stats, from);
+                stats.open_connections.fetch_sub(1, Ordering::Relaxed);
             }
         }
     } else {
         stats
             .connection_setup_timeout
             .fetch_add(1, Ordering::Relaxed);
+        stats.open_connections.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -1095,6 +1125,9 @@ async fn handle_connection(
             .fetch_add(1, Ordering::Relaxed);
     }
     stats.total_connections.fetch_sub(1, Ordering::Relaxed);
+    stats
+        .open_connections
+        .fetch_sub(removed_connection_count, Ordering::Relaxed);
 }
 
 // Return true if the server should drop the stream
