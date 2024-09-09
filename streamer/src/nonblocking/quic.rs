@@ -428,6 +428,9 @@ async fn run_server(
                     "There are too many concurrent connections opened already: open: {}, max: {}",
                     open_connections, max_concurrent_connections
                 );
+                stats
+                    .refused_connections_too_many_open_connections
+                    .fetch_add(1, Ordering::Relaxed);
                 incoming.refuse();
                 continue;
             }
