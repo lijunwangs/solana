@@ -36,8 +36,7 @@ fn return_sstruct() -> SStruct {
     SStruct { x: 1, y: 2, z: 3 }
 }
 
-solana_program::entrypoint!(process_instruction);
-#[allow(clippy::unnecessary_wraps)]
+solana_program::entrypoint_no_alloc!(process_instruction);
 pub fn process_instruction(
     program_id: &Pubkey,
     accounts: &[AccountInfo],

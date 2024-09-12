@@ -5,7 +5,7 @@ use {
             log_instruction_custom_error, CliCommand, CliCommandInfo, CliConfig, CliError,
             ProcessResult,
         },
-        compute_budget::WithComputeUnitPrice,
+        compute_budget::{ComputeUnitConfig, WithComputeUnitConfig},
         memo::WithMemo,
         nonce::check_nonce_account,
         spend_utils::{resolve_spend_tx_and_check_account_balances, SpendAmount},
@@ -13,7 +13,7 @@ use {
     },
     clap::{value_t_or_exit, App, Arg, ArgMatches, SubCommand},
     solana_clap_utils::{
-        compute_unit_price::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
+        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
         fee_payer::{fee_payer_arg, FEE_PAYER_ARG},
         input_parsers::*,
         input_validators::*,
@@ -31,7 +31,7 @@ use {
     solana_rpc_client_api::config::RpcGetVoteAccountsConfig,
     solana_rpc_client_nonce_utils::blockhash_query::BlockhashQuery,
     solana_sdk::{
-        account::Account, commitment_config::CommitmentConfig, feature, message::Message,
+        account::Account, commitment_config::CommitmentConfig, message::Message,
         native_token::lamports_to_sol, pubkey::Pubkey, system_instruction::SystemError,
         transaction::Transaction,
     },
@@ -791,7 +791,7 @@ pub fn process_create_vote_account(
     nonce_authority: SignerIndex,
     memo: Option<&String>,
     fee_payer: SignerIndex,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
 ) -> ProcessResult {
     let vote_account = config.signers[vote_account];
     let vote_account_pubkey = vote_account.pubkey();
@@ -819,14 +819,9 @@ pub fn process_create_vote_account(
 
     let fee_payer = config.signers[fee_payer];
     let nonce_authority = config.signers[nonce_authority];
+    let space = VoteStateVersions::vote_state_size_of(true) as u64;
 
-    let is_feature_active = (!sign_only)
-        .then(solana_sdk::feature_set::vote_state_add_vote_latency::id)
-        .and_then(|feature_address| rpc_client.get_account(&feature_address).ok())
-        .and_then(|account| feature::from_account(&account))
-        .map_or(false, |feature| feature.activated_at.is_some());
-    let space = VoteStateVersions::vote_state_size_of(is_feature_active) as u64;
-
+    let compute_unit_limit = ComputeUnitLimit::Default;
     let build_message = |lamports| {
         let vote_init = VoteInit {
             node_pubkey: identity_pubkey,
@@ -853,7 +848,10 @@ pub fn process_create_vote_account(
             create_vote_account_config,
         )
         .with_memo(memo)
-        .with_compute_unit_price(compute_unit_price);
+        .with_compute_unit_config(&ComputeUnitConfig {
+            compute_unit_price,
+            compute_unit_limit,
+        });
 
         if let Some(nonce_account) = &nonce_account {
             Message::new_with_nonce(
@@ -876,6 +874,7 @@ pub fn process_create_vote_account(
         &recent_blockhash,
         &config.signers[0].pubkey(),
         &fee_payer.pubkey(),
+        compute_unit_limit,
         build_message,
         config.commitment,
     )?;
@@ -939,7 +938,7 @@ pub fn process_vote_authorize(
     nonce_authority: SignerIndex,
     memo: Option<&String>,
     fee_payer: SignerIndex,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
 ) -> ProcessResult {
     let authorized = config.signers[authorized];
     let new_authorized_signer = new_authorized.map(|index| config.signers[index]);
@@ -1004,7 +1003,10 @@ pub fn process_vote_authorize(
     };
     let ixs = vec![vote_ix]
         .with_memo(memo)
-        .with_compute_unit_price(compute_unit_price);
+        .with_compute_unit_config(&ComputeUnitConfig {
+            compute_unit_price,
+            compute_unit_limit: ComputeUnitLimit::Default,
+        });
 
     let recent_blockhash = blockhash_query.get_blockhash(rpc_client, config.commitment)?;
 
@@ -1067,7 +1069,7 @@ pub fn process_vote_update_validator(
     nonce_authority: SignerIndex,
     memo: Option<&String>,
     fee_payer: SignerIndex,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
 ) -> ProcessResult {
     let authorized_withdrawer = config.signers[withdraw_authority];
     let new_identity_account = config.signers[new_identity_account];
@@ -1083,7 +1085,10 @@ pub fn process_vote_update_validator(
         &new_identity_pubkey,
     )]
     .with_memo(memo)
-    .with_compute_unit_price(compute_unit_price);
+    .with_compute_unit_config(&ComputeUnitConfig {
+        compute_unit_price,
+        compute_unit_limit: ComputeUnitLimit::Default,
+    });
     let nonce_authority = config.signers[nonce_authority];
     let fee_payer = config.signers[fee_payer];
 
@@ -1143,7 +1148,7 @@ pub fn process_vote_update_commission(
     nonce_authority: SignerIndex,
     memo: Option<&String>,
     fee_payer: SignerIndex,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
 ) -> ProcessResult {
     let authorized_withdrawer = config.signers[withdraw_authority];
     let recent_blockhash = blockhash_query.get_blockhash(rpc_client, config.commitment)?;
@@ -1153,7 +1158,10 @@ pub fn process_vote_update_commission(
         commission,
     )]
     .with_memo(memo)
-    .with_compute_unit_price(compute_unit_price);
+    .with_compute_unit_config(&ComputeUnitConfig {
+        compute_unit_price,
+        compute_unit_limit: ComputeUnitLimit::Default,
+    });
     let nonce_authority = config.signers[nonce_authority];
     let fee_payer = config.signers[fee_payer];
 
@@ -1302,7 +1310,7 @@ pub fn process_withdraw_from_vote_account(
     nonce_authority: SignerIndex,
     memo: Option<&String>,
     fee_payer: SignerIndex,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
 ) -> ProcessResult {
     let withdraw_authority = config.signers[withdraw_authority];
     let recent_blockhash = blockhash_query.get_blockhash(rpc_client, config.commitment)?;
@@ -1310,6 +1318,7 @@ pub fn process_withdraw_from_vote_account(
     let fee_payer = config.signers[fee_payer];
     let nonce_authority = config.signers[nonce_authority];
 
+    let compute_unit_limit = ComputeUnitLimit::Default;
     let build_message = |lamports| {
         let ixs = vec![withdraw(
             vote_account_pubkey,
@@ -1318,7 +1327,10 @@ pub fn process_withdraw_from_vote_account(
             destination_account_pubkey,
         )]
         .with_memo(memo)
-        .with_compute_unit_price(compute_unit_price);
+        .with_compute_unit_config(&ComputeUnitConfig {
+            compute_unit_price,
+            compute_unit_limit,
+        });
 
         if let Some(nonce_account) = &nonce_account {
             Message::new_with_nonce(
@@ -1339,6 +1351,7 @@ pub fn process_withdraw_from_vote_account(
         &recent_blockhash,
         vote_account_pubkey,
         &fee_payer.pubkey(),
+        compute_unit_limit,
         build_message,
         config.commitment,
     )?;
@@ -1400,7 +1413,7 @@ pub fn process_close_vote_account(
     destination_account_pubkey: &Pubkey,
     memo: Option<&String>,
     fee_payer: SignerIndex,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
 ) -> ProcessResult {
     let vote_account_status =
         rpc_client.get_vote_accounts_with_config(RpcGetVoteAccountsConfig {
@@ -1435,7 +1448,10 @@ pub fn process_close_vote_account(
         destination_account_pubkey,
     )]
     .with_memo(memo)
-    .with_compute_unit_price(compute_unit_price);
+    .with_compute_unit_config(&ComputeUnitConfig {
+        compute_unit_price,
+        compute_unit_limit: ComputeUnitLimit::Default,
+    });
 
     let message = Message::new(&ixs, Some(&fee_payer.pubkey()));
     let mut tx = Transaction::new_unsigned(message);

@@ -8,6 +8,7 @@ use {
         TransactionSimulationDetails, TransactionStatus,
     },
     solana_client::connection_cache::ConnectionCache,
+    solana_feature_set::{move_precompile_verification_to_svm, FeatureSet},
     solana_runtime::{
         bank::{Bank, TransactionSimulationResult},
         bank_forks::BankForks,
@@ -17,8 +18,6 @@ use {
         account::Account,
         clock::Slot,
         commitment_config::CommitmentLevel,
-        feature_set::FeatureSet,
-        fee_calculator::FeeCalculator,
         hash::Hash,
         message::{Message, SanitizedMessage},
         pubkey::Pubkey,
@@ -29,7 +28,6 @@ use {
         send_transaction_service::{SendTransactionService, TransactionInfo},
         tpu_info::NullTpuInfo,
     },
-    solana_svm::transaction_results::TransactionExecutionResult,
     std::{
         io,
         net::{Ipv4Addr, SocketAddr},
@@ -165,7 +163,13 @@ fn verify_transaction(
     feature_set: &Arc<FeatureSet>,
 ) -> transaction::Result<()> {
     transaction.verify()?;
-    transaction.verify_precompiles(feature_set)?;
+
+    let move_precompile_verification_to_svm =
+        feature_set.is_active(&move_precompile_verification_to_svm::id());
+    if !move_precompile_verification_to_svm {
+        transaction.verify_precompiles(feature_set)?;
+    }
+
     Ok(())
 }
 
@@ -195,7 +199,7 @@ fn simulate_transaction(
         units_consumed,
         return_data,
         inner_instructions,
-    } = bank.simulate_transaction_unchecked(&sanitized_transaction, false);
+    } = bank.simulate_transaction_unchecked(&sanitized_transaction, true);
 
     let simulation_details = TransactionSimulationDetails {
         logs,
@@ -230,24 +234,6 @@ impl Banks for BanksServer {
             None,
         );
         self.transaction_sender.send(info).unwrap();
-    }
-
-    async fn get_fees_with_commitment_and_context(
-        self,
-        _: Context,
-        commitment: CommitmentLevel,
-    ) -> (FeeCalculator, Hash, u64) {
-        let bank = self.bank(commitment);
-        let blockhash = bank.last_blockhash();
-        let lamports_per_signature = bank.get_lamports_per_signature();
-        let last_valid_block_height = bank
-            .get_blockhash_last_valid_block_height(&blockhash)
-            .unwrap();
-        (
-            FeeCalculator::new(lamports_per_signature),
-            blockhash,
-            last_valid_block_height,
-        )
     }
 
     async fn get_transaction_status_with_context(
@@ -369,20 +355,18 @@ impl Banks for BanksServer {
     ) -> BanksTransactionResultWithMetadata {
         let bank = self.bank_forks.read().unwrap().working_bank();
         match bank.process_transaction_with_metadata(transaction) {
-            TransactionExecutionResult::NotExecuted(error) => BanksTransactionResultWithMetadata {
+            Err(error) => BanksTransactionResultWithMetadata {
                 result: Err(error),
                 metadata: None,
             },
-            TransactionExecutionResult::Executed { details, .. } => {
-                BanksTransactionResultWithMetadata {
-                    result: details.status,
-                    metadata: Some(TransactionMetadata {
-                        compute_units_consumed: details.executed_units,
-                        log_messages: details.log_messages.unwrap_or_default(),
-                        return_data: details.return_data,
-                    }),
-                }
-            }
+            Ok(details) => BanksTransactionResultWithMetadata {
+                result: details.status,
+                metadata: Some(TransactionMetadata {
+                    compute_units_consumed: details.executed_units,
+                    log_messages: details.log_messages.unwrap_or_default(),
+                    return_data: details.return_data,
+                }),
+            },
         }
     }
 

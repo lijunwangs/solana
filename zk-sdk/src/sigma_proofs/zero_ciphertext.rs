@@ -136,7 +136,7 @@ impl ZeroCiphertextProof {
             vec![
                 &self.z,            // z
                 &(-&c),             // -c
-                &(-&Scalar::one()), // -identity
+                &(-&Scalar::ONE),   // -identity
                 &(&w * &self.z),    // w * z
                 &(&w_negated * &c), // -w * c
                 &w_negated,         // -w
@@ -180,38 +180,41 @@ impl ZeroCiphertextProof {
 mod test {
     use {
         super::*,
-        crate::encryption::{
-            elgamal::{DecryptHandle, ElGamalKeypair},
-            pedersen::{Pedersen, PedersenCommitment, PedersenOpening},
+        crate::{
+            encryption::{
+                elgamal::{DecryptHandle, ElGamalKeypair},
+                pedersen::{Pedersen, PedersenCommitment, PedersenOpening},
+                pod::elgamal::{PodElGamalCiphertext, PodElGamalPubkey},
+            },
+            sigma_proofs::pod::PodZeroCiphertextProof,
         },
+        std::str::FromStr,
     };
 
     #[test]
-    fn test_zero_cipehrtext_proof_correctness() {
-        let source_keypair = ElGamalKeypair::new_rand();
+    fn test_zero_ciphertext_proof_correctness() {
+        let keypair = ElGamalKeypair::new_rand();
 
         let mut prover_transcript = Transcript::new(b"test");
         let mut verifier_transcript = Transcript::new(b"test");
 
         // general case: encryption of 0
-        let elgamal_ciphertext = source_keypair.pubkey().encrypt(0_u64);
-        let proof =
-            ZeroCiphertextProof::new(&source_keypair, &elgamal_ciphertext, &mut prover_transcript);
-        assert!(proof
+        let elgamal_ciphertext = keypair.pubkey().encrypt(0_u64);
+        let proof = ZeroCiphertextProof::new(&keypair, &elgamal_ciphertext, &mut prover_transcript);
+        proof
             .verify(
-                source_keypair.pubkey(),
+                keypair.pubkey(),
                 &elgamal_ciphertext,
-                &mut verifier_transcript
+                &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
 
         // general case: encryption of > 0
-        let elgamal_ciphertext = source_keypair.pubkey().encrypt(1_u64);
-        let proof =
-            ZeroCiphertextProof::new(&source_keypair, &elgamal_ciphertext, &mut prover_transcript);
+        let elgamal_ciphertext = keypair.pubkey().encrypt(1_u64);
+        let proof = ZeroCiphertextProof::new(&keypair, &elgamal_ciphertext, &mut prover_transcript);
         assert!(proof
             .verify(
-                source_keypair.pubkey(),
+                keypair.pubkey(),
                 &elgamal_ciphertext,
                 &mut verifier_transcript
             )
@@ -220,7 +223,7 @@ mod test {
 
     #[test]
     fn test_zero_ciphertext_proof_edge_cases() {
-        let source_keypair = ElGamalKeypair::new_rand();
+        let keypair = ElGamalKeypair::new_rand();
 
         let mut prover_transcript = Transcript::new(b"test");
         let mut verifier_transcript = Transcript::new(b"test");
@@ -228,15 +231,11 @@ mod test {
         // all zero ciphertext should always be a valid encryption of 0
         let ciphertext = ElGamalCiphertext::from_bytes(&[0u8; 64]).unwrap();
 
-        let proof = ZeroCiphertextProof::new(&source_keypair, &ciphertext, &mut prover_transcript);
+        let proof = ZeroCiphertextProof::new(&keypair, &ciphertext, &mut prover_transcript);
 
-        assert!(proof
-            .verify(
-                source_keypair.pubkey(),
-                &ciphertext,
-                &mut verifier_transcript
-            )
-            .is_ok());
+        proof
+            .verify(keypair.pubkey(), &ciphertext, &mut verifier_transcript)
+            .unwrap();
 
         // if only either commitment or handle is zero, the ciphertext is always invalid and proof
         // verification should always reject
@@ -244,7 +243,7 @@ mod test {
         let mut verifier_transcript = Transcript::new(b"test");
 
         let zeroed_commitment = PedersenCommitment::from_bytes(&[0u8; 32]).unwrap();
-        let handle = source_keypair
+        let handle = keypair
             .pubkey()
             .decrypt_handle(&PedersenOpening::new_rand());
 
@@ -253,14 +252,10 @@ mod test {
             handle,
         };
 
-        let proof = ZeroCiphertextProof::new(&source_keypair, &ciphertext, &mut prover_transcript);
+        let proof = ZeroCiphertextProof::new(&keypair, &ciphertext, &mut prover_transcript);
 
         assert!(proof
-            .verify(
-                source_keypair.pubkey(),
-                &ciphertext,
-                &mut verifier_transcript
-            )
+            .verify(keypair.pubkey(), &ciphertext, &mut verifier_transcript)
             .is_err());
 
         let mut prover_transcript = Transcript::new(b"test");
@@ -272,14 +267,10 @@ mod test {
             handle: DecryptHandle::from_bytes(&[0u8; 32]).unwrap(),
         };
 
-        let proof = ZeroCiphertextProof::new(&source_keypair, &ciphertext, &mut prover_transcript);
+        let proof = ZeroCiphertextProof::new(&keypair, &ciphertext, &mut prover_transcript);
 
         assert!(proof
-            .verify(
-                source_keypair.pubkey(),
-                &ciphertext,
-                &mut verifier_transcript
-            )
+            .verify(keypair.pubkey(), &ciphertext, &mut verifier_transcript)
             .is_err());
 
         // if public key is always zero, then the proof should always reject
@@ -289,14 +280,31 @@ mod test {
         let public = ElGamalPubkey::try_from([0u8; 32].as_slice()).unwrap();
         let ciphertext = public.encrypt(0_u64);
 
-        let proof = ZeroCiphertextProof::new(&source_keypair, &ciphertext, &mut prover_transcript);
+        let proof = ZeroCiphertextProof::new(&keypair, &ciphertext, &mut prover_transcript);
 
         assert!(proof
-            .verify(
-                source_keypair.pubkey(),
-                &ciphertext,
-                &mut verifier_transcript
-            )
+            .verify(keypair.pubkey(), &ciphertext, &mut verifier_transcript)
             .is_err());
+    }
+
+    #[test]
+    fn test_zero_ciphertext_proof_string() {
+        let pubkey_str = "Vlx+Fr61KnreO27JDg5MsBN8NgbICGa3fIech8oZ4hQ=";
+        let pod_pubkey = PodElGamalPubkey::from_str(pubkey_str).unwrap();
+        let pubkey: ElGamalPubkey = pod_pubkey.try_into().unwrap();
+
+        let ciphertext_str = "wps5X1mou5PUdPD+llxiJ+aoX4YWrR/S6/U2MUC2LjLS7wDu6S9nOG92VMnlngQaP4irBY0OqlsGdXS4j8DROg==";
+        let pod_ciphertext = PodElGamalCiphertext::from_str(ciphertext_str).unwrap();
+        let ciphertext: ElGamalCiphertext = pod_ciphertext.try_into().unwrap();
+
+        let proof_str = "qMDiQ5zPcTYFhchYBZzRS81UGIt2QRNce2/ULEqDBXBQEnGRI0u0G1HzRJfpIbOWCHBwMaNgsT1jTZwTOTWyMBE/2UjHI4x9IFpAM6ccGuexo/HjSECPDgL+85zrfA8L";
+        let pod_proof = PodZeroCiphertextProof::from_str(proof_str).unwrap();
+        let proof: ZeroCiphertextProof = pod_proof.try_into().unwrap();
+
+        let mut verifier_transcript = Transcript::new(b"test");
+
+        proof
+            .verify(&pubkey, &ciphertext, &mut verifier_transcript)
+            .unwrap();
     }
 }

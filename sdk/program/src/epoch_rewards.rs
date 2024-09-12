@@ -6,7 +6,7 @@
 //!
 //! [`sysvar::epoch_rewards`]: crate::sysvar::epoch_rewards
 
-use {crate::hash::Hash, solana_sdk_macro::CloneZeroed, std::ops::AddAssign};
+use {crate::hash::Hash, solana_sdk_macro::CloneZeroed};
 
 #[repr(C, align(16))]
 #[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
@@ -29,7 +29,9 @@ pub struct EpochRewards {
     /// delegations
     pub total_points: u128,
 
-    /// The total rewards for the current epoch, in lamports
+    /// The total rewards calculated for the current epoch. This may be greater
+    /// than the total `distributed_rewards` at the end of the rewards period,
+    /// due to rounding and inability to deliver rewards smaller than 1 lamport.
     pub total_rewards: u64,
 
     /// The rewards currently distributed for the current epoch, in lamports
@@ -42,9 +44,9 @@ pub struct EpochRewards {
 
 impl EpochRewards {
     pub fn distribute(&mut self, amount: u64) {
-        assert!(self.distributed_rewards.saturating_add(amount) <= self.total_rewards);
-
-        self.distributed_rewards.add_assign(amount);
+        let new_distributed_rewards = self.distributed_rewards.saturating_add(amount);
+        assert!(new_distributed_rewards <= self.total_rewards);
+        self.distributed_rewards = new_distributed_rewards;
     }
 }
 
@@ -86,9 +88,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "self.distributed_rewards.saturating_add(amount) <= self.total_rewards"
-    )]
+    #[should_panic(expected = "new_distributed_rewards <= self.total_rewards")]
     fn test_epoch_rewards_distribute_panic() {
         let mut epoch_rewards = EpochRewards::new(100, 0, 64);
         epoch_rewards.distribute(200);

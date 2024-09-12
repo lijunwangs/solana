@@ -8,9 +8,7 @@ use {
     itertools::izip,
     log::*,
     solana_accounts_db::utils::create_accounts_run_and_snapshot_dirs,
-    solana_client::{
-        connection_cache::ConnectionCache, rpc_client::RpcClient, thin_client::ThinClient,
-    },
+    solana_client::connection_cache::ConnectionCache,
     solana_core::{
         consensus::tower_storage::FileTowerStorage,
         validator::{Validator, ValidatorConfig, ValidatorStartProgress},
@@ -20,7 +18,8 @@ use {
         contact_info::{ContactInfo, Protocol},
         gossip_service::discover_cluster,
     },
-    solana_ledger::{create_new_tmp_ledger, shred::Shred},
+    solana_ledger::{create_new_tmp_ledger_with_size, shred::Shred},
+    solana_rpc_client::rpc_client::RpcClient,
     solana_runtime::{
         genesis_utils::{
             create_genesis_config_with_vote_accounts_and_cluster_type, GenesisConfigInfo,
@@ -30,22 +29,22 @@ use {
     },
     solana_sdk::{
         account::{Account, AccountSharedData},
-        client::SyncClient,
-        clock::{Slot, DEFAULT_DEV_SLOTS_PER_EPOCH, DEFAULT_TICKS_PER_SLOT},
+        clock::{Slot, DEFAULT_DEV_SLOTS_PER_EPOCH, DEFAULT_TICKS_PER_SLOT, MAX_PROCESSING_AGE},
         commitment_config::CommitmentConfig,
         epoch_schedule::EpochSchedule,
-        feature_set,
         genesis_config::{ClusterType, GenesisConfig},
         message::Message,
         poh_config::PohConfig,
         pubkey::Pubkey,
-        signature::{Keypair, Signer},
+        signature::{Keypair, Signature, Signer},
+        signers::Signers,
         stake::{
             instruction as stake_instruction,
             state::{Authorized, Lockup},
         },
         system_transaction,
         transaction::Transaction,
+        transport::TransportError,
     },
     solana_stake_program::stake_state,
     solana_streamer::{socket::SocketAddrSpace, streamer::StakedNodes},
@@ -64,6 +63,7 @@ use {
         net::{IpAddr, Ipv4Addr, UdpSocket},
         path::{Path, PathBuf},
         sync::{Arc, RwLock},
+        time::Instant,
     },
 };
 
@@ -190,44 +190,43 @@ impl LocalCluster {
     pub fn new(config: &mut ClusterConfig, socket_addr_space: SocketAddrSpace) -> Self {
         assert_eq!(config.validator_configs.len(), config.node_stakes.len());
 
-        let connection_cache = match config.tpu_use_quic {
-            true => {
-                let client_keypair = Keypair::new();
-                let stake = DEFAULT_NODE_STAKE;
+        let connection_cache = if config.tpu_use_quic {
+            let client_keypair = Keypair::new();
+            let stake = DEFAULT_NODE_STAKE;
 
-                for validator_config in config.validator_configs.iter_mut() {
-                    let mut overrides = HashMap::new();
-                    overrides.insert(client_keypair.pubkey(), stake);
-                    validator_config.staked_nodes_overrides = Arc::new(RwLock::new(overrides));
-                }
-
-                assert!(
-                    config.tpu_use_quic,
-                    "no support for staked override forwarding without quic"
-                );
-
-                let total_stake = config.node_stakes.iter().sum::<u64>();
-                let stakes = HashMap::from([
-                    (client_keypair.pubkey(), stake),
-                    (Pubkey::new_unique(), total_stake.saturating_sub(stake)),
-                ]);
-                let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
-                    Arc::new(stakes),
-                    HashMap::<Pubkey, u64>::default(), // overrides
-                )));
-
-                Arc::new(ConnectionCache::new_with_client_options(
-                    "connection_cache_local_cluster_quic_staked",
-                    config.tpu_connection_pool_size,
-                    None,
-                    Some((&client_keypair, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
-                    Some((&staked_nodes, &client_keypair.pubkey())),
-                ))
+            for validator_config in config.validator_configs.iter_mut() {
+                let mut overrides = HashMap::new();
+                overrides.insert(client_keypair.pubkey(), stake);
+                validator_config.staked_nodes_overrides = Arc::new(RwLock::new(overrides));
             }
-            false => Arc::new(ConnectionCache::with_udp(
+
+            assert!(
+                config.tpu_use_quic,
+                "no support for staked override forwarding without quic"
+            );
+
+            let total_stake = config.node_stakes.iter().sum::<u64>();
+            let stakes = HashMap::from([
+                (client_keypair.pubkey(), stake),
+                (Pubkey::new_unique(), total_stake.saturating_sub(stake)),
+            ]);
+            let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
+                Arc::new(stakes),
+                HashMap::<Pubkey, u64>::default(), // overrides
+            )));
+
+            Arc::new(ConnectionCache::new_with_client_options(
+                "connection_cache_local_cluster_quic_staked",
+                config.tpu_connection_pool_size,
+                None,
+                Some((&client_keypair, IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))),
+                Some((&staked_nodes, &client_keypair.pubkey())),
+            ))
+        } else {
+            Arc::new(ConnectionCache::with_udp(
                 "connection_cache_local_cluster_udp",
                 config.tpu_connection_pool_size,
-            )),
+            ))
         };
 
         let mut validator_keys = {
@@ -312,9 +311,13 @@ impl LocalCluster {
             .native_instruction_processors
             .extend_from_slice(&config.native_instruction_processors);
 
-        let (leader_ledger_path, _blockhash) = create_new_tmp_ledger!(&genesis_config);
-        let leader_contact_info = leader_node.info.clone();
         let mut leader_config = safe_clone_config(&config.validator_configs[0]);
+        let (leader_ledger_path, _blockhash) = create_new_tmp_ledger_with_size!(
+            &genesis_config,
+            leader_config.max_genesis_archive_unpacked_size,
+        );
+
+        let leader_contact_info = leader_node.info.clone();
         leader_config.rpc_addrs = Some((
             leader_node.info.rpc().unwrap(),
             leader_node.info.rpc_pubsub().unwrap(),
@@ -337,7 +340,9 @@ impl LocalCluster {
             socket_addr_space,
             DEFAULT_TPU_USE_QUIC,
             DEFAULT_TPU_CONNECTION_POOL_SIZE,
-            DEFAULT_TPU_ENABLE_UDP,
+            // We are turning tpu_enable_udp to true in order to prevent concurrent local cluster tests
+            // to use the same QUIC ports due to SO_REUSEPORT.
+            true,
             32, // max connections per IpAddr per minute
             Arc::new(RwLock::new(None)),
         )
@@ -482,11 +487,7 @@ impl LocalCluster {
         mut voting_keypair: Option<Arc<Keypair>>,
         socket_addr_space: SocketAddrSpace,
     ) -> Pubkey {
-        let (rpc, tpu) = cluster_tests::get_client_facing_addr(
-            self.connection_cache.protocol(),
-            &self.entry_point_info,
-        );
-        let client = ThinClient::new(rpc, tpu, self.connection_cache.clone());
+        let client = self.build_tpu_quic_client().expect("tpu_client");
 
         // Must have enough tokens to fund vote account and set delegate
         let should_create_vote_pubkey = voting_keypair.is_none();
@@ -496,7 +497,10 @@ impl LocalCluster {
         let validator_pubkey = validator_keypair.pubkey();
         let validator_node = Node::new_localhost_with_pubkey(&validator_keypair.pubkey());
         let contact_info = validator_node.info.clone();
-        let (ledger_path, _blockhash) = create_new_tmp_ledger!(&self.genesis_config);
+        let (ledger_path, _blockhash) = create_new_tmp_ledger_with_size!(
+            &self.genesis_config,
+            validator_config.max_genesis_archive_unpacked_size,
+        );
 
         // Give the validator some lamports to setup vote accounts
         if is_listener {
@@ -579,11 +583,7 @@ impl LocalCluster {
     }
 
     pub fn transfer(&self, source_keypair: &Keypair, dest_pubkey: &Pubkey, lamports: u64) -> u64 {
-        let (rpc, tpu) = cluster_tests::get_client_facing_addr(
-            self.connection_cache.protocol(),
-            &self.entry_point_info,
-        );
-        let client = ThinClient::new(rpc, tpu, self.connection_cache.clone());
+        let client = self.build_tpu_quic_client().expect("new tpu quic client");
         Self::transfer_with_client(&client, source_keypair, dest_pubkey, lamports)
     }
 
@@ -676,14 +676,62 @@ impl LocalCluster {
         info!("{} done waiting for roots", test_name);
     }
 
+    /// Attempt to send and confirm tx "attempts" times
+    /// Wait for signature confirmation before returning
+    /// Return the transaction signature
+    pub fn send_transaction_with_retries<T: Signers + ?Sized>(
+        client: &QuicTpuClient,
+        keypairs: &T,
+        transaction: &mut Transaction,
+        attempts: usize,
+        pending_confirmations: usize,
+    ) -> std::result::Result<Signature, TransportError> {
+        for attempt in 0..attempts {
+            let now = Instant::now();
+            let mut num_confirmed = 0;
+            let mut wait_time = MAX_PROCESSING_AGE;
+
+            while now.elapsed().as_secs() < wait_time as u64 {
+                if num_confirmed == 0 {
+                    client.send_transaction_to_upcoming_leaders(transaction)?;
+                }
+
+                if let Ok(confirmed_blocks) = client.rpc_client().poll_for_signature_confirmation(
+                    &transaction.signatures[0],
+                    pending_confirmations,
+                ) {
+                    num_confirmed = confirmed_blocks;
+                    if confirmed_blocks >= pending_confirmations {
+                        return Ok(transaction.signatures[0]);
+                    }
+                    // Since network has seen the transaction, wait longer to receive
+                    // all pending confirmations. Resending the transaction could result into
+                    // extra transaction fees
+                    wait_time = wait_time.max(
+                        MAX_PROCESSING_AGE * pending_confirmations.saturating_sub(num_confirmed),
+                    );
+                }
+            }
+            info!("{attempt} tries failed transfer");
+            let blockhash = client.rpc_client().get_latest_blockhash()?;
+            transaction.sign(keypairs, blockhash);
+        }
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "failed to confirm transaction".to_string(),
+        )
+        .into())
+    }
+
     fn transfer_with_client(
-        client: &ThinClient,
+        client: &QuicTpuClient,
         source_keypair: &Keypair,
         dest_pubkey: &Pubkey,
         lamports: u64,
     ) -> u64 {
         trace!("getting leader blockhash");
         let (blockhash, _) = client
+            .rpc_client()
             .get_latest_blockhash_with_commitment(CommitmentConfig::processed())
             .unwrap();
         let mut tx = system_transaction::transfer(source_keypair, dest_pubkey, lamports, blockhash);
@@ -693,20 +741,21 @@ impl LocalCluster {
             source_keypair.pubkey(),
             *dest_pubkey
         );
+
+        LocalCluster::send_transaction_with_retries(client, &[source_keypair], &mut tx, 10, 0)
+            .expect("client transfer should succeed");
         client
-            .retry_transfer(source_keypair, &mut tx, 10)
-            .expect("client transfer");
-        client
+            .rpc_client()
             .wait_for_balance_with_commitment(
                 dest_pubkey,
                 Some(lamports),
                 CommitmentConfig::processed(),
             )
-            .expect("get balance")
+            .expect("get balance should succeed")
     }
 
     fn setup_vote_and_stake_accounts(
-        client: &ThinClient,
+        client: &QuicTpuClient,
         vote_account: &Keypair,
         from_account: &Arc<Keypair>,
         amount: u64,
@@ -722,22 +771,12 @@ impl LocalCluster {
 
         // Create the vote account if necessary
         if client
+            .rpc_client()
             .poll_get_balance_with_commitment(&vote_account_pubkey, CommitmentConfig::processed())
             .unwrap_or(0)
             == 0
         {
             // 1) Create vote account
-            // Unlike the bootstrap validator we have to check if the new vote state is being used
-            // as the cluster is already running, and using the wrong account size will cause the
-            // InitializeAccount tx to fail
-            let use_current_vote_state = client
-                .poll_get_balance_with_commitment(
-                    &feature_set::vote_state_add_vote_latency::id(),
-                    CommitmentConfig::processed(),
-                )
-                .unwrap_or(0)
-                > 0;
-
             let instructions = vote_instruction::create_account_with_config(
                 &from_account.pubkey(),
                 &vote_account_pubkey,
@@ -749,8 +788,7 @@ impl LocalCluster {
                 },
                 amount,
                 vote_instruction::CreateVoteAccountConfig {
-                    space: vote_state::VoteStateVersions::vote_state_size_of(use_current_vote_state)
-                        as u64,
+                    space: vote_state::VoteStateVersions::vote_state_size_of(true) as u64,
                     ..vote_instruction::CreateVoteAccountConfig::default()
                 },
             );
@@ -759,14 +797,21 @@ impl LocalCluster {
                 &[from_account.as_ref(), vote_account],
                 message,
                 client
+                    .rpc_client()
                     .get_latest_blockhash_with_commitment(CommitmentConfig::processed())
                     .unwrap()
                     .0,
             );
+            LocalCluster::send_transaction_with_retries(
+                client,
+                &[from_account],
+                &mut transaction,
+                10,
+                0,
+            )
+            .expect("should fund vote");
             client
-                .retry_transfer(from_account, &mut transaction, 10)
-                .expect("fund vote");
-            client
+                .rpc_client()
                 .wait_for_balance_with_commitment(
                     &vote_account_pubkey,
                     Some(amount),
@@ -787,20 +832,22 @@ impl LocalCluster {
                 &[from_account.as_ref(), &stake_account_keypair],
                 message,
                 client
+                    .rpc_client()
                     .get_latest_blockhash_with_commitment(CommitmentConfig::processed())
                     .unwrap()
                     .0,
             );
 
+            LocalCluster::send_transaction_with_retries(
+                client,
+                &[from_account.as_ref(), &stake_account_keypair],
+                &mut transaction,
+                5,
+                0,
+            )
+            .expect("should delegate stake");
             client
-                .send_and_confirm_transaction(
-                    &[from_account.as_ref(), &stake_account_keypair],
-                    &mut transaction,
-                    5,
-                    0,
-                )
-                .expect("delegate stake");
-            client
+                .rpc_client()
                 .wait_for_balance_with_commitment(
                     &stake_account_pubkey,
                     Some(amount),
@@ -816,36 +863,58 @@ impl LocalCluster {
         info!("Checking for vote account registration of {}", node_pubkey);
         match (
             client
+                .rpc_client()
                 .get_account_with_commitment(&stake_account_pubkey, CommitmentConfig::processed()),
-            client.get_account_with_commitment(&vote_account_pubkey, CommitmentConfig::processed()),
+            client
+                .rpc_client()
+                .get_account_with_commitment(&vote_account_pubkey, CommitmentConfig::processed()),
         ) {
-            (Ok(Some(stake_account)), Ok(Some(vote_account))) => {
-                match (
-                    stake_state::stake_from(&stake_account),
-                    vote_state::from(&vote_account),
-                ) {
-                    (Some(stake_state), Some(vote_state)) => {
-                        if stake_state.delegation.voter_pubkey != vote_account_pubkey
-                            || stake_state.delegation.stake != amount
-                        {
-                            Err(Error::new(ErrorKind::Other, "invalid stake account state"))
-                        } else if vote_state.node_pubkey != node_pubkey {
-                            Err(Error::new(ErrorKind::Other, "invalid vote account state"))
-                        } else {
-                            info!("node {} {:?} {:?}", node_pubkey, stake_state, vote_state);
+            (Ok(stake_account), Ok(vote_account)) => {
+                match (stake_account.value, vote_account.value) {
+                    (Some(stake_account), Some(vote_account)) => {
+                        match (
+                            stake_state::stake_from(&stake_account),
+                            vote_state::from(&vote_account),
+                        ) {
+                            (Some(stake_state), Some(vote_state)) => {
+                                if stake_state.delegation.voter_pubkey != vote_account_pubkey
+                                    || stake_state.delegation.stake != amount
+                                {
+                                    Err(Error::new(ErrorKind::Other, "invalid stake account state"))
+                                } else if vote_state.node_pubkey != node_pubkey {
+                                    Err(Error::new(ErrorKind::Other, "invalid vote account state"))
+                                } else {
+                                    info!(
+                                        "node {} {:?} {:?}",
+                                        node_pubkey, stake_state, vote_state
+                                    );
 
-                            Ok(())
+                                    return Ok(());
+                                }
+                            }
+                            (None, _) => {
+                                Err(Error::new(ErrorKind::Other, "invalid stake account data"))
+                            }
+                            (_, None) => {
+                                Err(Error::new(ErrorKind::Other, "invalid vote account data"))
+                            }
                         }
                     }
-                    (None, _) => Err(Error::new(ErrorKind::Other, "invalid stake account data")),
-                    (_, None) => Err(Error::new(ErrorKind::Other, "invalid vote account data")),
+                    (None, _) => Err(Error::new(
+                        ErrorKind::Other,
+                        "unable to retrieve stake account data",
+                    )),
+                    (_, None) => Err(Error::new(
+                        ErrorKind::Other,
+                        "unable to retrieve vote account data",
+                    )),
                 }
             }
-            (Ok(None), _) | (Err(_), _) => Err(Error::new(
+            (Err(_), _) => Err(Error::new(
                 ErrorKind::Other,
                 "unable to retrieve stake account data",
             )),
-            (_, Ok(None)) | (_, Err(_)) => Err(Error::new(
+            (_, Err(_)) => Err(Error::new(
                 ErrorKind::Other,
                 "unable to retrieve vote account data",
             )),
@@ -897,13 +966,10 @@ impl Cluster for LocalCluster {
         self.validators.keys().cloned().collect()
     }
 
-    fn get_validator_client(&self, pubkey: &Pubkey) -> Option<ThinClient> {
-        self.validators.get(pubkey).map(|f| {
-            let (rpc, tpu) = cluster_tests::get_client_facing_addr(
-                self.connection_cache.protocol(),
-                &f.info.contact_info,
-            );
-            ThinClient::new(rpc, tpu, self.connection_cache.clone())
+    fn get_validator_client(&self, pubkey: &Pubkey) -> Option<QuicTpuClient> {
+        self.validators.get(pubkey).map(|_| {
+            self.build_tpu_quic_client()
+                .expect("should build tpu quic client")
         })
     }
 

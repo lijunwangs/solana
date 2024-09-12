@@ -1,7 +1,9 @@
 use {
     crate::{
         cli::{CliCommand, CliCommandInfo, CliConfig, CliError, ProcessResult},
-        compute_budget::WithComputeUnitPrice,
+        compute_budget::{
+            simulate_for_compute_unit_limit, ComputeUnitConfig, WithComputeUnitConfig,
+        },
         feature::get_feature_activation_epoch,
         spend_utils::{resolve_spend_tx_and_check_account_balance, SpendAmount},
     },
@@ -10,7 +12,7 @@ use {
     crossbeam_channel::unbounded,
     serde::{Deserialize, Serialize},
     solana_clap_utils::{
-        compute_unit_price::{compute_unit_price_arg, COMPUTE_UNIT_PRICE_ARG},
+        compute_budget::{compute_unit_price_arg, ComputeUnitLimit, COMPUTE_UNIT_PRICE_ARG},
         input_parsers::*,
         input_validators::*,
         keypair::DefaultSigner,
@@ -44,7 +46,6 @@ use {
         clock::{self, Clock, Slot},
         commitment_config::CommitmentConfig,
         epoch_schedule::Epoch,
-        feature_set,
         hash::Hash,
         message::Message,
         native_token::lamports_to_sol,
@@ -59,6 +60,7 @@ use {
         sysvar::{self, slot_history::SlotHistory, stake_history},
         transaction::Transaction,
     },
+    solana_tps_client::TpsClient,
     solana_transaction_status::{
         EncodableWithMeta, EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
     },
@@ -169,19 +171,6 @@ impl ClusterQuerySubCommands for App<'_, '_> {
         .subcommand(
             SubCommand::with_name("cluster-version")
                 .about("Get the version of the cluster entrypoint"),
-        )
-        // Deprecated in v1.8.0
-        .subcommand(
-            SubCommand::with_name("fees")
-                .about("Display current cluster fees (Deprecated in v1.8.0)")
-                .arg(
-                    Arg::with_name("blockhash")
-                        .long("blockhash")
-                        .takes_value(true)
-                        .value_name("BLOCKHASH")
-                        .validator(is_hash)
-                        .help("Query fees for BLOCKHASH instead of the most recent blockhash"),
-                ),
         )
         .subcommand(
             SubCommand::with_name("first-available-block")
@@ -843,7 +832,7 @@ pub fn process_catchup(
         );
     }
 
-    let mut previous_rpc_slot = std::i64::MAX;
+    let mut previous_rpc_slot = i64::MAX;
     let mut previous_slot_distance: i64 = 0;
     let mut retry_count: u64 = 0;
     let max_retry_count = 5;
@@ -928,7 +917,7 @@ pub fn process_catchup(
             },
             node_slot,
             rpc_slot,
-            if slot_distance == 0 || previous_rpc_slot == std::i64::MAX {
+            if slot_distance == 0 || previous_rpc_slot == i64::MAX {
                 "".to_string()
             } else {
                 format!(
@@ -979,42 +968,6 @@ pub fn process_cluster_version(rpc_client: &RpcClient, config: &CliConfig) -> Pr
     } else {
         Ok(remote_version.to_string())
     }
-}
-
-pub fn process_fees(
-    rpc_client: &RpcClient,
-    config: &CliConfig,
-    blockhash: Option<&Hash>,
-) -> ProcessResult {
-    let fees = if let Some(recent_blockhash) = blockhash {
-        #[allow(deprecated)]
-        let result = rpc_client.get_fee_calculator_for_blockhash_with_commitment(
-            recent_blockhash,
-            config.commitment,
-        )?;
-        if let Some(fee_calculator) = result.value {
-            CliFees::some(
-                result.context.slot,
-                *recent_blockhash,
-                fee_calculator.lamports_per_signature,
-                None,
-                None,
-            )
-        } else {
-            CliFees::none()
-        }
-    } else {
-        #[allow(deprecated)]
-        let result = rpc_client.get_fees_with_commitment(config.commitment)?;
-        CliFees::some(
-            result.context.slot,
-            result.value.blockhash,
-            result.value.fee_calculator.lamports_per_signature,
-            None,
-            Some(result.value.last_valid_block_height),
-        )
-    };
-    Ok(config.output_format.formatted_string(&fees))
 }
 
 pub fn process_first_available_block(rpc_client: &RpcClient) -> ProcessResult {
@@ -1443,6 +1396,7 @@ pub fn process_largest_accounts(
         .get_largest_accounts_with_config(RpcLargestAccountsConfig {
             commitment: Some(config.commitment),
             filter,
+            sort_results: None,
         })?
         .value;
     let largest_accounts = CliAccountBalances { accounts };
@@ -1471,20 +1425,26 @@ pub fn process_get_transaction_count(rpc_client: &RpcClient, _config: &CliConfig
 }
 
 pub fn process_ping(
-    rpc_client: &RpcClient,
+    tps_client: &Arc<dyn TpsClient>,
     config: &CliConfig,
     interval: &Duration,
     count: &Option<u64>,
     timeout: &Duration,
     fixed_blockhash: &Option<Hash>,
     print_timestamp: bool,
-    compute_unit_price: Option<&u64>,
+    compute_unit_price: Option<u64>,
+    rpc_client: &RpcClient,
 ) -> ProcessResult {
     let (signal_sender, signal_receiver) = unbounded();
-    ctrlc::set_handler(move || {
+    let handler = move || {
         let _ = signal_sender.send(());
-    })
-    .expect("Error setting Ctrl-C handler");
+    };
+    match ctrlc::try_set_handler(handler) {
+        // It's possible to set the ctrl-c handler more than once in testing
+        // situations, so let that case through
+        Err(ctrlc::Error::MultipleHandlers) => {}
+        result => result.expect("Error setting Ctrl-C handler"),
+    }
 
     let mut cli_pings = vec![];
 
@@ -1492,7 +1452,7 @@ pub fn process_ping(
     let mut confirmed_count: u32 = 0;
     let mut confirmation_time: VecDeque<u64> = VecDeque::with_capacity(1024);
 
-    let mut blockhash = rpc_client.get_latest_blockhash()?;
+    let mut blockhash = tps_client.get_latest_blockhash()?;
     let mut lamports: u64 = 0;
     let mut blockhash_acquired = Instant::now();
     let mut blockhash_from_cluster = false;
@@ -1504,17 +1464,33 @@ pub fn process_ping(
         }
     }
 
-    'mainloop: for seq in 0..count.unwrap_or(std::u64::MAX) {
+    let to = config.signers[0].pubkey();
+    let compute_unit_limit = if compute_unit_price.is_some() {
+        let ixs = vec![system_instruction::transfer(
+            &config.signers[0].pubkey(),
+            &to,
+            lamports,
+        )]
+        .with_compute_unit_config(&ComputeUnitConfig {
+            compute_unit_price,
+            compute_unit_limit: ComputeUnitLimit::Simulated,
+        });
+        let message = Message::new(&ixs, Some(&config.signers[0].pubkey()));
+        ComputeUnitLimit::Static(simulate_for_compute_unit_limit(rpc_client, &message)?)
+    } else {
+        ComputeUnitLimit::Default
+    };
+
+    'mainloop: for seq in 0..count.unwrap_or(u64::MAX) {
         let now = Instant::now();
         if fixed_blockhash.is_none() && now.duration_since(blockhash_acquired).as_secs() > 60 {
             // Fetch a new blockhash every minute
-            let new_blockhash = rpc_client.get_new_latest_blockhash(&blockhash)?;
+            let new_blockhash = tps_client.get_new_latest_blockhash(&blockhash)?;
             blockhash = new_blockhash;
             lamports = 0;
             blockhash_acquired = Instant::now();
         }
 
-        let to = config.signers[0].pubkey();
         lamports = lamports.saturating_add(1);
 
         let build_message = |lamports| {
@@ -1523,7 +1499,10 @@ pub fn process_ping(
                 &to,
                 lamports,
             )]
-            .with_compute_unit_price(compute_unit_price);
+            .with_compute_unit_config(&ComputeUnitConfig {
+                compute_unit_price,
+                compute_unit_limit,
+            });
             Message::new(&ixs, Some(&config.signers[0].pubkey()))
         };
         let (message, _) = resolve_spend_tx_and_check_account_balance(
@@ -1532,6 +1511,7 @@ pub fn process_ping(
             SpendAmount::Some(lamports),
             &blockhash,
             &config.signers[0].pubkey(),
+            compute_unit_limit,
             build_message,
             config.commitment,
         )?;
@@ -1546,11 +1526,11 @@ pub fn process_ping(
             format!("[{}.{:06}] ", micros / 1_000_000, micros % 1_000_000)
         };
 
-        match rpc_client.send_transaction(&tx) {
+        match tps_client.send_transaction(tx) {
             Ok(signature) => {
                 let transaction_sent = Instant::now();
                 loop {
-                    let signature_status = rpc_client.get_signature_status(&signature)?;
+                    let signature_status = tps_client.get_signature_status(&signature)?;
                     let elapsed_time = Instant::now().duration_since(transaction_sent);
                     if let Some(transaction_status) = signature_status {
                         match transaction_status {
@@ -1745,9 +1725,9 @@ pub fn process_live_slots(config: &CliConfig) -> ProcessResult {
     let spacer = "|";
     slot_progress.println(spacer);
 
-    let mut last_root = std::u64::MAX;
+    let mut last_root = u64::MAX;
     let mut last_root_update = Instant::now();
-    let mut slots_per_second = std::f64::NAN;
+    let mut slots_per_second = f64::NAN;
     loop {
         if exit.load(Ordering::Relaxed) {
             eprintln!("{message}");
@@ -1757,7 +1737,7 @@ pub fn process_live_slots(config: &CliConfig) -> ProcessResult {
 
         match receiver.recv() {
             Ok(new_info) => {
-                if last_root == std::u64::MAX {
+                if last_root == u64::MAX {
                     last_root = new_info.root;
                     last_root_update = Instant::now();
                 }
@@ -1918,8 +1898,10 @@ pub fn process_show_stakes(
     let stake_history = from_account(&stake_history_account).ok_or_else(|| {
         CliError::RpcRequestError("Failed to deserialize stake history".to_string())
     })?;
-    let new_rate_activation_epoch =
-        get_feature_activation_epoch(rpc_client, &feature_set::reduce_stake_warmup_cooldown::id())?;
+    let new_rate_activation_epoch = get_feature_activation_epoch(
+        rpc_client,
+        &solana_feature_set::reduce_stake_warmup_cooldown::id(),
+    )?;
     stake_account_progress_bar.finish_and_clear();
 
     let mut stake_accounts: Vec<CliKeyedStakeState> = vec![];
@@ -2368,26 +2350,6 @@ mod tests {
         assert_eq!(
             parse_command(&test_cluster_version, &default_signer, &mut None).unwrap(),
             CliCommandInfo::without_signers(CliCommand::ClusterVersion)
-        );
-
-        let test_fees = test_commands.clone().get_matches_from(vec!["test", "fees"]);
-        assert_eq!(
-            parse_command(&test_fees, &default_signer, &mut None).unwrap(),
-            CliCommandInfo::without_signers(CliCommand::Fees { blockhash: None })
-        );
-
-        let blockhash = Hash::new_unique();
-        let test_fees = test_commands.clone().get_matches_from(vec![
-            "test",
-            "fees",
-            "--blockhash",
-            &blockhash.to_string(),
-        ]);
-        assert_eq!(
-            parse_command(&test_fees, &default_signer, &mut None).unwrap(),
-            CliCommandInfo::without_signers(CliCommand::Fees {
-                blockhash: Some(blockhash)
-            })
         );
 
         let slot = 100;

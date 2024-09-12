@@ -6,6 +6,7 @@
 //! A twisted ElGamal ciphertext consists of two components:
 //! - A Pedersen commitment that encodes a message to be encrypted
 //! - A "decryption handle" that binds the Pedersen opening to a specific public key
+//!
 //! In contrast to the traditional ElGamal encryption scheme, the twisted ElGamal encodes messages
 //! directly as a Pedersen commitment. Therefore, proof systems that are designed specifically for
 //! Pedersen commitments can be used on the twisted ElGamal ciphertexts.
@@ -33,8 +34,8 @@ use {
     rand::rngs::OsRng,
     serde::{Deserialize, Serialize},
     sha3::{Digest, Sha3_512},
+    solana_derivation_path::DerivationPath,
     solana_sdk::{
-        derivation_path::DerivationPath,
         signature::Signature,
         signer::{
             keypair::generate_seed_from_seed_phrase_and_passphrase, EncodableKey, EncodableKeypair,
@@ -57,7 +58,6 @@ impl ElGamal {
     /// Generates an ElGamal keypair.
     ///
     /// This function is randomized. It internally samples a scalar element using `OsRng`.
-    #[allow(non_snake_case)]
     fn keygen() -> ElGamalKeypair {
         // secret scalar should be non-zero except with negligible probability
         let mut s = Scalar::random(&mut OsRng);
@@ -70,7 +70,6 @@ impl ElGamal {
     /// Generates an ElGamal keypair from a scalar input that determines the ElGamal private key.
     ///
     /// This function panics if the input scalar is zero, which is not a valid key.
-    #[allow(non_snake_case)]
     fn keygen_with_scalar(s: &Scalar) -> ElGamalKeypair {
         let secret = ElGamalSecretKey(*s);
         let public = ElGamalPubkey::new(&secret);
@@ -149,10 +148,16 @@ pub struct ElGamalKeypair {
 impl ElGamalKeypair {
     /// Create an ElGamal keypair from an ElGamal public key and an ElGamal secret key.
     ///
-    /// An ElGamal keypair should never be instantiated manually; `ElGamalKeypair::new_rand` or
-    /// `ElGamalKeypair::new_from_signer` should be used instead. This function exists to create
-    /// custom ElGamal keypairs for tests.
+    /// An ElGamal keypair should never be instantiated manually; `ElGamalKeypair::new`,
+    /// `ElGamalKeypair::new_rand` or `ElGamalKeypair::new_from_signer` should be used instead.
+    /// This function exists to create custom ElGamal keypairs for tests.
     pub fn new_for_tests(public: ElGamalPubkey, secret: ElGamalSecretKey) -> Self {
+        Self { public, secret }
+    }
+
+    /// Convert an ElGamal secret key to an ElGamal keypair.
+    pub fn new(secret: ElGamalSecretKey) -> Self {
+        let public = ElGamalPubkey::new(&secret);
         Self { public, secret }
     }
 
@@ -168,14 +173,18 @@ impl ElGamalKeypair {
     /// wallets, the signing key is not exposed in the API. Therefore, this function uses a signer
     /// to sign a public seed and the resulting signature is then hashed to derive an ElGamal
     /// keypair.
-    #[allow(non_snake_case)]
     pub fn new_from_signer(
         signer: &dyn Signer,
         public_seed: &[u8],
     ) -> Result<Self, Box<dyn error::Error>> {
         let secret = ElGamalSecretKey::new_from_signer(signer, public_seed)?;
-        let public = ElGamalPubkey::new(&secret);
-        Ok(ElGamalKeypair { public, secret })
+        Ok(Self::new(secret))
+    }
+
+    /// Derive an ElGamal keypair from a signature.
+    pub fn new_from_signature(signature: &Signature) -> Result<Self, Box<dyn error::Error>> {
+        let secret = ElGamalSecretKey::new_from_signature(signature)?;
+        Ok(Self::new(secret))
     }
 
     /// Generates the public and secret keys for ElGamal encryption.
@@ -305,10 +314,9 @@ impl EncodableKeypair for ElGamalKeypair {
 pub struct ElGamalPubkey(RistrettoPoint);
 impl ElGamalPubkey {
     /// Derives the `ElGamalPubkey` that uniquely corresponds to an `ElGamalSecretKey`.
-    #[allow(non_snake_case)]
     pub fn new(secret: &ElGamalSecretKey) -> Self {
         let s = &secret.0;
-        assert!(s != &Scalar::zero());
+        assert!(s != &Scalar::ZERO);
 
         ElGamalPubkey(s.invert() * &(*H))
     }
@@ -372,9 +380,12 @@ impl TryFrom<&[u8]> for ElGamalPubkey {
         if bytes.len() != ELGAMAL_PUBKEY_LEN {
             return Err(ElGamalError::PubkeyDeserialization);
         }
+        let Ok(compressed_ristretto) = CompressedRistretto::from_slice(bytes) else {
+            return Err(ElGamalError::PubkeyDeserialization);
+        };
 
         Ok(ElGamalPubkey(
-            CompressedRistretto::from_slice(bytes)
+            compressed_ristretto
                 .decompress()
                 .ok_or(ElGamalError::PubkeyDeserialization)?,
         ))
@@ -428,11 +439,23 @@ impl ElGamalSecretKey {
             return Err(SignerError::Custom("Rejecting default signatures".into()));
         }
 
+        Ok(Self::seed_from_signature(&signature))
+    }
+
+    /// Derive an ElGamal secret key from a signature.
+    pub fn new_from_signature(signature: &Signature) -> Result<Self, Box<dyn error::Error>> {
+        let seed = Self::seed_from_signature(signature);
+        let key = Self::from_seed(&seed)?;
+        Ok(key)
+    }
+
+    /// Derive an ElGamal secret key from a signature.
+    pub fn seed_from_signature(signature: &Signature) -> Vec<u8> {
         let mut hasher = Sha3_512::new();
         hasher.update(signature.as_ref());
         let result = hasher.finalize();
 
-        Ok(result.to_vec())
+        result.to_vec()
     }
 
     /// Randomly samples an ElGamal secret key.
@@ -531,6 +554,7 @@ impl TryFrom<&[u8]> for ElGamalSecretKey {
         match bytes.try_into() {
             Ok(bytes) => Ok(ElGamalSecretKey::from(
                 Scalar::from_canonical_bytes(bytes)
+                    .into_option()
                     .ok_or(ElGamalError::SecretKeyDeserialization)?,
             )),
             _ => Err(ElGamalError::SecretKeyDeserialization),
@@ -563,7 +587,6 @@ impl ConstantTimeEq for ElGamalSecretKey {
 }
 
 /// Ciphertext for the ElGamal encryption scheme.
-#[allow(non_snake_case)]
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ElGamalCiphertext {
     pub commitment: PedersenCommitment,
@@ -718,10 +741,11 @@ impl DecryptHandle {
         if bytes.len() != DECRYPT_HANDLE_LEN {
             return None;
         }
+        let Ok(compressed_ristretto) = CompressedRistretto::from_slice(bytes) else {
+            return None;
+        };
 
-        Some(DecryptHandle(
-            CompressedRistretto::from_slice(bytes).decompress()?,
-        ))
+        compressed_ristretto.decompress().map(DecryptHandle)
     }
 }
 

@@ -666,7 +666,7 @@
 //!     signatures: &[SecpSignature],
 //!     instruction_index: u8,
 //! ) -> Result<Vec<u8>> {
-//!     assert!(signatures.len() <= u8::max_value().into());
+//!     assert!(signatures.len() <= u8::MAX.into());
 //!
 //!     // We're going to pack all the signatures into the secp256k1 instruction data.
 //!     // Before our signatures though is the signature offset structures
@@ -788,15 +788,12 @@
 #![cfg(feature = "full")]
 
 use {
-    crate::{
-        feature_set::{
-            libsecp256k1_fail_on_bad_count, libsecp256k1_fail_on_bad_count2, FeatureSet,
-        },
-        instruction::Instruction,
-        precompiles::PrecompileError,
-    },
+    crate::{instruction::Instruction, precompiles::PrecompileError},
     digest::Digest,
     serde_derive::{Deserialize, Serialize},
+    solana_feature_set::{
+        libsecp256k1_fail_on_bad_count, libsecp256k1_fail_on_bad_count2, FeatureSet,
+    },
 };
 
 pub const HASHED_PUBKEY_SERIALIZED_SIZE: usize = 20;
@@ -1040,7 +1037,6 @@ pub mod test {
     use {
         super::*,
         crate::{
-            feature_set,
             hash::Hash,
             keccak,
             secp256k1_instruction::{
@@ -1142,8 +1138,8 @@ pub mod test {
         );
 
         let offsets = SecpSignatureOffsets {
-            message_data_offset: std::u16::MAX,
-            message_data_size: std::u16::MAX,
+            message_data_offset: u16::MAX,
+            message_data_size: u16::MAX,
             ..SecpSignatureOffsets::default()
         };
         assert_eq!(
@@ -1155,7 +1151,7 @@ pub mod test {
     #[test]
     fn test_eth_offset() {
         let offsets = SecpSignatureOffsets {
-            eth_address_offset: std::u16::MAX,
+            eth_address_offset: u16::MAX,
             ..SecpSignatureOffsets::default()
         };
         assert_eq!(
@@ -1176,7 +1172,7 @@ pub mod test {
     #[test]
     fn test_signature_offset() {
         let offsets = SecpSignatureOffsets {
-            signature_offset: std::u16::MAX,
+            signature_offset: u16::MAX,
             ..SecpSignatureOffsets::default()
         };
         assert_eq!(
@@ -1224,7 +1220,7 @@ pub mod test {
         let message_arr = b"hello";
         let mut secp_instruction = new_secp256k1_instruction(&secp_privkey, message_arr);
         let mint_keypair = Keypair::new();
-        let feature_set = feature_set::FeatureSet::all_enabled();
+        let feature_set = solana_feature_set::FeatureSet::all_enabled();
 
         let tx = Transaction::new_signed_with_payer(
             &[secp_instruction.clone()],

@@ -27,8 +27,12 @@ use {
 
 /// An Account with data that is stored on chain
 #[repr(C)]
-#[frozen_abi(digest = "HawRVHh7t4d3H3bitWHFt25WhhoDmbJMCfWdESQQoYEy")]
-#[derive(Deserialize, PartialEq, Eq, Clone, Default, AbiExample)]
+#[cfg_attr(
+    feature = "frozen-abi",
+    derive(AbiExample),
+    frozen_abi(digest = "2SUJNHbXMPWrsSXmDTFc4VHx2XQ85fT5Leabefh5Nwe7")
+)]
+#[derive(Deserialize, PartialEq, Eq, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     /// lamports in the account
@@ -51,8 +55,12 @@ mod account_serialize {
         serde::{ser::Serializer, Serialize},
     };
     #[repr(C)]
-    #[frozen_abi(digest = "HawRVHh7t4d3H3bitWHFt25WhhoDmbJMCfWdESQQoYEy")]
-    #[derive(Serialize, AbiExample)]
+    #[cfg_attr(
+        feature = "frozen-abi",
+        derive(AbiExample),
+        frozen_abi(digest = "2SUJNHbXMPWrsSXmDTFc4VHx2XQ85fT5Leabefh5Nwe7")
+    )]
+    #[derive(Serialize)]
     #[serde(rename_all = "camelCase")]
     struct Account<'a> {
         lamports: u64,
@@ -104,7 +112,8 @@ impl Serialize for AccountSharedData {
 /// An Account with data that is stored on chain
 /// This will be the in-memory representation of the 'Account' struct data.
 /// The existing 'Account' structure cannot easily change due to downstream projects.
-#[derive(PartialEq, Eq, Clone, Default, AbiExample, Deserialize)]
+#[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
+#[derive(PartialEq, Eq, Clone, Default, Deserialize)]
 #[serde(from = "Account")]
 pub struct AccountSharedData {
     /// lamports in the account
@@ -666,15 +675,6 @@ impl AccountSharedData {
 pub type InheritableAccountFields = (u64, Epoch);
 pub const DUMMY_INHERITABLE_ACCOUNT_FIELDS: InheritableAccountFields = (1, INITIAL_RENT_EPOCH);
 
-/// Create an `Account` from a `Sysvar`.
-#[deprecated(
-    since = "1.5.17",
-    note = "Please use `create_account_for_test` instead"
-)]
-pub fn create_account<S: Sysvar>(sysvar: &S, lamports: u64) -> Account {
-    create_account_with_fields(sysvar, (lamports, INITIAL_RENT_EPOCH))
-}
-
 pub fn create_account_with_fields<S: Sysvar>(
     sysvar: &S,
     (lamports, rent_epoch): InheritableAccountFields,
@@ -691,17 +691,6 @@ pub fn create_account_for_test<S: Sysvar>(sysvar: &S) -> Account {
 }
 
 /// Create an `Account` from a `Sysvar`.
-#[deprecated(
-    since = "1.5.17",
-    note = "Please use `create_account_shared_data_for_test` instead"
-)]
-pub fn create_account_shared_data<S: Sysvar>(sysvar: &S, lamports: u64) -> AccountSharedData {
-    AccountSharedData::from(create_account_with_fields(
-        sysvar,
-        (lamports, INITIAL_RENT_EPOCH),
-    ))
-}
-
 pub fn create_account_shared_data_with_fields<S: Sysvar>(
     sysvar: &S,
     fields: InheritableAccountFields,
@@ -1002,7 +991,6 @@ pub mod tests {
     }
 
     #[test]
-    #[allow(clippy::redundant_clone)]
     fn test_account_shared_data_all_fields() {
         let key = Pubkey::new_unique();
         let key2 = Pubkey::new_unique();

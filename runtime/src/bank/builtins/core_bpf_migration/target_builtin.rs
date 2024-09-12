@@ -75,10 +75,11 @@ mod tests {
         super::*,
         crate::bank::{tests::create_simple_test_bank, ApplyFeatureActivationsCaller},
         assert_matches::assert_matches,
+        solana_feature_set as feature_set,
         solana_sdk::{
             account::Account,
             bpf_loader_upgradeable::{UpgradeableLoaderState, ID as BPF_LOADER_UPGRADEABLE_ID},
-            feature, feature_set,
+            feature,
         },
         test_case::test_case,
     };
@@ -119,6 +120,10 @@ mod tests {
     #[test_case(
         solana_zk_token_sdk::zk_token_proof_program::id(),
         Some(feature_set::zk_token_sdk_enabled::id())
+    )]
+    #[test_case(
+        solana_zk_sdk::zk_elgamal_proof_program::id(),
+        Some(feature_set::zk_elgamal_proof_program_enabled::id())
     )]
     fn test_target_program_builtin(program_address: Pubkey, activation_feature: Option<Pubkey>) {
         let migration_target = CoreBpfMigrationTargetType::Builtin;

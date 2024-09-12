@@ -10,9 +10,11 @@ use {
     console::style,
     serde::{Deserialize, Serialize},
     solana_clap_utils::{
-        fee_payer::*, hidden_unless_forced, input_parsers::*, input_validators::*, keypair::*,
+        compute_budget::ComputeUnitLimit, fee_payer::*, hidden_unless_forced, input_parsers::*,
+        input_validators::*, keypair::*,
     },
     solana_cli_output::{cli_version::CliVersion, QuietDisplay, VerboseDisplay},
+    solana_feature_set::FEATURE_NAMES,
     solana_remote_wallet::remote_wallet::RemoteWalletManager,
     solana_rpc_client::rpc_client::RpcClient,
     solana_rpc_client_api::{
@@ -24,7 +26,6 @@ use {
         clock::Slot,
         epoch_schedule::EpochSchedule,
         feature::{self, Feature},
-        feature_set::FEATURE_NAMES,
         genesis_config::ClusterType,
         message::Message,
         pubkey::Pubkey,
@@ -819,7 +820,7 @@ fn feature_activation_allowed(
     ))
 }
 
-fn status_from_account(account: Account) -> Option<CliFeatureStatus> {
+pub(super) fn status_from_account(account: Account) -> Option<CliFeatureStatus> {
     feature::from_account(&account).map(|feature| match feature.activated_at {
         None => CliFeatureStatus::Pending,
         Some(activation_slot) => CliFeatureStatus::Active(activation_slot),
@@ -972,6 +973,7 @@ fn process_activate(
         SpendAmount::Some(rent),
         &blockhash,
         &fee_payer.pubkey(),
+        ComputeUnitLimit::Default,
         |lamports| {
             Message::new(
                 &feature::activate_with_lamports(&feature_id, &fee_payer.pubkey(), lamports),

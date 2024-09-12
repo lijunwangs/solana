@@ -50,7 +50,7 @@ impl Bank {
             distribution_starting_block_height + status.stake_rewards_by_partition.len() as u64;
         assert!(
             self.epoch_schedule.get_slots_in_epoch(self.epoch)
-                > distribution_end_exclusive.saturating_sub(distribution_starting_block_height)
+                > status.stake_rewards_by_partition.len() as u64
         );
 
         if height >= distribution_starting_block_height && height < distribution_end_exclusive {
@@ -150,7 +150,10 @@ impl Bank {
         let (mut account, stake_state): (AccountSharedData, StakeStateV2) = stake_account.into();
         let StakeStateV2::Stake(meta, stake, flags) = stake_state else {
             // StakesCache only stores accounts where StakeStateV2::delegation().is_some()
-            unreachable!()
+            unreachable!(
+                "StakesCache entry {:?} failed StakeStateV2 deserialization",
+                partitioned_stake_reward.stake_pubkey
+            )
         };
         account
             .checked_add_lamports(partitioned_stake_reward.stake_reward_info.lamports as u64)
@@ -207,8 +210,8 @@ impl Bank {
                 }
                 Err(err) => {
                     error!(
-                        "bank::distribution::store_stake_accounts_in_partition() failed for {}: {:?}",
-                        stake_pubkey, err
+                        "bank::distribution::store_stake_accounts_in_partition() failed for \
+                         {stake_pubkey}, {reward_amount} lamports burned: {err:?}"
                     );
                     lamports_burned += reward_amount;
                 }
@@ -240,7 +243,6 @@ mod tests {
         solana_sdk::{
             account::from_account,
             epoch_schedule::EpochSchedule,
-            feature_set,
             hash::Hash,
             native_token::LAMPORTS_PER_SOL,
             rent::Rent,
@@ -252,7 +254,7 @@ mod tests {
             },
             sysvar,
         },
-        solana_stake_program::stake_state,
+        solana_stake_program::{points::PointValue, stake_state},
         solana_vote_program::vote_state,
     };
 
@@ -346,13 +348,22 @@ mod tests {
             create_genesis_config(1_000_000 * LAMPORTS_PER_SOL);
         genesis_config.epoch_schedule = EpochSchedule::custom(432000, 432000, false);
         let mut bank = Bank::new_for_tests(&genesis_config);
-        bank.activate_feature(&feature_set::enable_partitioned_epoch_reward::id());
+        bank.activate_feature(&solana_feature_set::partitioned_epoch_rewards_superfeature::id());
 
         // Set up epoch_rewards sysvar with rewards with 1e9 lamports to distribute.
         let total_rewards = 1_000_000_000;
         let num_partitions = 2; // num_partitions is arbitrary and unimportant for this test
         let total_points = (total_rewards * 42) as u128; // total_points is arbitrary for the purposes of this test
-        bank.create_epoch_rewards_sysvar(total_rewards, 0, 42, num_partitions, total_points);
+        bank.create_epoch_rewards_sysvar(
+            total_rewards,
+            0,
+            42,
+            num_partitions,
+            PointValue {
+                rewards: total_rewards,
+                points: total_points,
+            },
+        );
         let pre_epoch_rewards_account = bank.get_account(&sysvar::epoch_rewards::id()).unwrap();
         let expected_balance =
             bank.get_minimum_balance_for_rent_exemption(pre_epoch_rewards_account.data().len());

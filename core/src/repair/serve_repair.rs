@@ -41,7 +41,7 @@ use {
         pubkey::{Pubkey, PUBKEY_BYTES},
         signature::{Signable, Signature, Signer, SIGNATURE_BYTES},
         signer::keypair::Keypair,
-        timing::{duration_as_ms, timestamp},
+        timing::timestamp,
     },
     solana_streamer::{
         sendmmsg::{batch_send, SendPktsError},
@@ -140,8 +140,12 @@ impl AncestorHashesRepairType {
     }
 }
 
-#[derive(Debug, AbiEnumVisitor, AbiExample, Deserialize, Serialize)]
-#[frozen_abi(digest = "AKpurCovzn6rsji4aQrP3hUdEHxjtXUfT7AatZXN7Rpz")]
+#[cfg_attr(
+    feature = "frozen-abi",
+    derive(AbiEnumVisitor, AbiExample),
+    frozen_abi(digest = "9SdneX58ekpqLJBzUwfwJsK2fZc9mN4vTcaS4temEjkP")
+)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum AncestorHashesResponse {
     Hashes(Vec<(Slot, Hash)>),
     Ping(Ping),
@@ -192,7 +196,8 @@ struct ServeRepairStats {
     err_id_mismatch: usize,
 }
 
-#[derive(Debug, AbiExample, Deserialize, Serialize)]
+#[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RepairRequestHeader {
     signature: Signature,
     sender: Pubkey,
@@ -216,8 +221,12 @@ impl RepairRequestHeader {
 pub(crate) type Ping = ping_pong::Ping<[u8; REPAIR_PING_TOKEN_SIZE]>;
 
 /// Window protocol messages
-#[derive(Debug, AbiEnumVisitor, AbiExample, Deserialize, Serialize)]
-#[frozen_abi(digest = "5cmSdmXMgkpUH5ZCmYYjxUVQfULe9iJqCqqfrADfsEmK")]
+#[cfg_attr(
+    feature = "frozen-abi",
+    derive(AbiEnumVisitor, AbiExample),
+    frozen_abi(digest = "3E2R8jiSt9QfVHdX3MgW3UdeNWfor7zNjJcLJLz2K1JY")
+)]
+#[derive(Debug, Deserialize, Serialize)]
 pub enum RepairProtocol {
     LegacyWindowIndex,
     LegacyHighestWindowIndex,
@@ -260,8 +269,12 @@ fn discard_malformed_repair_requests(
     requests.len()
 }
 
-#[derive(Debug, AbiEnumVisitor, AbiExample, Deserialize, Serialize)]
-#[frozen_abi(digest = "CkffjyMPCwuJgk9NiCMELXLCecAnTPZqpKEnUCb3VyVf")]
+#[cfg_attr(
+    feature = "frozen-abi",
+    derive(AbiEnumVisitor, AbiExample),
+    frozen_abi(digest = "CpKVYghdpMDRMiGjZpa71dcnB7rCVHLVogZbB3AGDKAK")
+)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum RepairResponse {
     Ping(Ping),
 }
@@ -504,7 +517,7 @@ impl ServeRepair {
     }
 
     fn report_time_spent(label: &str, time: &Duration, extra: &str) {
-        let count = duration_as_ms(time);
+        let count = time.as_millis();
         if count > 5 {
             info!("{} took: {} ms {}", label, count, extra);
         }
@@ -1428,6 +1441,7 @@ mod tests {
     use {
         super::*,
         crate::repair::repair_response,
+        solana_feature_set::FeatureSet,
         solana_gossip::{contact_info::ContactInfo, socketaddr, socketaddr_any},
         solana_ledger::{
             blockstore::make_many_slot_entries,
@@ -1438,10 +1452,7 @@ mod tests {
         },
         solana_perf::packet::{deserialize_from_with_limit, Packet},
         solana_runtime::bank::Bank,
-        solana_sdk::{
-            feature_set::FeatureSet, hash::Hash, pubkey::Pubkey, signature::Keypair,
-            timing::timestamp,
-        },
+        solana_sdk::{hash::Hash, pubkey::Pubkey, signature::Keypair, timing::timestamp},
         solana_streamer::socket::SocketAddrSpace,
         std::{io::Cursor, net::Ipv4Addr},
     };

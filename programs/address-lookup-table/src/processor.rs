@@ -1,5 +1,7 @@
 use {
-    solana_program_runtime::{declare_process_instruction, ic_msg, invoke_context::InvokeContext},
+    solana_feature_set as feature_set,
+    solana_log_collector::ic_msg,
+    solana_program_runtime::{declare_process_instruction, invoke_context::InvokeContext},
     solana_sdk::{
         address_lookup_table::{
             instruction::ProgramInstruction,
@@ -10,7 +12,6 @@ use {
             },
         },
         clock::Slot,
-        feature_set,
         instruction::InstructionError,
         program_utils::limited_deserialize,
         pubkey::{Pubkey, PUBKEY_BYTES},

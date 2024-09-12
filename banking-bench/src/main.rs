@@ -31,7 +31,7 @@ use {
         pubkey::{self, Pubkey},
         signature::{Keypair, Signature, Signer},
         system_instruction, system_transaction,
-        timing::{duration_as_us, timestamp},
+        timing::timestamp,
         transaction::Transaction,
     },
     solana_streamer::socket::SocketAddrSpace,
@@ -352,7 +352,7 @@ fn main() {
     // set cost tracker limits to MAX so it will not filter out TXs
     bank.write_cost_tracker()
         .unwrap()
-        .set_limits(std::u64::MAX, std::u64::MAX, std::u64::MAX);
+        .set_limits(u64::MAX, u64::MAX, u64::MAX);
 
     let mut all_packets: Vec<PacketsPerIteration> = std::iter::from_fn(|| {
         Some(PacketsPerIteration::new(
@@ -474,6 +474,7 @@ fn main() {
         Arc::new(connection_cache),
         bank_forks.clone(),
         &Arc::new(PrioritizationFeeCache::new(0u64)),
+        false,
     );
 
     // This is so that the signal_receiver does not go out of scope after the closure.
@@ -533,7 +534,7 @@ fn main() {
                 bank.slot(),
                 bank.transaction_count(),
             );
-            tx_total_us += duration_as_us(&now.elapsed());
+            tx_total_us += now.elapsed().as_micros() as u64;
 
             let mut poh_time = Measure::start("poh_time");
             poh_recorder
@@ -553,11 +554,9 @@ fn main() {
             insert_time.stop();
 
             // set cost tracker limits to MAX so it will not filter out TXs
-            bank.write_cost_tracker().unwrap().set_limits(
-                std::u64::MAX,
-                std::u64::MAX,
-                std::u64::MAX,
-            );
+            bank.write_cost_tracker()
+                .unwrap()
+                .set_limits(u64::MAX, u64::MAX, u64::MAX);
 
             assert!(poh_recorder.read().unwrap().bank().is_none());
             poh_recorder
@@ -579,14 +578,14 @@ fn main() {
                 bank.slot(),
                 bank.transaction_count(),
             );
-            tx_total_us += duration_as_us(&now.elapsed());
+            tx_total_us += now.elapsed().as_micros() as u64;
         }
 
         // This signature clear may not actually clear the signatures
         // in this chunk, but since we rotate between CHUNKS then
         // we should clear them by the time we come around again to re-use that chunk.
         bank.clear_signatures();
-        total_us += duration_as_us(&now.elapsed());
+        total_us += now.elapsed().as_micros() as u64;
         total_sent += sent;
 
         if current_iteration_index % num_chunks == 0 {

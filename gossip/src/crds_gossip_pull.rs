@@ -55,7 +55,8 @@ const FAILED_INSERTS_RETENTION_MS: u64 = 20_000;
 pub const FALSE_RATE: f64 = 0.1f64;
 pub const KEYS: f64 = 8f64;
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, AbiExample)]
+#[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct CrdsFilter {
     pub filter: Bloom<Hash>,
     mask: u64,
@@ -72,8 +73,8 @@ impl Default for CrdsFilter {
     }
 }
 
-impl solana_sdk::sanitize::Sanitize for CrdsFilter {
-    fn sanitize(&self) -> std::result::Result<(), solana_sdk::sanitize::SanitizeError> {
+impl solana_sanitize::Sanitize for CrdsFilter {
+    fn sanitize(&self) -> std::result::Result<(), solana_sanitize::SanitizeError> {
         self.filter.sanitize()?;
         Ok(())
     }
@@ -199,7 +200,6 @@ pub struct ProcessPullStats {
     pub success: usize,
     pub failed_insert: usize,
     pub failed_timeout: usize,
-    pub timeout_count: usize,
 }
 
 pub struct CrdsGossipPull {
@@ -353,7 +353,6 @@ impl CrdsGossipPull {
                 expired_values.push(response);
                 None
             } else {
-                stats.timeout_count += 1;
                 stats.failed_timeout += 1;
                 Some(response)
             }
@@ -563,7 +562,7 @@ impl CrdsGossipPull {
         );
         (
             stats.failed_timeout + stats.failed_insert,
-            stats.timeout_count,
+            stats.failed_timeout,
             stats.success,
         )
     }
@@ -1149,6 +1148,7 @@ pub(crate) mod tests {
 
         let mut dest_crds = Crds::default();
         let new_id = solana_sdk::pubkey::new_rand();
+        let same_key = ContactInfo::new_localhost(&new_id, 0);
         let new = ContactInfo::new_localhost(&new_id, 1);
         ping_cache.mock_pong(*new.pubkey(), new.gossip().unwrap(), Instant::now());
         let new = CrdsValue::new_unsigned(CrdsData::ContactInfo(new));
@@ -1158,7 +1158,6 @@ pub(crate) mod tests {
         let dest_crds = RwLock::new(dest_crds);
 
         // node contains a key from the dest node, but at an older local timestamp
-        let same_key = ContactInfo::new_localhost(&new_id, 0);
         ping_cache.mock_pong(
             *same_key.pubkey(),
             same_key.gossip().unwrap(),
@@ -1303,7 +1302,6 @@ pub(crate) mod tests {
         assert_eq!(node_crds.num_purged(), 0);
     }
     #[test]
-    #[allow(clippy::float_cmp)]
     fn test_crds_filter_mask() {
         let filter = CrdsFilter::new_rand(1, 128);
         assert_eq!(filter.mask, !0x0);

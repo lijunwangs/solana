@@ -5,7 +5,7 @@ use {
         clock::{Epoch, Slot},
         commitment_config::{CommitmentConfig, CommitmentLevel},
     },
-    solana_transaction_status::{TransactionDetails, UiTransactionEncoding},
+    solana_transaction_status_client_types::{TransactionDetails, UiTransactionEncoding},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -119,6 +119,7 @@ pub struct RpcLargestAccountsConfig {
     #[serde(flatten)]
     pub commitment: Option<CommitmentConfig>,
     pub filter: Option<RpcLargestAccountsFilter>,
+    pub sort_results: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -164,6 +165,7 @@ pub struct RpcProgramAccountsConfig {
     #[serde(flatten)]
     pub account_config: RpcAccountInfoConfig,
     pub with_context: Option<bool>,
+    pub sort_results: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

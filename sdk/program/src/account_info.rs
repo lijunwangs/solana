@@ -2,9 +2,11 @@
 
 use {
     crate::{
-        clock::Epoch, debug_account_data::*, entrypoint::MAX_PERMITTED_DATA_INCREASE,
-        program_error::ProgramError, program_memory::sol_memset, pubkey::Pubkey,
+        debug_account_data::*, entrypoint::MAX_PERMITTED_DATA_INCREASE,
+        program_error::ProgramError, pubkey::Pubkey,
     },
+    solana_clock::Epoch,
+    solana_program_memory::sol_memset,
     std::{
         cell::{Ref, RefCell, RefMut},
         fmt,
@@ -182,7 +184,7 @@ impl<'a> AccountInfo<'a> {
         Ok(())
     }
 
-    #[rustversion::attr(since(1.72), allow(invalid_reference_casting))]
+    #[allow(invalid_reference_casting)]
     pub fn assign(&self, new_owner: &Pubkey) {
         // Set the non-mut owner field
         unsafe {

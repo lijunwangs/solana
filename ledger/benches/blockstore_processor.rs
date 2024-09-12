@@ -6,25 +6,28 @@ use {
         iter::IndexedParallelIterator,
         prelude::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
     },
+    solana_feature_set::apply_cost_tracker_during_replay,
     solana_ledger::{
         blockstore_processor::{execute_batch, TransactionBatchWithIndexes},
         genesis_utils::{create_genesis_config, GenesisConfigInfo},
     },
-    solana_program_runtime::timings::ExecuteTimings,
     solana_runtime::{
-        bank::Bank, prioritization_fee_cache::PrioritizationFeeCache,
+        bank::Bank, bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache,
         transaction_batch::TransactionBatch,
     },
     solana_sdk::{
         account::{Account, ReadableAccount},
-        feature_set::apply_cost_tracker_during_replay,
         signature::Keypair,
         signer::Signer,
         stake_history::Epoch,
         system_program, system_transaction,
         transaction::SanitizedTransaction,
     },
-    std::{borrow::Cow, sync::Arc},
+    solana_timings::ExecuteTimings,
+    std::{
+        borrow::Cow,
+        sync::{Arc, RwLock},
+    },
     test::Bencher,
 };
 
@@ -74,6 +77,7 @@ fn create_transactions(bank: &Bank, num: usize) -> Vec<SanitizedTransaction> {
 
 struct BenchFrame {
     bank: Arc<Bank>,
+    _bank_forks: Arc<RwLock<BankForks>>,
     prioritization_fee_cache: PrioritizationFeeCache,
 }
 
@@ -99,11 +103,12 @@ fn setup(apply_cost_tracker_during_replay: bool) -> BenchFrame {
     // set cost tracker limits to MAX so it will not filter out TXs
     bank.write_cost_tracker()
         .unwrap()
-        .set_limits(std::u64::MAX, std::u64::MAX, std::u64::MAX);
-    let bank = bank.wrap_with_bank_forks_for_tests().0;
+        .set_limits(u64::MAX, u64::MAX, u64::MAX);
+    let (bank, bank_forks) = bank.wrap_with_bank_forks_for_tests();
     let prioritization_fee_cache = PrioritizationFeeCache::default();
     BenchFrame {
         bank,
+        _bank_forks: bank_forks,
         prioritization_fee_cache,
     }
 }
@@ -117,14 +122,14 @@ fn bench_execute_batch(
     assert_eq!(
         TRANSACTIONS_PER_ITERATION % batch_size,
         0,
-        "batch_size must be a factor of \
-        `TRANSACTIONS_PER_ITERATION` ({TRANSACTIONS_PER_ITERATION}) \
-        so that bench results are easily comparable"
+        "batch_size must be a factor of `TRANSACTIONS_PER_ITERATION` \
+         ({TRANSACTIONS_PER_ITERATION}) so that bench results are easily comparable"
     );
     let batches_per_iteration = TRANSACTIONS_PER_ITERATION / batch_size;
 
     let BenchFrame {
         bank,
+        _bank_forks,
         prioritization_fee_cache,
     } = setup(apply_cost_tracker_during_replay);
     let transactions = create_transactions(&bank, 2_usize.pow(20));

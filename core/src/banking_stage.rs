@@ -31,16 +31,19 @@ use {
     crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender},
     histogram::Histogram,
     solana_client::connection_cache::ConnectionCache,
-    solana_gossip::cluster_info::ClusterInfo,
+    solana_gossip::{cluster_info::ClusterInfo, contact_info::ContactInfo},
     solana_ledger::blockstore_processor::TransactionStatusSender,
-    solana_measure::{measure, measure_us},
+    solana_measure::measure_us,
     solana_perf::{data_budget::DataBudget, packet::PACKETS_PER_BATCH},
     solana_poh::poh_recorder::{PohRecorder, TransactionRecorder},
-    solana_runtime::{bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache},
-    solana_sdk::timing::AtomicInterval,
-    solana_vote::vote_sender_types::ReplayVoteSender,
+    solana_runtime::{
+        bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache,
+        vote_sender_types::ReplayVoteSender,
+    },
+    solana_sdk::{pubkey::Pubkey, timing::AtomicInterval},
     std::{
         cmp, env,
+        ops::Deref,
         sync::{
             atomic::{AtomicU64, AtomicUsize, Ordering},
             Arc, RwLock,
@@ -68,6 +71,7 @@ mod latest_unprocessed_votes;
 mod leader_slot_timing_metrics;
 mod multi_iterator_scanner;
 mod packet_deserializer;
+mod packet_filter;
 mod packet_receiver;
 mod read_write_account_set;
 #[allow(dead_code)]
@@ -285,6 +289,7 @@ pub struct BatchedTransactionCostDetails {
     pub batched_signature_cost: u64,
     pub batched_write_lock_cost: u64,
     pub batched_data_bytes_cost: u64,
+    pub batched_loaded_accounts_data_size_cost: u64,
     pub batched_programs_execute_cost: u64,
 }
 
@@ -319,12 +324,33 @@ pub struct FilterForwardingResults {
     pub(crate) total_filter_packets_us: u64,
 }
 
+pub trait LikeClusterInfo: Send + Sync + 'static + Clone {
+    fn id(&self) -> Pubkey;
+
+    fn lookup_contact_info<F, Y>(&self, id: &Pubkey, map: F) -> Option<Y>
+    where
+        F: FnOnce(&ContactInfo) -> Y;
+}
+
+impl LikeClusterInfo for Arc<ClusterInfo> {
+    fn id(&self) -> Pubkey {
+        self.deref().id()
+    }
+
+    fn lookup_contact_info<F, Y>(&self, id: &Pubkey, map: F) -> Option<Y>
+    where
+        F: FnOnce(&ContactInfo) -> Y,
+    {
+        self.deref().lookup_contact_info(id, map)
+    }
+}
+
 impl BankingStage {
     /// Create the stage using `bank`. Exit when `verified_receiver` is dropped.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         block_production_method: BlockProductionMethod,
-        cluster_info: &Arc<ClusterInfo>,
+        cluster_info: &impl LikeClusterInfo,
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         non_vote_receiver: BankingPacketReceiver,
         tpu_vote_receiver: BankingPacketReceiver,
@@ -335,6 +361,7 @@ impl BankingStage {
         connection_cache: Arc<ConnectionCache>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
+        enable_forwarding: bool,
     ) -> Self {
         Self::new_num_threads(
             block_production_method,
@@ -350,13 +377,14 @@ impl BankingStage {
             connection_cache,
             bank_forks,
             prioritization_fee_cache,
+            enable_forwarding,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn new_num_threads(
         block_production_method: BlockProductionMethod,
-        cluster_info: &Arc<ClusterInfo>,
+        cluster_info: &impl LikeClusterInfo,
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         non_vote_receiver: BankingPacketReceiver,
         tpu_vote_receiver: BankingPacketReceiver,
@@ -368,6 +396,7 @@ impl BankingStage {
         connection_cache: Arc<ConnectionCache>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
+        enable_forwarding: bool,
     ) -> Self {
         match block_production_method {
             BlockProductionMethod::ThreadLocalMultiIterator => {
@@ -399,13 +428,14 @@ impl BankingStage {
                 connection_cache,
                 bank_forks,
                 prioritization_fee_cache,
+                enable_forwarding,
             ),
         }
     }
 
     #[allow(clippy::too_many_arguments)]
     pub fn new_thread_local_multi_iterator(
-        cluster_info: &Arc<ClusterInfo>,
+        cluster_info: &impl LikeClusterInfo,
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         non_vote_receiver: BankingPacketReceiver,
         tpu_vote_receiver: BankingPacketReceiver,
@@ -426,7 +456,10 @@ impl BankingStage {
         let batch_limit =
             TOTAL_BUFFERED_PACKETS / ((num_threads - NUM_VOTE_PROCESSING_THREADS) as usize);
         // Keeps track of extraneous vote transactions for the vote threads
-        let latest_unprocessed_votes = Arc::new(LatestUnprocessedVotes::new());
+        let latest_unprocessed_votes = {
+            let bank = bank_forks.read().unwrap().working_bank();
+            Arc::new(LatestUnprocessedVotes::new(&bank))
+        };
 
         let decision_maker = DecisionMaker::new(cluster_info.id(), poh_recorder.clone());
         let committer = Committer::new(
@@ -489,7 +522,7 @@ impl BankingStage {
 
     #[allow(clippy::too_many_arguments)]
     pub fn new_central_scheduler(
-        cluster_info: &Arc<ClusterInfo>,
+        cluster_info: &impl LikeClusterInfo,
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         non_vote_receiver: BankingPacketReceiver,
         tpu_vote_receiver: BankingPacketReceiver,
@@ -501,6 +534,7 @@ impl BankingStage {
         connection_cache: Arc<ConnectionCache>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
+        enable_forwarding: bool,
     ) -> Self {
         assert!(num_threads >= MIN_TOTAL_THREADS);
         // Single thread to generate entries from many banks.
@@ -508,7 +542,10 @@ impl BankingStage {
         // Once an entry has been recorded, its blockhash is registered with the bank.
         let data_budget = Arc::new(DataBudget::default());
         // Keeps track of extraneous vote transactions for the vote threads
-        let latest_unprocessed_votes = Arc::new(LatestUnprocessedVotes::new());
+        let latest_unprocessed_votes = {
+            let bank = bank_forks.read().unwrap().working_bank();
+            Arc::new(LatestUnprocessedVotes::new(&bank))
+        };
 
         let decision_maker = DecisionMaker::new(cluster_info.id(), poh_recorder.clone());
         let committer = Committer::new(
@@ -582,13 +619,15 @@ impl BankingStage {
             )
         }
 
-        let forwarder = Forwarder::new(
-            poh_recorder.clone(),
-            bank_forks.clone(),
-            cluster_info.clone(),
-            connection_cache.clone(),
-            data_budget.clone(),
-        );
+        let forwarder = enable_forwarding.then(|| {
+            Forwarder::new(
+                poh_recorder.clone(),
+                bank_forks.clone(),
+                cluster_info.clone(),
+                connection_cache.clone(),
+                data_budget.clone(),
+            )
+        });
 
         // Spawn the central scheduler thread
         bank_thread_hdls.push({
@@ -618,7 +657,7 @@ impl BankingStage {
         Self { bank_thread_hdls }
     }
 
-    fn spawn_thread_local_multi_iterator_thread(
+    fn spawn_thread_local_multi_iterator_thread<T: LikeClusterInfo>(
         id: u32,
         packet_receiver: BankingPacketReceiver,
         bank_forks: Arc<RwLock<BankForks>>,
@@ -626,7 +665,7 @@ impl BankingStage {
         committer: Committer,
         transaction_recorder: TransactionRecorder,
         log_messages_bytes_limit: Option<usize>,
-        mut forwarder: Forwarder,
+        mut forwarder: Forwarder<T>,
         unprocessed_transaction_storage: UnprocessedTransactionStorage,
     ) -> JoinHandle<()> {
         let mut packet_receiver = PacketReceiver::new(id, packet_receiver, bank_forks);
@@ -653,9 +692,9 @@ impl BankingStage {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn process_buffered_packets(
+    fn process_buffered_packets<T: LikeClusterInfo>(
         decision_maker: &DecisionMaker,
-        forwarder: &mut Forwarder,
+        forwarder: &mut Forwarder<T>,
         consumer: &Consumer,
         unprocessed_transaction_storage: &mut UnprocessedTransactionStorage,
         banking_stage_stats: &BankingStageStats,
@@ -665,13 +704,13 @@ impl BankingStage {
         if unprocessed_transaction_storage.should_not_process() {
             return;
         }
-        let (decision, make_decision_time) =
-            measure!(decision_maker.make_consume_or_forward_decision());
+        let (decision, make_decision_us) =
+            measure_us!(decision_maker.make_consume_or_forward_decision());
         let metrics_action = slot_metrics_tracker.check_leader_slot_boundary(
             decision.bank_start(),
             Some(unprocessed_transaction_storage),
         );
-        slot_metrics_tracker.increment_make_decision_us(make_decision_time.as_us());
+        slot_metrics_tracker.increment_make_decision_us(make_decision_us);
 
         match decision {
             BufferedPacketsDecision::Consume(bank_start) => {
@@ -680,17 +719,15 @@ impl BankingStage {
                 // packet processing metrics from the next slot towards the metrics
                 // of the previous slot
                 slot_metrics_tracker.apply_action(metrics_action);
-                let (_, consume_buffered_packets_time) = measure!(
-                    consumer.consume_buffered_packets(
+                let (_, consume_buffered_packets_us) = measure_us!(consumer
+                    .consume_buffered_packets(
                         &bank_start,
                         unprocessed_transaction_storage,
                         banking_stage_stats,
                         slot_metrics_tracker,
-                    ),
-                    "consume_buffered_packets",
-                );
+                    ));
                 slot_metrics_tracker
-                    .increment_consume_buffered_packets_us(consume_buffered_packets_time.as_us());
+                    .increment_consume_buffered_packets_us(consume_buffered_packets_us);
             }
             BufferedPacketsDecision::Forward => {
                 let ((), forward_us) = measure_us!(forwarder.handle_forwarding(
@@ -721,10 +758,10 @@ impl BankingStage {
         }
     }
 
-    fn process_loop(
+    fn process_loop<T: LikeClusterInfo>(
         packet_receiver: &mut PacketReceiver,
         decision_maker: &DecisionMaker,
-        forwarder: &mut Forwarder,
+        forwarder: &mut Forwarder<T>,
         consumer: &Consumer,
         id: u32,
         mut unprocessed_transaction_storage: UnprocessedTransactionStorage,
@@ -739,20 +776,17 @@ impl BankingStage {
             if !unprocessed_transaction_storage.is_empty()
                 || last_metrics_update.elapsed() >= SLOT_BOUNDARY_CHECK_PERIOD
             {
-                let (_, process_buffered_packets_time) = measure!(
-                    Self::process_buffered_packets(
-                        decision_maker,
-                        forwarder,
-                        consumer,
-                        &mut unprocessed_transaction_storage,
-                        &banking_stage_stats,
-                        &mut slot_metrics_tracker,
-                        &mut tracer_packet_stats,
-                    ),
-                    "process_buffered_packets",
-                );
+                let (_, process_buffered_packets_us) = measure_us!(Self::process_buffered_packets(
+                    decision_maker,
+                    forwarder,
+                    consumer,
+                    &mut unprocessed_transaction_storage,
+                    &banking_stage_stats,
+                    &mut slot_metrics_tracker,
+                    &mut tracer_packet_stats,
+                ));
                 slot_metrics_tracker
-                    .increment_process_buffered_packets_us(process_buffered_packets_time.as_us());
+                    .increment_process_buffered_packets_us(process_buffered_packets_us);
                 last_metrics_update = Instant::now();
             }
 
@@ -879,6 +913,7 @@ mod tests {
                 Arc::new(ConnectionCache::new("connection_cache_test")),
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
+                false,
             );
             drop(non_vote_sender);
             drop(tpu_vote_sender);
@@ -934,6 +969,7 @@ mod tests {
                 Arc::new(ConnectionCache::new("connection_cache_test")),
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
+                false,
             );
             trace!("sending bank");
             drop(non_vote_sender);
@@ -1011,8 +1047,9 @@ mod tests {
                 replay_vote_sender,
                 None,
                 Arc::new(ConnectionCache::new("connection_cache_test")),
-                bank_forks,
+                bank_forks.clone(), // keep a local-copy of bank-forks so worker threads do not lose weak access to bank-forks
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
+                false,
             );
 
             // fund another account so we can send 2 good transactions in a single batch.
@@ -1060,7 +1097,7 @@ mod tests {
             drop(poh_recorder);
 
             let mut blockhash = start_hash;
-            let bank = Bank::new_no_wallclock_throttle_for_tests(&genesis_config).0;
+            let (bank, _bank_forks) = Bank::new_no_wallclock_throttle_for_tests(&genesis_config);
             bank.process_transaction(&fund_tx).unwrap();
             //receive entries + ticks
             loop {
@@ -1204,7 +1241,7 @@ mod tests {
                 .map(|(_bank, (entry, _tick_height))| entry)
                 .collect();
 
-            let bank = Bank::new_no_wallclock_throttle_for_tests(&genesis_config).0;
+            let (bank, _bank_forks) = Bank::new_no_wallclock_throttle_for_tests(&genesis_config);
             for entry in entries {
                 bank.process_entry_transactions(entry.transactions)
                     .iter()
@@ -1228,7 +1265,7 @@ mod tests {
             mint_keypair,
             ..
         } = create_genesis_config(10_000);
-        let bank = Bank::new_no_wallclock_throttle_for_tests(&genesis_config).0;
+        let (bank, _bank_forks) = Bank::new_no_wallclock_throttle_for_tests(&genesis_config);
         let ledger_path = get_tmp_ledger_path_auto_delete!();
         {
             let blockstore = Blockstore::open(ledger_path.path())
@@ -1374,6 +1411,7 @@ mod tests {
                 Arc::new(ConnectionCache::new("connection_cache_test")),
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
+                false,
             );
 
             let keypairs = (0..100).map(|_| Keypair::new()).collect_vec();

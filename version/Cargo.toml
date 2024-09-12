@@ -14,12 +14,21 @@ log = { workspace = true }
 semver = { workspace = true }
 serde = { workspace = true }
 serde_derive = { workspace = true }
-solana-frozen-abi = { workspace = true }
-solana-frozen-abi-macro = { workspace = true }
+solana-feature-set = { workspace = true }
+solana-frozen-abi = { workspace = true, optional = true }
+solana-frozen-abi-macro = { workspace = true, optional = true }
+solana-sanitize = { workspace = true }
 solana-sdk = { workspace = true }
+solana-serde-varint = { workspace = true }
 
 [features]
 dummy-for-ci-check = []
+frozen-abi = [
+    "dep:rustc_version",
+    "dep:solana-frozen-abi",
+    "dep:solana-frozen-abi-macro",
+    "solana-sdk/frozen-abi",
+]
 
 [lib]
 name = "solana_version"
@@ -28,4 +37,7 @@ name = "solana_version"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [build-dependencies]
-rustc_version = { workspace = true }
+rustc_version = { workspace = true, optional = true }
+
+[lints]
+workspace = true

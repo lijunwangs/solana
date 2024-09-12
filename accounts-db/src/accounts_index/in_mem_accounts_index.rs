@@ -18,7 +18,7 @@ use {
         ops::{Bound, RangeBounds, RangeInclusive},
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
-            Arc, Mutex, RwLock, RwLockWriteGuard,
+            Arc, Mutex, RwLock,
         },
     },
 };
@@ -281,7 +281,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
 
     /// lookup 'pubkey' by only looking in memory. Does not look on disk.
     /// callback is called whether pubkey is found or not
-    fn get_only_in_mem<RT>(
+    pub(super) fn get_only_in_mem<RT>(
         &self,
         pubkey: &K,
         update_age: bool,
@@ -469,16 +469,20 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
         result
     }
 
+    /// call `user_fn` with a write lock of the slot list.
+    /// Note that whether `user_fn` modifies the slot list or not, the entry in the in-mem index will always
+    /// be marked as dirty. So, callers to this should ideally know they will be modifying the slot list.
     pub fn slot_list_mut<RT>(
         &self,
         pubkey: &Pubkey,
-        user: impl for<'a> FnOnce(&mut RwLockWriteGuard<'a, SlotList<T>>) -> RT,
+        user_fn: impl FnOnce(&mut SlotList<T>) -> RT,
     ) -> Option<RT> {
         self.get_internal_inner(pubkey, |entry| {
             (
                 true,
                 entry.map(|entry| {
-                    let result = user(&mut entry.slot_list.write().unwrap());
+                    let result = user_fn(&mut entry.slot_list.write().unwrap());
+                    // note that to be safe here, we ALWAYS mark the entry as dirty
                     entry.set_dirty(true);
                     result
                 }),
@@ -977,7 +981,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
     }
 
     /// assumes 1 entry in the slot list. Ignores overhead of the HashMap and such
-    fn approx_size_of_one_entry() -> usize {
+    pub const fn approx_size_of_one_entry() -> usize {
         std::mem::size_of::<T>()
             + std::mem::size_of::<Pubkey>()
             + std::mem::size_of::<AccountMapEntry<T>>()
@@ -999,16 +1003,12 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
         entry: &'a AccountMapEntry<T>,
         startup: bool,
         update_stats: bool,
-        exceeds_budget: bool,
         ages_flushing_now: Age,
     ) -> (bool, Option<std::sync::RwLockReadGuard<'a, SlotList<T>>>) {
         // this could be tunable dynamically based on memory pressure
         // we could look at more ages or we could throw out more items we are choosing to keep in the cache
         if Self::should_evict_based_on_age(current_age, entry, startup, ages_flushing_now) {
-            if exceeds_budget {
-                // if we are already holding too many items in-mem, then we need to be more aggressive at kicking things out
-                (true, None)
-            } else if entry.ref_count() != 1 {
+            if entry.ref_count() != 1 {
                 Self::update_stat(&self.stats().held_in_mem.ref_count, 1);
                 (false, None)
             } else {
@@ -1195,7 +1195,6 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
             if !evictions_age_possible.is_empty() || !evictions_random.is_empty() {
                 let disk = self.bucket.as_ref().unwrap();
                 let mut flush_entries_updated_on_disk = 0;
-                let exceeds_budget = self.get_exceeds_budget();
                 let mut flush_should_evict_us = 0;
                 // we don't care about lock time in this metric - bg threads can wait
                 let m = Measure::start("flush_update");
@@ -1214,7 +1213,6 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                                 &v,
                                 startup,
                                 true,
-                                exceeds_budget,
                                 ages_flushing_now,
                             );
                             slot_list = slot_list_temp;
@@ -1251,6 +1249,16 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                                     let slot_list = slot_list
                                         .take()
                                         .unwrap_or_else(|| v.slot_list.read().unwrap());
+                                    // Check the ref count and slot list one more time before flushing.
+                                    // It is possible the foreground has updated this entry since
+                                    // we last checked above in `should_evict_from_mem()`.
+                                    // If the entry *was* updated, re-mark it as dirty then
+                                    // skip to the next pubkey/entry.
+                                    let ref_count = v.ref_count();
+                                    if ref_count != 1 || slot_list.len() != 1 {
+                                        v.set_dirty(true);
+                                        break;
+                                    }
                                     disk.try_write(
                                         &k,
                                         (
@@ -1258,7 +1266,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                                                 .iter()
                                                 .map(|(slot, info)| (*slot, (*info).into()))
                                                 .collect::<Vec<_>>(),
-                                            v.ref_count(),
+                                            ref_count,
                                         ),
                                     )
                                 };
@@ -1315,21 +1323,6 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                 self.set_has_aged(current_age, can_advance_age);
             }
         }
-    }
-
-    /// calculate the estimated size of the in-mem index
-    /// return whether the size exceeds the specified budget
-    fn get_exceeds_budget(&self) -> bool {
-        let in_mem_count = self.stats().count_in_mem.load(Ordering::Relaxed);
-        let limit = self.storage.mem_budget_mb;
-        let estimate_mem = in_mem_count * Self::approx_size_of_one_entry();
-        let exceeds_budget = limit
-            .map(|limit| estimate_mem >= limit * 1024 * 1024)
-            .unwrap_or_default();
-        self.stats()
-            .estimate_mem
-            .store(estimate_mem as u64, Ordering::Relaxed);
-        exceeds_budget
     }
 
     /// for each key in 'keys', look up in map, set age to the future
@@ -1550,7 +1543,7 @@ impl Drop for EvictionsGuard<'_> {
 mod tests {
     use {
         super::*,
-        crate::accounts_index::{AccountsIndexConfig, IndexLimitMb, BINS_FOR_TESTING},
+        crate::accounts_index::{AccountsIndexConfig, BINS_FOR_TESTING},
         assert_matches::assert_matches,
         itertools::Itertools,
     };
@@ -1568,10 +1561,7 @@ mod tests {
     fn new_disk_buckets_for_test<T: IndexValue>() -> InMemAccountsIndex<T, T> {
         let holder = Arc::new(BucketMapHolder::new(
             BINS_FOR_TESTING,
-            &Some(AccountsIndexConfig {
-                index_limit_mb: IndexLimitMb::Limit(1),
-                ..AccountsIndexConfig::default()
-            }),
+            &Some(AccountsIndexConfig::default()),
             1,
         ));
         let bin = 0;
@@ -1600,7 +1590,6 @@ mod tests {
                         current_age,
                         &one_element_slot_list_entry,
                         startup,
-                        false,
                         false,
                         1,
                     )
@@ -1681,23 +1670,6 @@ mod tests {
             AccountMapEntryMeta::default(),
         ));
 
-        // exceeded budget
-        assert!(
-            bucket
-                .should_evict_from_mem(
-                    current_age,
-                    &Arc::new(AccountMapEntryInner::new(
-                        vec![],
-                        ref_count,
-                        AccountMapEntryMeta::default()
-                    )),
-                    startup,
-                    false,
-                    true,
-                    0,
-                )
-                .0
-        );
         // empty slot list
         assert!(
             !bucket
@@ -1710,7 +1682,6 @@ mod tests {
                     )),
                     startup,
                     false,
-                    false,
                     0,
                 )
                 .0
@@ -1722,7 +1693,6 @@ mod tests {
                     current_age,
                     &one_element_slot_list_entry,
                     startup,
-                    false,
                     false,
                     0,
                 )
@@ -1739,7 +1709,6 @@ mod tests {
                         AccountMapEntryMeta::default()
                     )),
                     startup,
-                    false,
                     false,
                     0,
                 )
@@ -1760,7 +1729,6 @@ mod tests {
                         )),
                         startup,
                         false,
-                        false,
                         0,
                     )
                     .0
@@ -1774,7 +1742,6 @@ mod tests {
                     current_age,
                     &one_element_slot_list_entry,
                     startup,
-                    false,
                     false,
                     0,
                 )
@@ -1790,7 +1757,6 @@ mod tests {
                     &one_element_slot_list_entry,
                     startup,
                     false,
-                    false,
                     0,
                 )
                 .0
@@ -1804,7 +1770,6 @@ mod tests {
                     current_age,
                     &one_element_slot_list_entry,
                     startup,
-                    false,
                     false,
                     0,
                 )

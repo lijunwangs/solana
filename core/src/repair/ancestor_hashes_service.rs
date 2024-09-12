@@ -559,8 +559,10 @@ impl AncestorHashesService {
                         // order to vote.
                         // This fits the alternate criteria we use in `find_epoch_slots_frozen_dead_slots`
                         // so we can upgrade it to `repairable_dead_slot_pool`.
-                        info!("{pruned_slot} is part of a popular pruned fork however we previously marked it as dead.
-                            Upgrading as dead duplicate confirmed");
+                        info!(
+                            "{pruned_slot} is part of a popular pruned fork however we previously \
+                             marked it as dead. Upgrading as dead duplicate confirmed"
+                        );
                         dead_slot_pool.remove(&pruned_slot);
                         repairable_dead_slot_pool.insert(pruned_slot);
                     } else if repairable_dead_slot_pool.contains(&pruned_slot) {
@@ -568,8 +570,11 @@ impl AncestorHashesService {
                         // ignore the additional information that `pruned_slot` is popular pruned.
                         // This is similar to the above case where `pruned_slot` was first pruned
                         // and then marked dead duplicate confirmed.
-                        info!("Received pruned duplicate confirmed status for {pruned_slot} that was previously marked
-                            dead duplicate confirmed. Ignoring and processing it as dead duplicate confirmed.");
+                        info!(
+                            "Received pruned duplicate confirmed status for {pruned_slot} that \
+                             was previously marked dead duplicate confirmed. Ignoring and \
+                             processing it as dead duplicate confirmed."
+                        );
                     } else {
                         popular_pruned_slot_pool.insert(pruned_slot);
                     }
@@ -1801,7 +1806,7 @@ mod test {
         // If the request timed out, we should remove the slot from `ancestor_hashes_request_statuses`,
         // and add it to `repairable_dead_slot_pool` or `popular_pruned_slot_pool`.
         // Because the request_throttle is at its limit, we should not immediately retry the timed request.
-        request_throttle.resize(MAX_ANCESTOR_HASHES_SLOT_REQUESTS_PER_SECOND, std::u64::MAX);
+        request_throttle.resize(MAX_ANCESTOR_HASHES_SLOT_REQUESTS_PER_SECOND, u64::MAX);
         AncestorHashesService::manage_ancestor_requests(
             &ancestor_hashes_request_statuses,
             &ancestor_hashes_request_socket,
@@ -1867,7 +1872,7 @@ mod test {
         // 5) If we've reached the throttle limit, no requests should be made,
         // but should still read off the channel for replay updates
         request_throttle.clear();
-        request_throttle.resize(MAX_ANCESTOR_HASHES_SLOT_REQUESTS_PER_SECOND, std::u64::MAX);
+        request_throttle.resize(MAX_ANCESTOR_HASHES_SLOT_REQUESTS_PER_SECOND, u64::MAX);
         let dead_duplicate_confirmed_slot_2 = 15;
         ancestor_hashes_replay_update_sender
             .send(AncestorHashesReplayUpdate::DeadDuplicateConfirmed(

@@ -339,7 +339,13 @@ pub fn streaming_unpack_snapshot<A: Read>(
         |_, _| {},
         |entry_path_buf| {
             if entry_path_buf.is_file() {
-                sender.send(entry_path_buf).unwrap();
+                let result = sender.send(entry_path_buf);
+                if let Err(err) = result {
+                    panic!(
+                        "failed to send path '{}' from unpacker to rebuilder: {err}",
+                        err.0.display(),
+                    );
+                }
             }
         },
     )
@@ -1006,11 +1012,8 @@ mod tests {
         let result = checked_total_size_sum(500, 500, MAX_SNAPSHOT_ARCHIVE_UNPACKED_ACTUAL_SIZE);
         assert_matches!(result, Ok(1000));
 
-        let result = checked_total_size_sum(
-            u64::max_value() - 2,
-            2,
-            MAX_SNAPSHOT_ARCHIVE_UNPACKED_ACTUAL_SIZE,
-        );
+        let result =
+            checked_total_size_sum(u64::MAX - 2, 2, MAX_SNAPSHOT_ARCHIVE_UNPACKED_ACTUAL_SIZE);
         assert_matches!(
             result,
             Err(UnpackError::Archive(ref message))

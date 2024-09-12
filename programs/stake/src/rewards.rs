@@ -123,6 +123,7 @@ fn redeem_stake_rewards(
 ///   * staker_rewards to be distributed
 ///   * voter_rewards to be distributed
 ///   * new value for credits_observed in the stake
+///
 /// returns None if there's no payout or if any deserved payout is < 1 lamport
 fn calculate_stake_rewards(
     rewarded_epoch: Epoch,
@@ -238,12 +239,7 @@ mod tests {
         // assume stake.stake() is right
         // bootstrap means fully-vested stake at epoch 0
         let stake_lamports = 1;
-        let mut stake = new_stake(
-            stake_lamports,
-            &Pubkey::default(),
-            &vote_state,
-            std::u64::MAX,
-        );
+        let mut stake = new_stake(stake_lamports, &Pubkey::default(), &vote_state, u64::MAX);
 
         // this one can't collect now, credits_observed == vote_state.credits()
         assert_eq!(
@@ -295,7 +291,7 @@ mod tests {
         let mut vote_state = VoteState::default();
         // assume stake.stake() is right
         // bootstrap means fully-vested stake at epoch 0
-        let mut stake = new_stake(1, &Pubkey::default(), &vote_state, std::u64::MAX);
+        let mut stake = new_stake(1, &Pubkey::default(), &vote_state, u64::MAX);
 
         // this one can't collect now, credits_observed == vote_state.credits()
         assert_eq!(
@@ -624,7 +620,7 @@ mod tests {
             native_token::sol_to_lamports(10_000_000f64),
             &Pubkey::default(),
             &vote_state,
-            std::u64::MAX,
+            u64::MAX,
         );
 
         // this one can't collect now, credits_observed == vote_state.credits()

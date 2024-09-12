@@ -5,7 +5,7 @@ use {
         error::{LedgerToolError, Result},
         ledger_path::canonicalize_ledger_path,
         ledger_utils::{get_program_ids, get_shred_storage_type},
-        output::{output_ledger, output_slot, SlotBounds, SlotInfo},
+        output::{output_ledger, output_slot, CliDuplicateSlotProof, SlotBounds, SlotInfo},
     },
     chrono::{DateTime, Utc},
     clap::{
@@ -707,8 +707,15 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches<'_>) -
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             let starting_slot = value_t_or_exit!(arg_matches, "starting_slot", Slot);
+            let output_format =
+                OutputFormat::from_matches(arg_matches, "output_format", verbose_level > 1);
             for slot in blockstore.duplicate_slots_iterator(starting_slot)? {
                 println!("{slot}");
+                if verbose_level > 0 {
+                    let proof = blockstore.get_duplicate_slot(slot).unwrap();
+                    let cli_duplicate_proof = CliDuplicateSlotProof::from(proof);
+                    println!("{}", output_format.formatted_string(&cli_duplicate_proof));
+                }
             }
         }
         ("latest-optimistic-slots", Some(arg_matches)) => {
@@ -848,7 +855,7 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches<'_>) -
                 num_slots,
                 verbose_level,
                 only_rooted,
-            );
+            )?;
         }
         ("print-file-metadata", Some(arg_matches)) => {
             let blockstore =
@@ -1019,20 +1026,19 @@ fn do_blockstore_process_command(ledger_path: &Path, matches: &ArgMatches<'_>) -
         ("slot", Some(arg_matches)) => {
             let slots = values_t_or_exit!(arg_matches, "slots", Slot);
             let allow_dead_slots = arg_matches.is_present("allow_dead_slots");
+            let output_format = OutputFormat::from_matches(arg_matches, "output_format", false);
+
             let blockstore =
                 crate::open_blockstore(&ledger_path, arg_matches, AccessType::Secondary);
             for slot in slots {
-                println!("Slot {slot}");
-                if let Err(err) = output_slot(
+                output_slot(
                     &blockstore,
                     slot,
                     allow_dead_slots,
-                    &OutputFormat::Display,
+                    &output_format,
                     verbose_level,
                     &mut HashMap::new(),
-                ) {
-                    eprintln!("{err}");
-                }
+                )?;
             }
         }
         _ => unreachable!(),

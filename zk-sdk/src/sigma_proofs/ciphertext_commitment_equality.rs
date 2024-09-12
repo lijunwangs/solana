@@ -66,14 +66,14 @@ impl CiphertextCommitmentEqualityProof {
     /// Note that the proof constructor does not take the actual Pedersen commitment as input; it
     /// takes the associated Pedersen opening instead.
     ///
-    /// * `source_keypair` - The ElGamal keypair associated with the first to be proved
-    /// * `source_ciphertext` - The main ElGamal ciphertext to be proved
+    /// * `keypair` - The ElGamal keypair associated with the first to be proved
+    /// * `ciphertext` - The main ElGamal ciphertext to be proved
     /// * `amount` - The message associated with the ElGamal ciphertext and Pedersen commitment
     /// * `opening` - The opening associated with the main Pedersen commitment to be proved
     /// * `transcript` - The transcript that does the bookkeeping for the Fiat-Shamir heuristic
     pub fn new(
-        source_keypair: &ElGamalKeypair,
-        source_ciphertext: &ElGamalCiphertext,
+        keypair: &ElGamalKeypair,
+        ciphertext: &ElGamalCiphertext,
         opening: &PedersenOpening,
         amount: u64,
         transcript: &mut Transcript,
@@ -81,10 +81,10 @@ impl CiphertextCommitmentEqualityProof {
         transcript.ciphertext_commitment_equality_proof_domain_separator();
 
         // extract the relevant scalar and Ristretto points from the inputs
-        let P_source = source_keypair.pubkey().get_point();
-        let D_source = source_ciphertext.handle.get_point();
+        let P = keypair.pubkey().get_point();
+        let D = ciphertext.handle.get_point();
 
-        let s = source_keypair.secret().get_scalar();
+        let s = keypair.secret().get_scalar();
         let x = Scalar::from(amount);
         let r = opening.get_scalar();
 
@@ -93,9 +93,8 @@ impl CiphertextCommitmentEqualityProof {
         let mut y_x = Scalar::random(&mut OsRng);
         let mut y_r = Scalar::random(&mut OsRng);
 
-        let Y_0 = (&y_s * P_source).compress();
-        let Y_1 =
-            RistrettoPoint::multiscalar_mul(vec![&y_x, &y_s], vec![&(*G), D_source]).compress();
+        let Y_0 = (&y_s * P).compress();
+        let Y_1 = RistrettoPoint::multiscalar_mul(vec![&y_x, &y_s], vec![&(*G), D]).compress();
         let Y_2 = RistrettoPoint::multiscalar_mul(vec![&y_x, &y_r], vec![&(*G), &(*H)]).compress();
 
         // record masking factors in the transcript
@@ -128,24 +127,24 @@ impl CiphertextCommitmentEqualityProof {
 
     /// Verifies a ciphertext-commitment equality proof.
     ///
-    /// * `source_pubkey` - The ElGamal pubkey associated with the ciphertext to be proved
-    /// * `source_ciphertext` - The main ElGamal ciphertext to be proved
-    /// * `destination_commitment` - The main Pedersen commitment to be proved
+    /// * `pubkey` - The ElGamal pubkey associated with the ciphertext to be proved
+    /// * `ciphertext` - The main ElGamal ciphertext to be proved
+    /// * `commitment` - The main Pedersen commitment to be proved
     /// * `transcript` - The transcript that does the bookkeeping for the Fiat-Shamir heuristic
     pub fn verify(
         self,
-        source_pubkey: &ElGamalPubkey,
-        source_ciphertext: &ElGamalCiphertext,
-        destination_commitment: &PedersenCommitment,
+        pubkey: &ElGamalPubkey,
+        ciphertext: &ElGamalCiphertext,
+        commitment: &PedersenCommitment,
         transcript: &mut Transcript,
     ) -> Result<(), EqualityProofVerificationError> {
         transcript.ciphertext_commitment_equality_proof_domain_separator();
 
         // extract the relevant scalar and Ristretto points from the inputs
-        let P_source = source_pubkey.get_point();
-        let C_source = source_ciphertext.commitment.get_point();
-        let D_source = source_ciphertext.handle.get_point();
-        let C_destination = destination_commitment.get_point();
+        let P = pubkey.get_point();
+        let C_ciphertext = ciphertext.commitment.get_point();
+        let D = ciphertext.handle.get_point();
+        let C_commitment = commitment.get_point();
 
         // include Y_0, Y_1, Y_2 to transcript and extract challenges
         transcript.validate_and_append_point(b"Y_0", &self.Y_0)?;
@@ -177,7 +176,7 @@ impl CiphertextCommitmentEqualityProof {
             vec![
                 &self.z_s,           // z_s
                 &(-&c),              // -c
-                &(-&Scalar::one()),  // -identity
+                &(-&Scalar::ONE),    // -identity
                 &(&w * &self.z_x),   // w * z_x
                 &(&w * &self.z_s),   // w * z_s
                 &(&w_negated * &c),  // -w * c
@@ -188,17 +187,17 @@ impl CiphertextCommitmentEqualityProof {
                 &ww_negated,         // -ww
             ],
             vec![
-                P_source,      // P_source
-                &(*H),         // H
-                &Y_0,          // Y_0
-                &(*G),         // G
-                D_source,      // D_source
-                C_source,      // C_source
-                &Y_1,          // Y_1
-                &(*G),         // G
-                &(*H),         // H
-                C_destination, // C_destination
-                &Y_2,          // Y_2
+                P,            // P
+                &(*H),        // H
+                &Y_0,         // Y_0
+                &(*G),        // G
+                D,            // D
+                C_ciphertext, // C_ciphertext
+                &Y_1,         // Y_1
+                &(*G),        // G
+                &(*H),        // H
+                C_commitment, // C_commitment
+                &Y_2,         // Y_2
             ],
         );
 
@@ -245,62 +244,73 @@ impl CiphertextCommitmentEqualityProof {
 mod test {
     use {
         super::*,
-        crate::encryption::{elgamal::ElGamalSecretKey, pedersen::Pedersen},
+        crate::{
+            encryption::{
+                elgamal::ElGamalSecretKey,
+                pedersen::Pedersen,
+                pod::{
+                    elgamal::{PodElGamalCiphertext, PodElGamalPubkey},
+                    pedersen::PodPedersenCommitment,
+                },
+            },
+            sigma_proofs::pod::PodCiphertextCommitmentEqualityProof,
+        },
+        std::str::FromStr,
     };
 
     #[test]
     fn test_ciphertext_commitment_equality_proof_correctness() {
         // success case
-        let source_keypair = ElGamalKeypair::new_rand();
+        let keypair = ElGamalKeypair::new_rand();
         let message: u64 = 55;
 
-        let source_ciphertext = source_keypair.pubkey().encrypt(message);
-        let (destination_commitment, destination_opening) = Pedersen::new(message);
+        let ciphertext = keypair.pubkey().encrypt(message);
+        let (commitment, opening) = Pedersen::new(message);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = CiphertextCommitmentEqualityProof::new(
-            &source_keypair,
-            &source_ciphertext,
-            &destination_opening,
+            &keypair,
+            &ciphertext,
+            &opening,
             message,
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
-                source_keypair.pubkey(),
-                &source_ciphertext,
-                &destination_commitment,
-                &mut verifier_transcript
+                keypair.pubkey(),
+                &ciphertext,
+                &commitment,
+                &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
 
         // fail case: encrypted and committed messages are different
-        let source_keypair = ElGamalKeypair::new_rand();
+        let keypair = ElGamalKeypair::new_rand();
         let encrypted_message: u64 = 55;
         let committed_message: u64 = 77;
 
-        let source_ciphertext = source_keypair.pubkey().encrypt(encrypted_message);
-        let (destination_commitment, destination_opening) = Pedersen::new(committed_message);
+        let ciphertext = keypair.pubkey().encrypt(encrypted_message);
+        let (commitment, opening) = Pedersen::new(committed_message);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = CiphertextCommitmentEqualityProof::new(
-            &source_keypair,
-            &source_ciphertext,
-            &destination_opening,
+            &keypair,
+            &ciphertext,
+            &opening,
             message,
             &mut prover_transcript,
         );
 
         assert!(proof
             .verify(
-                source_keypair.pubkey(),
-                &source_ciphertext,
-                &destination_commitment,
+                keypair.pubkey(),
+                &ciphertext,
+                &commitment,
                 &mut verifier_transcript
             )
             .is_err());
@@ -358,14 +368,14 @@ mod test {
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
                 elgamal_keypair.pubkey(),
                 &ciphertext,
                 &commitment,
-                &mut verifier_transcript
+                &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
 
         // if commitment is all-zero and the ciphertext is a correct encryption of 0, then the
         // proof should still accept
@@ -387,14 +397,14 @@ mod test {
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
                 elgamal_keypair.pubkey(),
                 &ciphertext,
                 &commitment,
-                &mut verifier_transcript
+                &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
 
         // if ciphertext is all zero and commitment correctly encodes 0, then the proof should
         // still accept
@@ -415,13 +425,38 @@ mod test {
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
                 elgamal_keypair.pubkey(),
                 &ciphertext,
                 &commitment,
-                &mut verifier_transcript
+                &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
+    }
+
+    #[test]
+    fn test_ciphertext_commitment_equality_proof_string() {
+        let pubkey_str = "JNa7rRrDm35laU7f8HPds1PmHoZEPSHFK/M+aTtEhAk=";
+        let pod_pubkey = PodElGamalPubkey::from_str(pubkey_str).unwrap();
+        let pubkey: ElGamalPubkey = pod_pubkey.try_into().unwrap();
+
+        let ciphertext_str = "RAXnbQ/DPRlYAWmD+iHRNqMDv7oQcPgQ7OejRzj4bxVy2qOJNziqqDOC7VP3iTW1+z/jckW4smA3EUF7i/r8Rw==";
+        let pod_ciphertext = PodElGamalCiphertext::from_str(ciphertext_str).unwrap();
+        let ciphertext: ElGamalCiphertext = pod_ciphertext.try_into().unwrap();
+
+        let commitment_str = "ngPTYvbY9P5l6aOfr7bLQiI+0HZsw8GBgiumdW3tNzw=";
+        let pod_commitment = PodPedersenCommitment::from_str(commitment_str).unwrap();
+        let commitment: PedersenCommitment = pod_commitment.try_into().unwrap();
+
+        let proof_str = "cCZySLxB2XJdGyDvckVBm2OWiXqf7Jf54IFoDuLJ4G+ySj+lh5DbaDMHDhuozQC9tDWtk2mFITuaXOc5Zw3nZ2oEvVYpqv5hN+k5dx9k8/nZKabUCkZwx310z7x4fE4Np5SY9PYia1hkrq9AWq0b3v97XvW1+XCSSxuflvBk5wsdaQQ+ZgcmPnKWKjHfRwmU2k5iVgYzs2VmvZa5E3OWBoM/M2yFNvukY+FCC2YMnspO0c4lNBr/vDFQuHdW0OgJ";
+        let pod_proof = PodCiphertextCommitmentEqualityProof::from_str(proof_str).unwrap();
+        let proof: CiphertextCommitmentEqualityProof = pod_proof.try_into().unwrap();
+
+        let mut verifier_transcript = Transcript::new(b"Test");
+
+        proof
+            .verify(&pubkey, &ciphertext, &commitment, &mut verifier_transcript)
+            .unwrap();
     }
 }

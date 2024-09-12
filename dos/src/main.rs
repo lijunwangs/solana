@@ -5,6 +5,7 @@
 //!
 //! * `mode` argument defines interface to use (e.g. rpc, tvu, tpu)
 //! * `data-type` argument specifies the type of the request.
+//!
 //! Some request types might be used only with particular `mode` value.
 //! For example, `get-account-info` is valid only with `mode=rpc`.
 //!
@@ -16,27 +17,27 @@
 //! The following configurations are suggested:
 //! Let `COMMON="--mode tpu --data-type transaction --unique-transactions"`
 //! 1. Without blockhash or payer:
-//! 1.1 With invalid signatures
-//! ```bash
-//! solana-dos $COMMON --num-signatures 8
-//! ```
-//! 1.2 With valid signatures
-//! ```bash
-//! solana-dos $COMMON --valid-signatures --num-signatures 8
-//! ```
+//!    1.1 With invalid signatures
+//!    ```bash
+//!    solana-dos $COMMON --num-signatures 8
+//!    ```
+//!    1.2 With valid signatures
+//!    ```bash
+//!    solana-dos $COMMON --valid-signatures --num-signatures 8
+//!    ```
 //! 2. With blockhash and payer:
-//! 2.1 Single-instruction transaction
-//! ```bash
-//! solana-dos $COMMON --valid-blockhash --transaction-type transfer --num-instructions 1
-//! ```
-//! 2.2 Multi-instruction transaction
-//! ```bash
-//! solana-dos $COMMON --valid-blockhash --transaction-type transfer --num-instructions 8
-//! ```
-//! 2.3 Account-creation transaction
-//! ```bash
-//! solana-dos $COMMON --valid-blockhash --transaction-type account-creation
-//! ```
+//!    2.1 Single-instruction transaction
+//!    ```bash
+//!    solana-dos $COMMON --valid-blockhash --transaction-type transfer --num-instructions 1
+//!    ```
+//!    2.2 Multi-instruction transaction
+//!    ```bash
+//!    solana-dos $COMMON --valid-blockhash --transaction-type transfer --num-instructions 8
+//!    ```
+//!    2.3 Account-creation transaction
+//!    ```bash
+//!    solana-dos $COMMON --valid-blockhash --transaction-type account-creation
+//!    ```
 //!
 #![allow(clippy::arithmetic_side_effects)]
 #![allow(deprecated)]
@@ -45,11 +46,9 @@ use {
     itertools::Itertools,
     log::*,
     rand::{thread_rng, Rng},
-    solana_bench_tps::{bench::generate_and_fund_keypairs, bench_tps_client::BenchTpsClient},
-    solana_client::{
-        connection_cache::ConnectionCache, tpu_client::TpuClientWrapper,
-        tpu_connection::TpuConnection,
-    },
+    solana_bench_tps::bench::generate_and_fund_keypairs,
+    solana_client::{connection_cache::ConnectionCache, tpu_client::TpuClientWrapper},
+    solana_connection_cache::client_connection::ClientConnection as TpuConnection,
     solana_core::repair::serve_repair::{RepairProtocol, RepairRequestHeader, ServeRepair},
     solana_dos::cli::*,
     solana_gossip::{
@@ -71,6 +70,7 @@ use {
         transaction::Transaction,
     },
     solana_streamer::socket::SocketAddrSpace,
+    solana_tps_client::TpsClient,
     solana_tpu_client::tpu_client::DEFAULT_TPU_CONNECTION_POOL_SIZE,
     std::{
         net::{SocketAddr, UdpSocket},
@@ -90,12 +90,12 @@ fn compute_rate_per_second(count: usize) -> usize {
 /// Provide functionality to generate several types of transactions:
 ///
 /// 1. Without blockhash
-/// 1.1 With valid signatures (number of signatures is configurable)
-/// 1.2 With invalid signatures (number of signatures is configurable)
+///    1.1 With valid signatures (number of signatures is configurable)
+///    1.2 With invalid signatures (number of signatures is configurable)
 ///
 /// 2. With blockhash (but still deliberately invalid):
-/// 2.1 Transfer from 1 payer to multiple destinations (many instructions per transaction)
-/// 2.2 Create an account
+///    2.1 Transfer from 1 payer to multiple destinations (many instructions per transaction)
+///    2.2 Create an account
 ///
 #[derive(Clone)]
 struct TransactionGenerator {
@@ -123,7 +123,7 @@ impl TransactionGenerator {
     /// new accounts, signing accounts. It is `None` only if `valid_signatures==false`.
     /// `client` - structure responsible for providing blockhash.
     ///
-    fn generate<T: 'static + BenchTpsClient + Send + Sync>(
+    fn generate<T: 'static + TpsClient + Send + Sync>(
         &mut self,
         payer: Option<&Keypair>,
         destinations: Option<Vec<&Keypair>>,
@@ -139,7 +139,7 @@ impl TransactionGenerator {
         }
     }
 
-    fn generate_with_blockhash<T: 'static + BenchTpsClient + Send + Sync>(
+    fn generate_with_blockhash<T: 'static + TpsClient + Send + Sync>(
         &mut self,
         payer: &Keypair,
         destinations: Vec<&Keypair>,
@@ -343,7 +343,7 @@ fn create_sender_thread(
     }).unwrap()
 }
 
-fn create_generator_thread<T: 'static + BenchTpsClient + Send + Sync>(
+fn create_generator_thread<T: 'static + TpsClient + Send + Sync>(
     tx_sender: &Sender<TransactionBatchMsg>,
     send_batch_size: usize,
     transaction_generator: &TransactionGenerator,
@@ -542,7 +542,7 @@ fn apply_permutation<'a, T>(permutation: Vec<&usize>, items: &'a [T]) -> Vec<&'a
     res
 }
 
-fn create_payers<T: 'static + BenchTpsClient + Send + Sync>(
+fn create_payers<T: 'static + TpsClient + Send + Sync>(
     valid_blockhash: bool,
     size: usize,
     client: Option<&Arc<T>>,
@@ -581,7 +581,7 @@ fn get_permutation_size(num_signatures: Option<&usize>, num_instructions: Option
     }
 }
 
-fn run_dos_transactions<T: 'static + BenchTpsClient + Send + Sync>(
+fn run_dos_transactions<T: 'static + TpsClient + Send + Sync>(
     target: SocketAddr,
     iterations: usize,
     client: Option<Arc<T>>,
@@ -624,7 +624,7 @@ fn run_dos_transactions<T: 'static + BenchTpsClient + Send + Sync>(
     }
 }
 
-fn run_dos<T: 'static + BenchTpsClient + Send + Sync>(
+fn run_dos<T: 'static + TpsClient + Send + Sync>(
     nodes: &[ContactInfo],
     iterations: usize,
     client: Option<Arc<T>>,
@@ -637,7 +637,7 @@ fn run_dos<T: 'static + BenchTpsClient + Send + Sync>(
         params.tpu_use_quic,
     );
     if params.mode == Mode::Rpc {
-        // creating rpc_client because get_account, get_program_accounts are not implemented for BenchTpsClient
+        // creating rpc_client because get_account, get_program_accounts are not implemented for TpsClient
         let rpc_client =
             get_rpc_client(nodes, params.entrypoint_addr).expect("Failed to get rpc client");
         // existence of data_input is checked at cli level

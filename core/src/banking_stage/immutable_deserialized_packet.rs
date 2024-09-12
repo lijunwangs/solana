@@ -1,22 +1,22 @@
 use {
-    solana_cost_model::block_cost_limits::BUILT_IN_INSTRUCTION_COSTS,
+    super::packet_filter::PacketFilterFailure,
+    solana_compute_budget::compute_budget_limits::ComputeBudgetLimits,
     solana_perf::packet::Packet,
-    solana_runtime::compute_budget_details::{ComputeBudgetDetails, GetComputeBudgetDetails},
+    solana_runtime_transaction::instructions_processor::process_compute_budget_instructions,
+    solana_sanitize::SanitizeError,
     solana_sdk::{
-        feature_set,
         hash::Hash,
         message::Message,
         pubkey::Pubkey,
-        sanitize::SanitizeError,
-        saturating_add_assign,
-        short_vec::decode_shortu16_len,
         signature::Signature,
         transaction::{
             AddressLoader, SanitizedTransaction, SanitizedVersionedTransaction,
             VersionedTransaction,
         },
     },
-    std::{cmp::Ordering, collections::HashSet, mem::size_of, sync::Arc},
+    solana_short_vec::decode_shortu16_len,
+    solana_svm_transaction::instruction::SVMInstruction,
+    std::{cmp::Ordering, collections::HashSet, mem::size_of},
     thiserror::Error,
 };
 
@@ -35,6 +35,8 @@ pub enum DeserializedPacketError {
     PrioritizationFailure,
     #[error("vote transaction failure")]
     VoteTransactionError,
+    #[error("Packet filter failure: {0}")]
+    FailedFilter(#[from] PacketFilterFailure),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,7 +45,8 @@ pub struct ImmutableDeserializedPacket {
     transaction: SanitizedVersionedTransaction,
     message_hash: Hash,
     is_simple_vote: bool,
-    compute_budget_details: ComputeBudgetDetails,
+    compute_unit_price: u64,
+    compute_unit_limit: u32,
 }
 
 impl ImmutableDeserializedPacket {
@@ -55,13 +58,21 @@ impl ImmutableDeserializedPacket {
         let is_simple_vote = packet.meta().is_simple_vote_tx();
 
         // drop transaction if prioritization fails.
-        let mut compute_budget_details = sanitized_transaction
-            .get_compute_budget_details(packet.meta().round_compute_unit_price())
-            .ok_or(DeserializedPacketError::PrioritizationFailure)?;
+        let ComputeBudgetLimits {
+            mut compute_unit_price,
+            compute_unit_limit,
+            ..
+        } = process_compute_budget_instructions(
+            sanitized_transaction
+                .get_message()
+                .program_instructions_iter()
+                .map(|(pubkey, ix)| (pubkey, SVMInstruction::from(ix))),
+        )
+        .map_err(|_| DeserializedPacketError::PrioritizationFailure)?;
 
         // set compute unit price to zero for vote transactions
         if is_simple_vote {
-            compute_budget_details.compute_unit_price = 0;
+            compute_unit_price = 0;
         };
 
         Ok(Self {
@@ -69,7 +80,8 @@ impl ImmutableDeserializedPacket {
             transaction: sanitized_transaction,
             message_hash,
             is_simple_vote,
-            compute_budget_details,
+            compute_unit_price,
+            compute_unit_limit,
         })
     }
 
@@ -90,38 +102,17 @@ impl ImmutableDeserializedPacket {
     }
 
     pub fn compute_unit_price(&self) -> u64 {
-        self.compute_budget_details.compute_unit_price
+        self.compute_unit_price
     }
 
     pub fn compute_unit_limit(&self) -> u64 {
-        self.compute_budget_details.compute_unit_limit
-    }
-
-    pub fn compute_budget_details(&self) -> ComputeBudgetDetails {
-        self.compute_budget_details.clone()
-    }
-
-    /// Returns true if the transaction's compute unit limit is at least as
-    /// large as the sum of the static builtins' costs.
-    /// This is a simple sanity check so the leader can discard transactions
-    /// which are statically known to exceed the compute budget, and will
-    /// result in no useful state-change.
-    pub fn compute_unit_limit_above_static_builtins(&self) -> bool {
-        let mut static_builtin_cost_sum: u64 = 0;
-        for (program_id, _) in self.transaction.get_message().program_instructions_iter() {
-            if let Some(ix_cost) = BUILT_IN_INSTRUCTION_COSTS.get(program_id) {
-                saturating_add_assign!(static_builtin_cost_sum, *ix_cost);
-            }
-        }
-
-        self.compute_unit_limit() >= static_builtin_cost_sum
+        u64::from(self.compute_unit_limit)
     }
 
     // This function deserializes packets into transactions, computes the blake3 hash of transaction
-    // messages, and verifies secp256k1 instructions.
+    // messages.
     pub fn build_sanitized_transaction(
         &self,
-        feature_set: &Arc<feature_set::FeatureSet>,
         votes_only: bool,
         address_loader: impl AddressLoader,
         reserved_account_keys: &HashSet<Pubkey>,
@@ -137,7 +128,6 @@ impl ImmutableDeserializedPacket {
             reserved_account_keys,
         )
         .ok()?;
-        tx.verify_precompiles(feature_set).ok()?;
         Some(tx)
     }
 }
@@ -197,7 +187,11 @@ mod tests {
         // 1. compute_unit_limit under static builtins
         // 2. compute_unit_limit equal to static builtins
         // 3. compute_unit_limit above static builtins
-        for (cu_limit, expectation) in [(250, false), (300, true), (350, true)] {
+        for (cu_limit, expectation) in [
+            (250, Err(PacketFilterFailure::InsufficientComputeLimit)),
+            (300, Ok(())),
+            (350, Ok(())),
+        ] {
             let keypair = Keypair::new();
             let bpf_program_id = Pubkey::new_unique();
             let ixs = vec![
@@ -214,7 +208,7 @@ mod tests {
             let packet = Packet::from_data(None, tx).unwrap();
             let deserialized_packet = ImmutableDeserializedPacket::new(packet).unwrap();
             assert_eq!(
-                deserialized_packet.compute_unit_limit_above_static_builtins(),
+                deserialized_packet.check_insufficent_compute_unit_limit(),
                 expectation
             );
         }

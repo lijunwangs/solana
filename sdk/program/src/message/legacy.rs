@@ -11,6 +11,8 @@
 
 #![allow(clippy::arithmetic_side_effects)]
 
+#[cfg(target_arch = "wasm32")]
+use crate::wasm_bindgen;
 #[allow(deprecated)]
 pub use builtins::{BUILTIN_PROGRAMS_KEYS, MAYBE_BUILTIN_KEY_OR_SYSVAR};
 use {
@@ -20,9 +22,10 @@ use {
         instruction::{CompiledInstruction, Instruction},
         message::{compiled_keys::CompiledKeys, MessageHeader},
         pubkey::Pubkey,
-        sanitize::{Sanitize, SanitizeError},
-        short_vec, system_instruction, system_program, sysvar, wasm_bindgen,
+        system_instruction, system_program, sysvar,
     },
+    solana_sanitize::{Sanitize, SanitizeError},
+    solana_short_vec as short_vec,
     std::{collections::HashSet, convert::TryFrom, str::FromStr},
 };
 
@@ -60,8 +63,8 @@ mod builtins {
         // the value is "false"), or might be in one of these lists (if the value is "true")
         pub static ref MAYBE_BUILTIN_KEY_OR_SYSVAR: [bool; 256] = {
             let mut temp_table: [bool; 256] = [false; 256];
-            BUILTIN_PROGRAMS_KEYS.iter().for_each(|key| temp_table[key.0[0] as usize] = true);
-            sysvar::ALL_IDS.iter().for_each(|key| temp_table[key.0[0] as usize] = true);
+            BUILTIN_PROGRAMS_KEYS.iter().for_each(|key| temp_table[key.as_ref()[0] as usize] = true);
+            sysvar::ALL_IDS.iter().for_each(|key| temp_table[key.as_ref()[0] as usize] = true);
             temp_table
         };
     }
@@ -73,7 +76,7 @@ mod builtins {
 )]
 #[allow(deprecated)]
 pub fn is_builtin_key_or_sysvar(key: &Pubkey) -> bool {
-    if MAYBE_BUILTIN_KEY_OR_SYSVAR[key.0[0] as usize] {
+    if MAYBE_BUILTIN_KEY_OR_SYSVAR[key.as_ref()[0] as usize] {
         return sysvar::is_sysvar_id(key) || BUILTIN_PROGRAMS_KEYS.contains(key);
     }
     false
@@ -117,10 +120,10 @@ fn compile_instructions(ixs: &[Instruction], keys: &[Pubkey]) -> Vec<CompiledIns
 /// redundantly specifying the fee-payer is not strictly required.
 // NOTE: Serialization-related changes must be paired with the custom serialization
 // for versioned messages in the `RemainingLegacyMessage` struct.
-#[wasm_bindgen]
+#[cfg(not(target_arch = "wasm32"))]
 #[cfg_attr(
     feature = "frozen-abi",
-    frozen_abi(digest = "2KnLEqfLcTBQqitE22Pp8JYkaqVVbAkGbCfdeHoyxcAU"),
+    frozen_abi(digest = "4kL6EbLGU25m5eMk4H1cW9YGhA5LejHSgj2w2fhY1NGp"),
     derive(AbiExample)
 )]
 #[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone)]
@@ -128,11 +131,9 @@ fn compile_instructions(ixs: &[Instruction], keys: &[Pubkey]) -> Vec<CompiledIns
 pub struct Message {
     /// The message header, identifying signed and read-only `account_keys`.
     // NOTE: Serialization-related changes must be paired with the direct read at sigverify.
-    #[wasm_bindgen(skip)]
     pub header: MessageHeader,
 
     /// All the account keys used by this transaction.
-    #[wasm_bindgen(skip)]
     #[serde(with = "short_vec")]
     pub account_keys: Vec<Pubkey>,
 
@@ -141,6 +142,33 @@ pub struct Message {
 
     /// Programs that will be executed in sequence and committed in one atomic transaction if all
     /// succeed.
+    #[serde(with = "short_vec")]
+    pub instructions: Vec<CompiledInstruction>,
+}
+
+/// wasm-bindgen version of the Message struct.
+/// This duplication is required until https://github.com/rustwasm/wasm-bindgen/issues/3671
+/// is fixed. This must not diverge from the regular non-wasm Message struct.
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen]
+#[cfg_attr(
+    feature = "frozen-abi",
+    frozen_abi(digest = "4kL6EbLGU25m5eMk4H1cW9YGhA5LejHSgj2w2fhY1NGp"),
+    derive(AbiExample)
+)]
+#[derive(Serialize, Deserialize, Default, Debug, PartialEq, Eq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Message {
+    #[wasm_bindgen(skip)]
+    pub header: MessageHeader,
+
+    #[wasm_bindgen(skip)]
+    #[serde(with = "short_vec")]
+    pub account_keys: Vec<Pubkey>,
+
+    /// The id of a recent ledger entry.
+    pub recent_blockhash: Hash,
+
     #[wasm_bindgen(skip)]
     #[serde(with = "short_vec")]
     pub instructions: Vec<CompiledInstruction>,
@@ -495,11 +523,12 @@ impl Message {
     /// Compute the blake3 hash of a raw transaction message.
     #[cfg(not(target_os = "solana"))]
     pub fn hash_raw_message(message_bytes: &[u8]) -> Hash {
-        use blake3::traits::digest::Digest;
+        use {blake3::traits::digest::Digest, solana_hash::HASH_BYTES};
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"solana-tx-message-v1");
         hasher.update(message_bytes);
-        Hash(hasher.finalize().into())
+        let hash_bytes: [u8; HASH_BYTES] = hasher.finalize().into();
+        hash_bytes.into()
     }
 
     pub fn compile_instruction(&self, ix: &Instruction) -> CompiledInstruction {
@@ -527,7 +556,14 @@ impl Message {
             .collect()
     }
 
+    #[deprecated(since = "2.0.0", note = "Please use `is_instruction_account` instead")]
     pub fn is_key_passed_to_program(&self, key_index: usize) -> bool {
+        self.is_instruction_account(key_index)
+    }
+
+    /// Returns true if the account at the specified index is an account input
+    /// to some program instruction in this message.
+    pub fn is_instruction_account(&self, key_index: usize) -> bool {
         if let Ok(key_index) = u8::try_from(key_index) {
             self.instructions
                 .iter()
@@ -547,8 +583,12 @@ impl Message {
         }
     }
 
+    #[deprecated(
+        since = "2.0.0",
+        note = "Please use `is_key_called_as_program` and `is_instruction_account` directly"
+    )]
     pub fn is_non_loader_key(&self, key_index: usize) -> bool {
-        !self.is_key_called_as_program(key_index) || self.is_key_passed_to_program(key_index)
+        !self.is_key_called_as_program(key_index) || self.is_instruction_account(key_index)
     }
 
     pub fn program_position(&self, index: usize) -> Option<usize> {
@@ -622,29 +662,6 @@ impl Message {
 
     pub fn is_signer(&self, i: usize) -> bool {
         i < self.header.num_required_signatures as usize
-    }
-
-    #[deprecated]
-    pub fn get_account_keys_by_lock_type(&self) -> (Vec<&Pubkey>, Vec<&Pubkey>) {
-        let mut writable_keys = vec![];
-        let mut readonly_keys = vec![];
-        for (i, key) in self.account_keys.iter().enumerate() {
-            if self.is_maybe_writable(i, None) {
-                writable_keys.push(key);
-            } else {
-                readonly_keys.push(key);
-            }
-        }
-        (writable_keys, readonly_keys)
-    }
-
-    #[deprecated]
-    pub fn deserialize_instruction(
-        index: usize,
-        data: &[u8],
-    ) -> Result<Instruction, SanitizeError> {
-        #[allow(deprecated)]
-        sysvar::instructions::load_instruction_at(index, data)
     }
 
     pub fn signer_keys(&self) -> Vec<&Pubkey> {
@@ -870,36 +887,6 @@ mod tests {
     }
 
     #[test]
-    fn test_get_account_keys_by_lock_type() {
-        let program_id = Pubkey::default();
-        let id0 = Pubkey::new_unique();
-        let id1 = Pubkey::new_unique();
-        let id2 = Pubkey::new_unique();
-        let id3 = Pubkey::new_unique();
-        let message = Message::new(
-            &[
-                Instruction::new_with_bincode(program_id, &0, vec![AccountMeta::new(id0, false)]),
-                Instruction::new_with_bincode(program_id, &0, vec![AccountMeta::new(id1, true)]),
-                Instruction::new_with_bincode(
-                    program_id,
-                    &0,
-                    vec![AccountMeta::new_readonly(id2, false)],
-                ),
-                Instruction::new_with_bincode(
-                    program_id,
-                    &0,
-                    vec![AccountMeta::new_readonly(id3, true)],
-                ),
-            ],
-            Some(&id1),
-        );
-        assert_eq!(
-            message.get_account_keys_by_lock_type(),
-            (vec![&id1, &id0], vec![&id3, &program_id, &id2])
-        );
-    }
-
-    #[test]
     fn test_program_ids() {
         let key0 = Pubkey::new_unique();
         let key1 = Pubkey::new_unique();
@@ -917,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_key_passed_to_program() {
+    fn test_is_instruction_account() {
         let key0 = Pubkey::new_unique();
         let key1 = Pubkey::new_unique();
         let loader2 = Pubkey::new_unique();
@@ -931,13 +918,14 @@ mod tests {
             instructions,
         );
 
-        assert!(message.is_key_passed_to_program(0));
-        assert!(message.is_key_passed_to_program(1));
-        assert!(!message.is_key_passed_to_program(2));
+        assert!(message.is_instruction_account(0));
+        assert!(message.is_instruction_account(1));
+        assert!(!message.is_instruction_account(2));
     }
 
     #[test]
     fn test_is_non_loader_key() {
+        #![allow(deprecated)]
         let key0 = Pubkey::new_unique();
         let key1 = Pubkey::new_unique();
         let loader2 = Pubkey::new_unique();

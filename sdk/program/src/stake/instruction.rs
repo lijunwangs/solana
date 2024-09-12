@@ -1,12 +1,15 @@
-#[allow(deprecated)]
-use crate::stake::config;
+// Remove the following `allow` when the `Redelegate` variant is renamed to
+// `Unused` starting from v3.
+// Required to avoid warnings from uses of deprecated types during trait derivations.
+#![allow(deprecated)]
+
 use {
     crate::{
-        clock::{Epoch, UnixTimestamp},
-        decode_error::DecodeError,
         instruction::{AccountMeta, Instruction},
+        program_error::ProgramError,
         pubkey::Pubkey,
         stake::{
+            config,
             program::id,
             state::{Authorized, Lockup, StakeAuthorize, StakeStateV2},
         },
@@ -15,6 +18,8 @@ use {
     log::*,
     num_derive::{FromPrimitive, ToPrimitive},
     serde_derive::{Deserialize, Serialize},
+    solana_clock::{Epoch, UnixTimestamp},
+    solana_decode_error::DecodeError,
     thiserror::Error,
 };
 
@@ -77,6 +82,12 @@ pub enum StakeError {
 
     #[error("stake action is not permitted while the epoch rewards period is active")]
     EpochRewardsActive,
+}
+
+impl From<StakeError> for ProgramError {
+    fn from(e: StakeError) -> Self {
+        ProgramError::Custom(e as u32)
+    }
 }
 
 impl<E> DecodeError<E> for StakeError {
@@ -299,7 +310,44 @@ pub enum StakeInstruction {
     ///   3. `[]` Unused account, formerly the stake config
     ///   4. `[SIGNER]` Stake authority
     ///
+    #[deprecated(since = "2.1.0", note = "Redelegate will not be enabled")]
     Redelegate,
+
+    /// Move stake between accounts with the same authorities and lockups, using Staker authority.
+    ///
+    /// The source account must be fully active. If its entire delegation is moved, it immediately
+    /// becomes inactive. Otherwise, at least the minimum delegation of active stake must remain.
+    ///
+    /// The destination account must be fully active or fully inactive. If it is active, it must
+    /// be delegated to the same vote account as the source. If it is inactive, it
+    /// immediately becomes active, and must contain at least the minimum delegation. The
+    /// destination must be pre-funded with the rent-exempt reserve.
+    ///
+    /// This instruction only affects or moves active stake. Additional unstaked lamports are never
+    /// moved, activated, or deactivated, and accounts are never deallocated.
+    ///
+    /// # Account references
+    ///   0. `[WRITE]` Active source stake account
+    ///   1. `[WRITE]` Active or inactive destination stake account
+    ///   2. `[SIGNER]` Stake authority
+    ///
+    /// The u64 is the portion of the stake to move, which may be the entire delegation
+    MoveStake(u64),
+
+    /// Move unstaked lamports between accounts with the same authorities and lockups, using Staker
+    /// authority.
+    ///
+    /// The source account must be fully active or fully inactive. The destination may be in any
+    /// mergeable state (active, inactive, or activating, but not in warmup cooldown). Only lamports that
+    /// are neither backing a delegation nor required for rent-exemption may be moved.
+    ///
+    /// # Account references
+    ///   0. `[WRITE]` Active or inactive source stake account
+    ///   1. `[WRITE]` Mergeable destination stake account
+    ///   2. `[SIGNER]` Stake authority
+    ///
+    /// The u64 is the portion of available lamports to move
+    MoveLamports(u64),
 }
 
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
@@ -683,7 +731,6 @@ pub fn delegate_stake(
         AccountMeta::new_readonly(*vote_pubkey, false),
         AccountMeta::new_readonly(sysvar::clock::id(), false),
         AccountMeta::new_readonly(sysvar::stake_history::id(), false),
-        #[allow(deprecated)]
         // For backwards compatibility we pass the stake config, although this account is unused
         AccountMeta::new_readonly(config::id(), false),
         AccountMeta::new_readonly(*authorized_pubkey, true),
@@ -789,7 +836,6 @@ fn _redelegate(
         AccountMeta::new(*stake_pubkey, false),
         AccountMeta::new(*uninitialized_stake_pubkey, false),
         AccountMeta::new_readonly(*vote_pubkey, false),
-        #[allow(deprecated)]
         // For backwards compatibility we pass the stake config, although this account is unused
         AccountMeta::new_readonly(config::id(), false),
         AccountMeta::new_readonly(*authorized_pubkey, true),
@@ -797,6 +843,7 @@ fn _redelegate(
     Instruction::new_with_bincode(id(), &StakeInstruction::Redelegate, account_metas)
 }
 
+#[deprecated(since = "2.1.0", note = "Redelegate will not be enabled")]
 pub fn redelegate(
     stake_pubkey: &Pubkey,
     authorized_pubkey: &Pubkey,
@@ -815,6 +862,7 @@ pub fn redelegate(
     ]
 }
 
+#[deprecated(since = "2.1.0", note = "Redelegate will not be enabled")]
 pub fn redelegate_with_seed(
     stake_pubkey: &Pubkey,
     authorized_pubkey: &Pubkey,
@@ -838,6 +886,40 @@ pub fn redelegate_with_seed(
             uninitialized_stake_pubkey,
         ),
     ]
+}
+
+pub fn move_stake(
+    source_stake_pubkey: &Pubkey,
+    destination_stake_pubkey: &Pubkey,
+    authorized_pubkey: &Pubkey,
+    lamports: u64,
+) -> Instruction {
+    let account_metas = vec![
+        AccountMeta::new(*source_stake_pubkey, false),
+        AccountMeta::new(*destination_stake_pubkey, false),
+        AccountMeta::new_readonly(*authorized_pubkey, true),
+    ];
+
+    Instruction::new_with_bincode(id(), &StakeInstruction::MoveStake(lamports), account_metas)
+}
+
+pub fn move_lamports(
+    source_stake_pubkey: &Pubkey,
+    destination_stake_pubkey: &Pubkey,
+    authorized_pubkey: &Pubkey,
+    lamports: u64,
+) -> Instruction {
+    let account_metas = vec![
+        AccountMeta::new(*source_stake_pubkey, false),
+        AccountMeta::new(*destination_stake_pubkey, false),
+        AccountMeta::new_readonly(*authorized_pubkey, true),
+    ];
+
+    Instruction::new_with_bincode(
+        id(),
+        &StakeInstruction::MoveLamports(lamports),
+        account_metas,
+    )
 }
 
 #[cfg(test)]

@@ -8,9 +8,8 @@
 )]
 
 use {
-    solana_rbpf::memory_region::MemoryState,
-    solana_sdk::{feature_set::bpf_account_data_direct_mapping, signer::keypair::Keypair},
-    std::slice,
+    solana_feature_set::bpf_account_data_direct_mapping, solana_rbpf::memory_region::MemoryState,
+    solana_sdk::signer::keypair::Keypair, std::slice,
 };
 
 extern crate test;
@@ -21,8 +20,10 @@ use {
         create_vm, serialization::serialize_parameters,
         syscalls::create_program_runtime_environment_v1,
     },
+    solana_compute_budget::compute_budget::ComputeBudget,
+    solana_feature_set::FeatureSet,
     solana_measure::measure::Measure,
-    solana_program_runtime::{compute_budget::ComputeBudget, invoke_context::InvokeContext},
+    solana_program_runtime::invoke_context::InvokeContext,
     solana_rbpf::{
         ebpf::MM_INPUT_START, elf::Executable, memory_region::MemoryRegion,
         verifier::RequisiteVerifier, vm::ContextObject,
@@ -38,7 +39,6 @@ use {
         bpf_loader,
         client::SyncClient,
         entrypoint::SUCCESS,
-        feature_set::FeatureSet,
         instruction::{AccountMeta, Instruction},
         message::Message,
         native_loader,
@@ -138,11 +138,11 @@ fn bench_program_alu(bencher: &mut Bencher) {
         vec![],
         &mut invoke_context,
     );
-    let mut vm = vm.unwrap();
+    let (mut vm, _, _) = vm.unwrap();
 
     println!("Interpreted:");
     vm.context_object_pointer
-        .mock_set_remaining(std::i64::MAX as u64);
+        .mock_set_remaining(i64::MAX as u64);
     let (instructions, result) = vm.execute_program(&executable, true);
     assert_eq!(SUCCESS, result.unwrap());
     assert_eq!(ARMSTRONG_LIMIT, LittleEndian::read_u64(&inner_iter));
@@ -153,7 +153,7 @@ fn bench_program_alu(bencher: &mut Bencher) {
 
     bencher.iter(|| {
         vm.context_object_pointer
-            .mock_set_remaining(std::i64::MAX as u64);
+            .mock_set_remaining(i64::MAX as u64);
         vm.execute_program(&executable, true).1.unwrap();
     });
     let summary = bencher.bench(|_bencher| Ok(())).unwrap().unwrap();
@@ -174,7 +174,7 @@ fn bench_program_alu(bencher: &mut Bencher) {
 
     bencher.iter(|| {
         vm.context_object_pointer
-            .mock_set_remaining(std::i64::MAX as u64);
+            .mock_set_remaining(i64::MAX as u64);
         vm.execute_program(&executable, false).1.unwrap();
     });
     let summary = bencher.bench(|_bencher| Ok(())).unwrap().unwrap();
@@ -313,7 +313,7 @@ fn bench_instruction_count_tuner(_bencher: &mut Bencher) {
         account_lengths,
         &mut invoke_context,
     );
-    let mut vm = vm.unwrap();
+    let (mut vm, _, _) = vm.unwrap();
 
     let mut measure = Measure::start("tune");
     let (instructions, _result) = vm.execute_program(&executable, true);

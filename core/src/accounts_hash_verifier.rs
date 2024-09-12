@@ -1,6 +1,7 @@
 //! Service to calculate accounts hashes
 
 use {
+    crate::snapshot_packager_service::PendingSnapshotPackages,
     crossbeam_channel::{Receiver, Sender},
     solana_accounts_db::{
         accounts_db::CalcAccountsHashKind,
@@ -19,15 +20,12 @@ use {
         },
         snapshot_utils,
     },
-    solana_sdk::{
-        clock::{Slot, DEFAULT_MS_PER_SLOT},
-        hash::Hash,
-    },
+    solana_sdk::clock::{Slot, DEFAULT_MS_PER_SLOT},
     std::{
-        io::{Error as IoError, Result as IoResult},
+        io::Result as IoResult,
         sync::{
             atomic::{AtomicBool, Ordering},
-            Arc,
+            Arc, Mutex,
         },
         thread::{self, Builder, JoinHandle},
         time::Duration,
@@ -42,7 +40,7 @@ impl AccountsHashVerifier {
     pub fn new(
         accounts_package_sender: Sender<AccountsPackage>,
         accounts_package_receiver: Receiver<AccountsPackage>,
-        snapshot_package_sender: Option<Sender<SnapshotPackage>>,
+        pending_snapshot_packages: Arc<Mutex<PendingSnapshotPackages>>,
         exit: Arc<AtomicBool>,
         snapshot_config: SnapshotConfig,
     ) -> Self {
@@ -74,12 +72,14 @@ impl AccountsHashVerifier {
 
                     let (result, handling_time_us) = measure_us!(Self::process_accounts_package(
                         accounts_package,
-                        snapshot_package_sender.as_ref(),
+                        &pending_snapshot_packages,
                         &snapshot_config,
-                        &exit,
                     ));
                     if let Err(err) = result {
-                        error!("Stopping AccountsHashVerifier! Fatal error while processing accounts package: {err}");
+                        error!(
+                            "Stopping AccountsHashVerifier! Fatal error while processing accounts \
+                             package: {err}"
+                        );
                         exit.store(true, Ordering::Relaxed);
                         break;
                     }
@@ -147,7 +147,8 @@ impl AccountsHashVerifier {
                     .count();
                 assert!(
                     num_eah_packages <= 1,
-                    "Only a single EAH accounts package is allowed at a time! count: {num_eah_packages}"
+                    "Only a single EAH accounts package is allowed at a time! count: \
+                     {num_eah_packages}"
                 );
 
                 // Get the two highest priority requests, `y` and `z`.
@@ -211,21 +212,22 @@ impl AccountsHashVerifier {
     #[allow(clippy::too_many_arguments)]
     fn process_accounts_package(
         accounts_package: AccountsPackage,
-        snapshot_package_sender: Option<&Sender<SnapshotPackage>>,
+        pending_snapshot_packages: &Mutex<PendingSnapshotPackages>,
         snapshot_config: &SnapshotConfig,
-        exit: &AtomicBool,
     ) -> IoResult<()> {
-        let accounts_hash =
+        let (accounts_hash_kind, bank_incremental_snapshot_persistence) =
             Self::calculate_and_verify_accounts_hash(&accounts_package, snapshot_config)?;
 
-        Self::save_epoch_accounts_hash(&accounts_package, accounts_hash);
+        Self::save_epoch_accounts_hash(&accounts_package, accounts_hash_kind);
+
+        Self::purge_old_accounts_hashes(&accounts_package, snapshot_config);
 
         Self::submit_for_packaging(
             accounts_package,
-            snapshot_package_sender,
+            pending_snapshot_packages,
             snapshot_config,
-            accounts_hash,
-            exit,
+            accounts_hash_kind,
+            bank_incremental_snapshot_persistence,
         );
 
         Ok(())
@@ -235,137 +237,67 @@ impl AccountsHashVerifier {
     fn calculate_and_verify_accounts_hash(
         accounts_package: &AccountsPackage,
         snapshot_config: &SnapshotConfig,
-    ) -> IoResult<AccountsHashKind> {
+    ) -> IoResult<(AccountsHashKind, Option<BankIncrementalSnapshotPersistence>)> {
         let accounts_hash_calculation_kind = match accounts_package.package_kind {
             AccountsPackageKind::AccountsHashVerifier => CalcAccountsHashKind::Full,
             AccountsPackageKind::EpochAccountsHash => CalcAccountsHashKind::Full,
             AccountsPackageKind::Snapshot(snapshot_kind) => match snapshot_kind {
                 SnapshotKind::FullSnapshot => CalcAccountsHashKind::Full,
-                SnapshotKind::IncrementalSnapshot(_) => {
-                    if accounts_package.is_incremental_accounts_hash_feature_enabled {
-                        CalcAccountsHashKind::Incremental
-                    } else {
-                        CalcAccountsHashKind::Full
-                    }
-                }
+                SnapshotKind::IncrementalSnapshot(_) => CalcAccountsHashKind::Incremental,
             },
         };
 
-        let (
-            accounts_hash_kind,
-            accounts_hash_for_reserialize,
-            bank_incremental_snapshot_persistence,
-        ) = match accounts_hash_calculation_kind {
-            CalcAccountsHashKind::Full => {
-                let (accounts_hash, _capitalization) =
-                    Self::_calculate_full_accounts_hash(accounts_package);
-                (accounts_hash.into(), accounts_hash, None)
-            }
-            CalcAccountsHashKind::Incremental => {
-                let AccountsPackageKind::Snapshot(SnapshotKind::IncrementalSnapshot(base_slot)) =
-                    accounts_package.package_kind
-                else {
-                    panic!("Calculating incremental accounts hash requires a base slot");
-                };
-                let accounts_db = &accounts_package.accounts.accounts_db;
-                let Some((base_accounts_hash, base_capitalization)) =
-                    accounts_db.get_accounts_hash(base_slot)
-                else {
-                    panic!(
-                        "incremental snapshot requires accounts hash and capitalization \
-                         from the full snapshot it is based on \n\
-                         package: {accounts_package:?} \n\
-                         accounts hashes: {:?} \n\
-                         incremental accounts hashes: {:?} \n\
-                         full snapshot archives: {:?} \n\
-                         bank snapshots: {:?}",
-                        accounts_db.get_accounts_hashes(),
-                        accounts_db.get_incremental_accounts_hashes(),
-                        snapshot_utils::get_full_snapshot_archives(
-                            &snapshot_config.full_snapshot_archives_dir,
-                        ),
-                        snapshot_utils::get_bank_snapshots(&snapshot_config.bank_snapshots_dir),
-                    );
-                };
-                let (incremental_accounts_hash, incremental_capitalization) =
-                    Self::_calculate_incremental_accounts_hash(accounts_package, base_slot);
-                let bank_incremental_snapshot_persistence = BankIncrementalSnapshotPersistence {
-                    full_slot: base_slot,
-                    full_hash: base_accounts_hash.into(),
-                    full_capitalization: base_capitalization,
-                    incremental_hash: incremental_accounts_hash.into(),
-                    incremental_capitalization,
-                };
-                (
-                    incremental_accounts_hash.into(),
-                    AccountsHash(Hash::default()), // value does not matter; not used for incremental snapshots
-                    Some(bank_incremental_snapshot_persistence),
-                )
-            }
-        };
-
-        if let Some(snapshot_info) = &accounts_package.snapshot_info {
-            solana_runtime::serde_snapshot::reserialize_bank_with_new_accounts_hash(
-                &snapshot_info.bank_snapshot_dir,
-                accounts_package.slot,
-                &accounts_hash_for_reserialize,
-                bank_incremental_snapshot_persistence.as_ref(),
-            );
-
-            // now write the full snapshot slot file after reserializing so this bank snapshot is loadable
-            let full_snapshot_archive_slot = match accounts_package.package_kind {
-                AccountsPackageKind::Snapshot(SnapshotKind::IncrementalSnapshot(base_slot)) => {
-                    base_slot
+        let (accounts_hash_kind, bank_incremental_snapshot_persistence) =
+            match accounts_hash_calculation_kind {
+                CalcAccountsHashKind::Full => {
+                    let (accounts_hash, _capitalization) =
+                        Self::_calculate_full_accounts_hash(accounts_package);
+                    (accounts_hash.into(), None)
                 }
-                _ => accounts_package.slot,
+                CalcAccountsHashKind::Incremental => {
+                    let AccountsPackageKind::Snapshot(SnapshotKind::IncrementalSnapshot(base_slot)) =
+                        accounts_package.package_kind
+                    else {
+                        panic!("Calculating incremental accounts hash requires a base slot");
+                    };
+                    let accounts_db = &accounts_package.accounts.accounts_db;
+                    let Some((base_accounts_hash, base_capitalization)) =
+                        accounts_db.get_accounts_hash(base_slot)
+                    else {
+                        panic!(
+                            "incremental snapshot requires accounts hash and capitalization from \
+                             the full snapshot it is based on\n\
+                             package: {accounts_package:?}\n\
+                             accounts hashes: {:?}\n\
+                             incremental accounts hashes: {:?}\n\
+                             full snapshot archives: {:?}\n\
+                             bank snapshots: {:?}",
+                            accounts_db.get_accounts_hashes(),
+                            accounts_db.get_incremental_accounts_hashes(),
+                            snapshot_utils::get_full_snapshot_archives(
+                                &snapshot_config.full_snapshot_archives_dir,
+                            ),
+                            snapshot_utils::get_bank_snapshots(&snapshot_config.bank_snapshots_dir),
+                        );
+                    };
+                    let (incremental_accounts_hash, incremental_capitalization) =
+                        Self::_calculate_incremental_accounts_hash(accounts_package, base_slot);
+                    let bank_incremental_snapshot_persistence =
+                        BankIncrementalSnapshotPersistence {
+                            full_slot: base_slot,
+                            full_hash: base_accounts_hash.into(),
+                            full_capitalization: base_capitalization,
+                            incremental_hash: incremental_accounts_hash.into(),
+                            incremental_capitalization,
+                        };
+                    (
+                        incremental_accounts_hash.into(),
+                        Some(bank_incremental_snapshot_persistence),
+                    )
+                }
             };
-            snapshot_utils::write_full_snapshot_slot_file(
-                &snapshot_info.bank_snapshot_dir,
-                full_snapshot_archive_slot,
-            )
-            .map_err(|err| {
-                IoError::other(format!(
-                    "failed to calculate accounts hash for {accounts_package:?}: {err}"
-                ))
-            })?;
-        }
 
-        if accounts_package.package_kind
-            == AccountsPackageKind::Snapshot(SnapshotKind::FullSnapshot)
-        {
-            accounts_package
-                .accounts
-                .accounts_db
-                .purge_old_accounts_hashes(accounts_package.slot);
-        }
-
-        // After an accounts package has had its accounts hash calculated and
-        // has been reserialized to become a BankSnapshotPost, it is now safe
-        // to clean up some older bank snapshots.
-        //
-        // If we are generating snapshots, then this accounts package will be sent
-        // to SnapshotPackagerService to be archived.  SPS needs the bank snapshots
-        // to make the archives, so we cannot purge any bank snapshots that SPS
-        // may still be using. Therefore, we defer purging to SPS.
-        //
-        // If we are *not* generating snapshots, then purge old bank snapshots here.
-        if !snapshot_config.should_generate_snapshots() {
-            let (_, purge_bank_snapshots_time_us) =
-                measure_us!(snapshot_utils::purge_bank_snapshots_older_than_slot(
-                    &snapshot_config.bank_snapshots_dir,
-                    accounts_package.slot,
-                ));
-            datapoint_info!(
-                "accounts_hash_verifier",
-                (
-                    "purge_old_snapshots_time_us",
-                    purge_bank_snapshots_time_us,
-                    i64
-                ),
-            );
-        }
-
-        Ok(accounts_hash_kind)
+        Ok((accounts_hash_kind, bank_incremental_snapshot_persistence))
     }
 
     fn _calculate_full_accounts_hash(
@@ -403,19 +335,11 @@ impl AccountsHashVerifier {
             let calculate_accounts_hash_config = CalcAccountsHashConfig {
                 // since we're going to assert, use the fg thread pool to go faster
                 use_bg_thread_pool: false,
-                ..calculate_accounts_hash_config
-            };
-            let result_with_index = accounts_package
-                .accounts
-                .accounts_db
-                .calculate_accounts_hash_from_index(slot, &calculate_accounts_hash_config);
-            info!("hash calc with index: {slot}, {result_with_index:?}",);
-            let calculate_accounts_hash_config = CalcAccountsHashConfig {
                 // now that we've failed, store off the failing contents that produced a bad capitalization
                 store_detailed_debug_info_on_failure: true,
                 ..calculate_accounts_hash_config
             };
-            _ = accounts_package
+            let second_accounts_hash = accounts_package
                 .accounts
                 .accounts_db
                 .calculate_accounts_hash(
@@ -423,12 +347,13 @@ impl AccountsHashVerifier {
                     &sorted_storages,
                     HashStats::default(),
                 );
+            panic!(
+                "accounts hash capitalization mismatch: expected {}, but calculated {} (then \
+                 recalculated {})",
+                accounts_package.expected_capitalization, lamports, second_accounts_hash.1,
+            );
         }
 
-        assert_eq!(
-            accounts_package.expected_capitalization, lamports,
-            "accounts hash capitalization mismatch"
-        );
         if let Some(expected_hash) = accounts_package.accounts_hash_for_testing {
             assert_eq!(expected_hash, accounts_hash);
         };
@@ -505,12 +430,43 @@ impl AccountsHashVerifier {
         }
     }
 
+    fn purge_old_accounts_hashes(
+        accounts_package: &AccountsPackage,
+        snapshot_config: &SnapshotConfig,
+    ) {
+        let should_purge = match (
+            snapshot_config.should_generate_snapshots(),
+            accounts_package.package_kind,
+        ) {
+            (false, _) => {
+                // If we are *not* generating snapshots, then it is safe to purge every time.
+                true
+            }
+            (true, AccountsPackageKind::Snapshot(SnapshotKind::FullSnapshot)) => {
+                // If we *are* generating snapshots, then only purge old accounts hashes after
+                // handling full snapshot packages.  This is because handling incremental snapshot
+                // packages requires the accounts hash from the latest full snapshot, and if we
+                // purged after every package, we'd remove the accounts hash needed by the next
+                // incremental snapshot.
+                true
+            }
+            (true, _) => false,
+        };
+
+        if should_purge {
+            accounts_package
+                .accounts
+                .accounts_db
+                .purge_old_accounts_hashes(accounts_package.slot);
+        }
+    }
+
     fn submit_for_packaging(
         accounts_package: AccountsPackage,
-        snapshot_package_sender: Option<&Sender<SnapshotPackage>>,
+        pending_snapshot_packages: &Mutex<PendingSnapshotPackages>,
         snapshot_config: &SnapshotConfig,
-        accounts_hash: AccountsHashKind,
-        exit: &AtomicBool,
+        accounts_hash_kind: AccountsHashKind,
+        bank_incremental_snapshot_persistence: Option<BankIncrementalSnapshotPersistence>,
     ) {
         if !snapshot_config.should_generate_snapshots()
             || !matches!(
@@ -520,20 +476,16 @@ impl AccountsHashVerifier {
         {
             return;
         }
-        let Some(snapshot_package_sender) = snapshot_package_sender else {
-            return;
-        };
 
-        let snapshot_package = SnapshotPackage::new(accounts_package, accounts_hash);
-        let send_result = snapshot_package_sender.send(snapshot_package);
-        if let Err(err) = send_result {
-            // Sending the snapshot package should never fail *unless* we're shutting down.
-            let snapshot_package = &err.0;
-            assert!(
-                exit.load(Ordering::Relaxed),
-                "Failed to send snapshot package: {err}, {snapshot_package:?}"
-            );
-        }
+        let snapshot_package = SnapshotPackage::new(
+            accounts_package,
+            accounts_hash_kind,
+            bank_incremental_snapshot_persistence,
+        );
+        pending_snapshot_packages
+            .lock()
+            .unwrap()
+            .push(snapshot_package);
     }
 
     pub fn join(self) -> thread::Result<()> {
@@ -666,7 +618,7 @@ mod tests {
         assert_eq!(num_re_enqueued_accounts_packages, 3);
 
         // The Accounts Hash Verifier from slot 423 is handled 4th
-        // (the older accounts have verifiers from slot 421 and 422 are skipped and dropped)
+        // (the older accounts hash verifiers from slot 421 and 422 are skipped and dropped)
         let (
             account_package,
             _num_outstanding_accounts_packages,

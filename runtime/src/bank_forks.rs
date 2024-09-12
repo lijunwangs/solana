@@ -13,11 +13,7 @@ use {
     log::*,
     solana_measure::measure::Measure,
     solana_program_runtime::loaded_programs::{BlockRelation, ForkGraph},
-    solana_sdk::{
-        clock::{Epoch, Slot},
-        hash::Hash,
-        timing,
-    },
+    solana_sdk::{clock::Slot, hash::Hash},
     std::{
         collections::{hash_map::Entry, HashMap, HashSet},
         ops::Index,
@@ -127,14 +123,14 @@ impl BankForks {
             banks,
             descendants,
             snapshot_config: None,
-            accounts_hash_interval_slots: std::u64::MAX,
+            accounts_hash_interval_slots: u64::MAX,
             last_accounts_hash_slot: root_slot,
             in_vote_only_mode: Arc::new(AtomicBool::new(false)),
             highest_slot_at_startup: 0,
             scheduler_pool: None,
         }));
 
-        root_bank.set_fork_graph_in_program_cache(bank_forks.clone());
+        root_bank.set_fork_graph_in_program_cache(Arc::downgrade(&bank_forks));
         bank_forks
     }
 
@@ -225,14 +221,16 @@ impl BankForks {
 
     pub fn insert(&mut self, mut bank: Bank) -> BankWithScheduler {
         if self.root.load(Ordering::Relaxed) < self.highest_slot_at_startup {
-            bank.check_program_modification_slot();
+            bank.set_check_program_modification_slot(true);
         }
 
         let bank = Arc::new(bank);
         let bank = if let Some(scheduler_pool) = &self.scheduler_pool {
             let context = SchedulingContext::new(bank.clone());
             let scheduler = scheduler_pool.take_scheduler(context);
-            BankWithScheduler::new(bank, Some(scheduler))
+            let bank_with_scheduler = BankWithScheduler::new(bank, Some(scheduler));
+            scheduler_pool.register_timeout_listener(bank_with_scheduler.create_timeout_listener());
+            bank_with_scheduler
         } else {
             BankWithScheduler::new_without_scheduler(bank)
         };
@@ -492,7 +490,7 @@ impl BankForks {
             "bank-forks_set_root",
             (
                 "elapsed_ms",
-                timing::duration_as_ms(&set_root_start.elapsed()) as usize,
+                set_root_start.elapsed().as_millis() as usize,
                 i64
             ),
             ("slot", root, i64),
@@ -567,7 +565,7 @@ impl BankForks {
             ),
             (
                 "program_cache_prune_ms",
-                timing::duration_as_ms(&program_cache_prune_start.elapsed()),
+                program_cache_prune_start.elapsed().as_millis() as i64,
                 i64
             ),
             ("dropped_banks_len", set_root_metrics.dropped_banks_len, i64),
@@ -642,10 +640,8 @@ impl BankForks {
         root: Slot,
         highest_super_majority_root: Option<Slot>,
     ) -> (Vec<BankWithScheduler>, u64, u64) {
-        // Clippy doesn't like separating the two collects below,
-        // but we want to collect timing separately, and the 2nd requires
+        // We want to collect timing separately, and the 2nd collect requires
         // a unique borrow to self which is already borrowed by self.banks
-        #![allow(clippy::needless_collect)]
         let mut prune_slots_time = Measure::start("prune_slots");
         let highest_super_majority_root = highest_super_majority_root.unwrap_or(root);
         let prune_slots: Vec<_> = self
@@ -722,10 +718,6 @@ impl ForkGraph for BankForks {
             })
             .unwrap_or(BlockRelation::Unknown)
     }
-
-    fn slot_epoch(&self, slot: Slot) -> Option<Epoch> {
-        self.banks.get(&slot).map(|bank| bank.epoch())
-    }
 }
 
 #[cfg(test)]
@@ -750,6 +742,14 @@ mod tests {
         solana_vote_program::vote_state::BlockTimestamp,
         std::{sync::atomic::Ordering::Relaxed, time::Duration},
     };
+
+    #[test]
+    fn test_bank_forks_new_rw_arc_memory_leak() {
+        for _ in 0..1000 {
+            let GenesisConfigInfo { genesis_config, .. } = create_genesis_config(10_000);
+            BankForks::new_rw_arc(Bank::new_for_tests(&genesis_config));
+        }
+    }
 
     #[test]
     fn test_bank_forks_new() {

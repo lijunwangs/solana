@@ -6,7 +6,7 @@ use {
         blockstore::Blockstore,
         blockstore_processor::{TransactionStatusBatch, TransactionStatusMessage},
     },
-    solana_svm::transaction_results::{DurableNonceFee, TransactionExecutionDetails},
+    solana_svm::transaction_commit_result::CommittedTransaction,
     solana_transaction_status::{
         extract_and_fmt_memos, map_inner_instructions, Reward, TransactionStatusMeta,
     },
@@ -66,129 +66,119 @@ impl TransactionStatusService {
     ) -> Result<(), RecvTimeoutError> {
         match write_transaction_status_receiver.recv_timeout(Duration::from_secs(1))? {
             TransactionStatusMessage::Batch(TransactionStatusBatch {
-                bank,
+                slot,
                 transactions,
-                execution_results,
+                commit_results,
                 balances,
                 token_balances,
-                rent_debits,
                 transaction_indexes,
             }) => {
-                let slot = bank.slot();
                 for (
                     transaction,
-                    execution_result,
+                    commit_result,
                     pre_balances,
                     post_balances,
                     pre_token_balances,
                     post_token_balances,
-                    rent_debits,
                     transaction_index,
                 ) in izip!(
                     transactions,
-                    execution_results,
+                    commit_results,
                     balances.pre_balances,
                     balances.post_balances,
                     token_balances.pre_token_balances,
                     token_balances.post_token_balances,
-                    rent_debits,
                     transaction_indexes,
                 ) {
-                    if let Some(details) = execution_result {
-                        let TransactionExecutionDetails {
-                            status,
-                            log_messages,
-                            inner_instructions,
-                            durable_nonce_fee,
-                            return_data,
-                            executed_units,
-                            ..
-                        } = details;
-                        let lamports_per_signature = match durable_nonce_fee {
-                            Some(DurableNonceFee::Valid(lamports_per_signature)) => {
-                                Some(lamports_per_signature)
-                            }
-                            Some(DurableNonceFee::Invalid) => None,
-                            None => bank.get_lamports_per_signature_for_blockhash(
-                                transaction.message().recent_blockhash(),
-                            ),
-                        }
-                        .expect("lamports_per_signature must be available");
-                        let fee = bank.get_fee_for_message_with_lamports_per_signature(
-                            transaction.message(),
-                            lamports_per_signature,
+                    let Ok(committed_tx) = commit_result else {
+                        continue;
+                    };
+
+                    let CommittedTransaction {
+                        status,
+                        log_messages,
+                        inner_instructions,
+                        return_data,
+                        executed_units,
+                        fee_details,
+                        rent_debits,
+                        ..
+                    } = committed_tx;
+
+                    let fee = fee_details.total_fee();
+                    let inner_instructions = inner_instructions.map(|inner_instructions| {
+                        map_inner_instructions(inner_instructions).collect()
+                    });
+
+                    let pre_token_balances = Some(pre_token_balances);
+                    let post_token_balances = Some(post_token_balances);
+                    let rewards = Some(
+                        rent_debits
+                            .into_unordered_rewards_iter()
+                            .map(|(pubkey, reward_info)| Reward {
+                                pubkey: pubkey.to_string(),
+                                lamports: reward_info.lamports,
+                                post_balance: reward_info.post_balance,
+                                reward_type: Some(reward_info.reward_type),
+                                commission: reward_info.commission,
+                            })
+                            .collect(),
+                    );
+                    let loaded_addresses = transaction.get_loaded_addresses();
+                    let mut transaction_status_meta = TransactionStatusMeta {
+                        status,
+                        fee,
+                        pre_balances,
+                        post_balances,
+                        inner_instructions,
+                        log_messages,
+                        pre_token_balances,
+                        post_token_balances,
+                        rewards,
+                        loaded_addresses,
+                        return_data,
+                        compute_units_consumed: Some(executed_units),
+                    };
+
+                    if let Some(transaction_notifier) = transaction_notifier.as_ref() {
+                        transaction_notifier.notify_transaction(
+                            slot,
+                            transaction_index,
+                            transaction.signature(),
+                            &transaction_status_meta,
+                            &transaction,
                         );
-                        let tx_account_locks = transaction.get_account_locks_unchecked();
+                    }
 
-                        let inner_instructions = inner_instructions.map(|inner_instructions| {
-                            map_inner_instructions(inner_instructions).collect()
-                        });
+                    if !(enable_extended_tx_metadata_storage || transaction_notifier.is_some()) {
+                        transaction_status_meta.log_messages.take();
+                        transaction_status_meta.inner_instructions.take();
+                        transaction_status_meta.return_data.take();
+                    }
 
-                        let pre_token_balances = Some(pre_token_balances);
-                        let post_token_balances = Some(post_token_balances);
-                        let rewards = Some(
-                            rent_debits
-                                .into_unordered_rewards_iter()
-                                .map(|(pubkey, reward_info)| Reward {
-                                    pubkey: pubkey.to_string(),
-                                    lamports: reward_info.lamports,
-                                    post_balance: reward_info.post_balance,
-                                    reward_type: Some(reward_info.reward_type),
-                                    commission: reward_info.commission,
-                                })
-                                .collect(),
-                        );
-                        let loaded_addresses = transaction.get_loaded_addresses();
-                        let mut transaction_status_meta = TransactionStatusMeta {
-                            status,
-                            fee,
-                            pre_balances,
-                            post_balances,
-                            inner_instructions,
-                            log_messages,
-                            pre_token_balances,
-                            post_token_balances,
-                            rewards,
-                            loaded_addresses,
-                            return_data,
-                            compute_units_consumed: Some(executed_units),
-                        };
-
-                        if let Some(transaction_notifier) = transaction_notifier.as_ref() {
-                            transaction_notifier.notify_transaction(
-                                slot,
-                                transaction_index,
-                                transaction.signature(),
-                                &transaction_status_meta,
-                                &transaction,
-                            );
-                        }
-
-                        if !(enable_extended_tx_metadata_storage || transaction_notifier.is_some())
-                        {
-                            transaction_status_meta.log_messages.take();
-                            transaction_status_meta.inner_instructions.take();
-                            transaction_status_meta.return_data.take();
-                        }
-
-                        if enable_rpc_transaction_history {
-                            if let Some(memos) = extract_and_fmt_memos(transaction.message()) {
-                                blockstore
-                                    .write_transaction_memos(transaction.signature(), slot, memos)
-                                    .expect("Expect database write to succeed: TransactionMemos");
-                            }
-
+                    if enable_rpc_transaction_history {
+                        if let Some(memos) = extract_and_fmt_memos(transaction.message()) {
                             blockstore
-                                .write_transaction_status(
-                                    slot,
-                                    *transaction.signature(),
-                                    tx_account_locks.writable,
-                                    tx_account_locks.readonly,
-                                    transaction_status_meta,
-                                    transaction_index,
-                                )
-                                .expect("Expect database write to succeed: TransactionStatus");
+                                .write_transaction_memos(transaction.signature(), slot, memos)
+                                .expect("Expect database write to succeed: TransactionMemos");
                         }
+
+                        let message = transaction.message();
+                        let keys_with_writable = message
+                            .account_keys()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, key)| (key, message.is_writable(index)));
+
+                        blockstore
+                            .write_transaction_status(
+                                slot,
+                                *transaction.signature(),
+                                keys_with_writable,
+                                transaction_status_meta,
+                                transaction_index,
+                            )
+                            .expect("Expect database write to succeed: TransactionStatus");
                     }
                 }
             }
@@ -211,12 +201,15 @@ pub(crate) mod tests {
         crate::transaction_notifier_interface::TransactionNotifier,
         crossbeam_channel::unbounded,
         dashmap::DashMap,
-        solana_account_decoder::parse_token::token_amount_to_ui_amount,
+        solana_account_decoder::{
+            parse_account_data::SplTokenAdditionalData, parse_token::token_amount_to_ui_amount_v2,
+        },
         solana_ledger::{genesis_utils::create_genesis_config, get_tmp_ledger_path_auto_delete},
         solana_runtime::bank::{Bank, TransactionBalancesSet},
         solana_sdk::{
             account_utils::StateMut,
             clock::Slot,
+            fee::FeeDetails,
             hash::Hash,
             nonce::{self, state::DurableNonce},
             nonce_account,
@@ -230,7 +223,7 @@ pub(crate) mod tests {
                 VersionedTransaction,
             },
         },
-        solana_svm::nonce_info::{NonceFull, NoncePartial},
+        solana_svm::transaction_execution_result::TransactionLoadedAccountsStats,
         solana_transaction_status::{
             token_balances::TransactionTokenBalancesSet, TransactionStatusMeta,
             TransactionTokenBalance,
@@ -302,7 +295,7 @@ pub(crate) mod tests {
     #[test]
     fn test_notify_transaction() {
         let genesis_config = create_genesis_config(2).genesis_config;
-        let bank = Bank::new_no_wallclock_throttle_for_tests(&genesis_config).0;
+        let (bank, _bank_forks) = Bank::new_no_wallclock_throttle_for_tests(&genesis_config);
 
         let (transaction_status_sender, transaction_status_receiver) = unbounded();
         let ledger_path = get_tmp_ledger_path_auto_delete!();
@@ -333,26 +326,18 @@ pub(crate) mod tests {
             )))
             .unwrap();
 
-        let rollback_partial = NoncePartial::new(pubkey, nonce_account.clone());
-
         let mut rent_debits = RentDebits::default();
         rent_debits.insert(&pubkey, 123, 456);
 
-        let fee_payer_address = &pubkey;
-        let fee_payer_account = nonce_account;
-        let transaction_result = Some(TransactionExecutionDetails {
+        let commit_result = Ok(CommittedTransaction {
             status: Ok(()),
             log_messages: None,
             inner_instructions: None,
-            durable_nonce_fee: Some(DurableNonceFee::from(&NonceFull::from_partial(
-                &rollback_partial,
-                fee_payer_address,
-                fee_payer_account,
-                &rent_debits,
-            ))),
             return_data: None,
             executed_units: 0,
-            accounts_data_len_delta: 0,
+            fee_details: FeeDetails::default(),
+            rent_debits,
+            loaded_account_stats: TransactionLoadedAccountsStats::default(),
         });
 
         let balances = TransactionBalancesSet {
@@ -365,7 +350,10 @@ pub(crate) mod tests {
         let pre_token_balance = TransactionTokenBalance {
             account_index: 0,
             mint: Pubkey::new_unique().to_string(),
-            ui_token_amount: token_amount_to_ui_amount(42, 2),
+            ui_token_amount: token_amount_to_ui_amount_v2(
+                42,
+                &SplTokenAdditionalData::with_decimals(2),
+            ),
             owner: owner.clone(),
             program_id: token_program_id.clone(),
         };
@@ -373,7 +361,10 @@ pub(crate) mod tests {
         let post_token_balance = TransactionTokenBalance {
             account_index: 0,
             mint: Pubkey::new_unique().to_string(),
-            ui_token_amount: token_amount_to_ui_amount(58, 2),
+            ui_token_amount: token_amount_to_ui_amount_v2(
+                58,
+                &SplTokenAdditionalData::with_decimals(2),
+            ),
             owner,
             program_id: token_program_id,
         };
@@ -387,12 +378,11 @@ pub(crate) mod tests {
         let signature = *transaction.signature();
         let transaction_index: usize = bank.transaction_count().try_into().unwrap();
         let transaction_status_batch = TransactionStatusBatch {
-            bank,
+            slot,
             transactions: vec![transaction],
-            execution_results: vec![transaction_result],
+            commit_results: vec![commit_result],
             balances,
             token_balances,
-            rent_debits: vec![rent_debits],
             transaction_indexes: vec![transaction_index],
         };
 

@@ -4,10 +4,12 @@ extern crate serde_derive;
 pub use self::legacy::{LegacyVersion1, LegacyVersion2};
 use {
     serde_derive::{Deserialize, Serialize},
-    solana_sdk::{sanitize::Sanitize, serde_varint},
+    solana_sanitize::Sanitize,
+    solana_serde_varint as serde_varint,
     std::{convert::TryInto, fmt},
 };
-#[macro_use]
+#[cfg_attr(feature = "frozen-abi", macro_use)]
+#[cfg(feature = "frozen-abi")]
 extern crate solana_frozen_abi_macro;
 
 mod legacy;
@@ -22,7 +24,8 @@ enum ClientId {
     Unknown(u16),
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, AbiExample)]
+#[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct Version {
     #[serde(with = "serde_varint")]
     pub major: u16,
@@ -65,11 +68,8 @@ impl From<LegacyVersion2> for Version {
 
 impl Default for Version {
     fn default() -> Self {
-        let feature_set = u32::from_le_bytes(
-            solana_sdk::feature_set::ID.as_ref()[..4]
-                .try_into()
-                .unwrap(),
-        );
+        let feature_set =
+            u32::from_le_bytes(solana_feature_set::ID.as_ref()[..4].try_into().unwrap());
         Self {
             major: env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap(),
             minor: env!("CARGO_PKG_VERSION_MINOR").parse().unwrap(),

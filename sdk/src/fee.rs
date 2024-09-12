@@ -1,8 +1,8 @@
 //! Fee structures.
 
-use crate::native_token::sol_to_lamports;
 #[cfg(not(target_os = "solana"))]
 use solana_program::message::SanitizedMessage;
+use {crate::native_token::sol_to_lamports, std::num::NonZeroU32};
 
 /// A fee and its associated compute unit limit
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
@@ -14,7 +14,7 @@ pub struct FeeBin {
 }
 
 pub struct FeeBudgetLimits {
-    pub loaded_accounts_data_size_limit: usize,
+    pub loaded_accounts_data_size_limit: NonZeroU32,
     pub heap_cost: u64,
     pub compute_unit_limit: u64,
     pub prioritization_fee: u64,
@@ -31,16 +31,29 @@ pub struct FeeStructure {
     pub compute_fee_bins: Vec<FeeBin>,
 }
 
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Deserialize, Serialize)]
 pub struct FeeDetails {
     transaction_fee: u64,
     prioritization_fee: u64,
+    remove_rounding_in_fee_calculation: bool,
 }
 
 impl FeeDetails {
-    pub fn total_fee(&self, remove_rounding_in_fee_calculation: bool) -> u64 {
+    pub fn new(
+        transaction_fee: u64,
+        prioritization_fee: u64,
+        remove_rounding_in_fee_calculation: bool,
+    ) -> Self {
+        Self {
+            transaction_fee,
+            prioritization_fee,
+            remove_rounding_in_fee_calculation,
+        }
+    }
+
+    pub fn total_fee(&self) -> u64 {
         let total_fee = self.transaction_fee.saturating_add(self.prioritization_fee);
-        if remove_rounding_in_fee_calculation {
+        if self.remove_rounding_in_fee_calculation {
             total_fee
         } else {
             // backward compatible behavior
@@ -101,7 +114,7 @@ impl FeeStructure {
     }
 
     pub fn calculate_memory_usage_cost(
-        loaded_accounts_data_size_limit: usize,
+        loaded_accounts_data_size_limit: u32,
         heap_cost: u64,
     ) -> u64 {
         (loaded_accounts_data_size_limit as u64)
@@ -110,14 +123,12 @@ impl FeeStructure {
             .saturating_mul(heap_cost)
     }
 
-    /// Backward compatibility - lamports_per_signature == 0 means to clear
-    /// transaction fee to zero
-    pub fn to_clear_transaction_fee(lamports_per_signature: u64) -> bool {
-        lamports_per_signature == 0
-    }
-
     /// Calculate fee for `SanitizedMessage`
     #[cfg(not(target_os = "solana"))]
+    #[deprecated(
+        since = "2.1.0",
+        note = "Please use `solana_fee::calculate_fee` instead."
+    )]
     pub fn calculate_fee(
         &self,
         message: &SanitizedMessage,
@@ -126,28 +137,39 @@ impl FeeStructure {
         include_loaded_account_data_size_in_fee: bool,
         remove_rounding_in_fee_calculation: bool,
     ) -> u64 {
-        if Self::to_clear_transaction_fee(lamports_per_signature) {
-            0
-        } else {
-            self.calculate_fee_details(
-                message,
-                budget_limits,
-                include_loaded_account_data_size_in_fee,
-            )
-            .total_fee(remove_rounding_in_fee_calculation)
-        }
+        #[allow(deprecated)]
+        self.calculate_fee_details(
+            message,
+            lamports_per_signature,
+            budget_limits,
+            include_loaded_account_data_size_in_fee,
+            remove_rounding_in_fee_calculation,
+        )
+        .total_fee()
     }
 
     /// Calculate fee details for `SanitizedMessage`
     #[cfg(not(target_os = "solana"))]
+    #[deprecated(
+        since = "2.1.0",
+        note = "Please use `solana_fee::calculate_fee_details` instead."
+    )]
     pub fn calculate_fee_details(
         &self,
         message: &SanitizedMessage,
+        lamports_per_signature: u64,
         budget_limits: &FeeBudgetLimits,
         include_loaded_account_data_size_in_fee: bool,
+        remove_rounding_in_fee_calculation: bool,
     ) -> FeeDetails {
+        // Backward compatibility - lamports_per_signature == 0 means to clear
+        // transaction fee to zero
+        if lamports_per_signature == 0 {
+            return FeeDetails::default();
+        }
+
         let signature_fee = message
-            .num_signatures()
+            .num_total_signatures()
             .saturating_mul(self.lamports_per_signature);
         let write_lock_fee = message
             .num_write_locks()
@@ -157,7 +179,7 @@ impl FeeStructure {
         // requested_loaded_account_data_size
         let loaded_accounts_data_size_cost = if include_loaded_account_data_size_in_fee {
             FeeStructure::calculate_memory_usage_cost(
-                budget_limits.loaded_accounts_data_size_limit,
+                budget_limits.loaded_accounts_data_size_limit.get(),
                 budget_limits.heap_cost,
             )
         } else {
@@ -182,6 +204,7 @@ impl FeeStructure {
                 .saturating_add(write_lock_fee)
                 .saturating_add(compute_fee),
             prioritization_fee: budget_limits.prioritization_fee,
+            remove_rounding_in_fee_calculation,
         }
     }
 }
@@ -192,7 +215,7 @@ impl Default for FeeStructure {
     }
 }
 
-#[cfg(RUSTC_WITH_SPECIALIZATION)]
+#[cfg(all(RUSTC_WITH_SPECIALIZATION, feature = "frozen-abi"))]
 impl ::solana_frozen_abi::abi_example::AbiExample for FeeStructure {
     fn example() -> Self {
         FeeStructure::default()
@@ -206,7 +229,7 @@ mod tests {
     #[test]
     fn test_calculate_memory_usage_cost() {
         let heap_cost = 99;
-        const K: usize = 1024;
+        const K: u32 = 1024;
 
         // accounts data size are priced in block of 32K, ...
 
@@ -240,13 +263,22 @@ mod tests {
         // round large `f64` can lost precision, see feature gate:
         // "Removing unwanted rounding in fee calculation #34982"
 
-        let large_fee_details = FeeDetails {
-            transaction_fee: u64::MAX - 11,
-            prioritization_fee: 1,
-        };
+        let transaction_fee = u64::MAX - 11;
+        let prioritization_fee = 1;
         let expected_large_fee = u64::MAX - 10;
 
-        assert_eq!(large_fee_details.total_fee(true), expected_large_fee);
-        assert_ne!(large_fee_details.total_fee(false), expected_large_fee);
+        let details_with_rounding = FeeDetails {
+            transaction_fee,
+            prioritization_fee,
+            remove_rounding_in_fee_calculation: false,
+        };
+        let details_without_rounding = FeeDetails {
+            transaction_fee,
+            prioritization_fee,
+            remove_rounding_in_fee_calculation: true,
+        };
+
+        assert_eq!(details_without_rounding.total_fee(), expected_large_fee);
+        assert_ne!(details_with_rounding.total_fee(), expected_large_fee);
     }
 }

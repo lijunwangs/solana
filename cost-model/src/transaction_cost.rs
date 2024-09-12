@@ -56,10 +56,10 @@ impl TransactionCost {
         }
     }
 
-    pub fn account_data_size(&self) -> u64 {
+    pub fn allocated_accounts_data_size(&self) -> u64 {
         match self {
             Self::SimpleVote { .. } => 0,
-            Self::Transaction(usage_cost) => usage_cost.account_data_size,
+            Self::Transaction(usage_cost) => usage_cost.allocated_accounts_data_size,
         }
     }
 
@@ -125,7 +125,7 @@ pub struct UsageCostDetails {
     pub data_bytes_cost: u64,
     pub programs_execution_cost: u64,
     pub loaded_accounts_data_size_cost: u64,
-    pub account_data_size: u64,
+    pub allocated_accounts_data_size: u64,
     pub num_transaction_signatures: u64,
     pub num_secp256k1_instruction_signatures: u64,
     pub num_ed25519_instruction_signatures: u64,
@@ -140,7 +140,7 @@ impl Default for UsageCostDetails {
             data_bytes_cost: 0u64,
             programs_execution_cost: 0u64,
             loaded_accounts_data_size_cost: 0u64,
-            account_data_size: 0u64,
+            allocated_accounts_data_size: 0u64,
             num_transaction_signatures: 0u64,
             num_secp256k1_instruction_signatures: 0u64,
             num_ed25519_instruction_signatures: 0u64,
@@ -160,7 +160,7 @@ impl PartialEq for UsageCostDetails {
             && self.data_bytes_cost == other.data_bytes_cost
             && self.programs_execution_cost == other.programs_execution_cost
             && self.loaded_accounts_data_size_cost == other.loaded_accounts_data_size_cost
-            && self.account_data_size == other.account_data_size
+            && self.allocated_accounts_data_size == other.allocated_accounts_data_size
             && self.num_transaction_signatures == other.num_transaction_signatures
             && self.num_secp256k1_instruction_signatures
                 == other.num_secp256k1_instruction_signatures
@@ -199,15 +199,15 @@ mod tests {
     use {
         super::*,
         crate::cost_model::CostModel,
+        solana_feature_set::FeatureSet,
         solana_sdk::{
-            feature_set::FeatureSet,
             hash::Hash,
             message::SimpleAddressLoader,
             reserved_account_keys::ReservedAccountKeys,
             signer::keypair::Keypair,
             transaction::{MessageHash, SanitizedTransaction, VersionedTransaction},
         },
-        solana_vote_program::vote_transaction,
+        solana_vote_program::{vote_state::TowerSync, vote_transaction},
     };
 
     #[test]
@@ -216,9 +216,8 @@ mod tests {
         let node_keypair = Keypair::new();
         let vote_keypair = Keypair::new();
         let auth_keypair = Keypair::new();
-        let transaction = vote_transaction::new_vote_transaction(
-            vec![],
-            Hash::default(),
+        let transaction = vote_transaction::new_tower_sync_transaction(
+            TowerSync::default(),
             Hash::default(),
             &node_keypair,
             &vote_keypair,
@@ -249,7 +248,7 @@ mod tests {
         // expected vote tx cost: 2 write locks, 1 sig, 1 vote ix, 8cu of loaded accounts size,
         let expected_vote_cost = SIMPLE_VOTE_USAGE_COST;
         // expected non-vote tx cost would include default loaded accounts size cost (16384) additionally
-        let expected_none_vote_cost = 20535;
+        let expected_none_vote_cost = 20543;
 
         let vote_cost = CostModel::calculate_cost(&vote_transaction, &FeatureSet::all_enabled());
         let none_vote_cost =

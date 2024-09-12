@@ -1,10 +1,12 @@
 //! The [`ProgramError`] type and related definitions.
 
 #![allow(clippy::arithmetic_side_effects)]
+#[cfg(feature = "borsh")]
+use borsh::io::Error as BorshIoError;
 use {
-    crate::{decode_error::DecodeError, instruction::InstructionError, msg, pubkey::PubkeyError},
-    borsh::io::Error as BorshIoError,
+    crate::{instruction::InstructionError, msg, pubkey::PubkeyError},
     num_traits::{FromPrimitive, ToPrimitive},
+    solana_decode_error::DecodeError,
     std::convert::TryFrom,
     thiserror::Error,
 };
@@ -343,6 +345,7 @@ impl From<PubkeyError> for ProgramError {
     }
 }
 
+#[cfg(feature = "borsh")]
 impl From<BorshIoError> for ProgramError {
     fn from(error: BorshIoError) -> Self {
         Self::BorshIoError(format!("{error}"))

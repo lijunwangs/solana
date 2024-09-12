@@ -3,8 +3,8 @@ mod serde_snapshot_tests {
     use {
         crate::{
             serde_snapshot::{
-                newer, reconstruct_accountsdb_from_fields, remap_append_vec_file, SerdeStyle,
-                SerializableAccountsDb, SnapshotAccountsDbFields, TypeContext,
+                deserialize_accounts_db_fields, reconstruct_accountsdb_from_fields,
+                remap_append_vec_file, SerializableAccountsDb, SnapshotAccountsDbFields,
             },
             snapshot_utils::{get_storages_to_serialize, StorageAndNextAccountsFileId},
         },
@@ -55,17 +55,16 @@ mod serde_snapshot_tests {
         ancestors
     }
 
-    fn context_accountsdb_from_stream<'a, C, R>(
+    fn context_accountsdb_from_stream<R>(
         stream: &mut BufReader<R>,
         account_paths: &[PathBuf],
         storage_and_next_append_vec_id: StorageAndNextAccountsFileId,
     ) -> Result<AccountsDb, Error>
     where
-        C: TypeContext<'a>,
         R: Read,
     {
         // read and deserialise the accounts database directly from the stream
-        let accounts_db_fields = C::deserialize_accounts_db_fields(stream)?;
+        let accounts_db_fields = deserialize_accounts_db_fields(stream)?;
         let snapshot_accounts_db_fields = SnapshotAccountsDbFields {
             full_snapshot_accounts_db_fields: accounts_db_fields,
             incremental_snapshot_accounts_db_fields: None,
@@ -93,7 +92,6 @@ mod serde_snapshot_tests {
     }
 
     fn accountsdb_from_stream<R>(
-        serde_style: SerdeStyle,
         stream: &mut BufReader<R>,
         account_paths: &[PathBuf],
         storage_and_next_append_vec_id: StorageAndNextAccountsFileId,
@@ -101,17 +99,10 @@ mod serde_snapshot_tests {
     where
         R: Read,
     {
-        match serde_style {
-            SerdeStyle::Newer => context_accountsdb_from_stream::<newer::Context, R>(
-                stream,
-                account_paths,
-                storage_and_next_append_vec_id,
-            ),
-        }
+        context_accountsdb_from_stream::<R>(stream, account_paths, storage_and_next_append_vec_id)
     }
 
     fn accountsdb_to_stream<W>(
-        serde_style: SerdeStyle,
         stream: &mut W,
         accounts_db: &AccountsDb,
         slot: Slot,
@@ -120,23 +111,27 @@ mod serde_snapshot_tests {
     where
         W: Write,
     {
-        match serde_style {
-            SerdeStyle::Newer => serialize_into(
-                stream,
-                &SerializableAccountsDb::<newer::Context> {
-                    accounts_db,
-                    slot,
-                    account_storage_entries,
-                    phantom: std::marker::PhantomData,
-                },
-            ),
-        }
+        let bank_hash_stats = accounts_db.get_bank_hash_stats(slot).unwrap();
+        let accounts_delta_hash = accounts_db.get_accounts_delta_hash(slot).unwrap();
+        let accounts_hash = accounts_db.get_accounts_hash(slot).unwrap().0;
+        let write_version = accounts_db.write_version.load(Ordering::Acquire);
+        serialize_into(
+            stream,
+            &SerializableAccountsDb {
+                slot,
+                account_storage_entries,
+                bank_hash_stats,
+                accounts_delta_hash,
+                accounts_hash,
+                write_version,
+            },
+        )
     }
 
     /// Simulates the unpacking & storage reconstruction done during snapshot unpacking
-    fn copy_append_vecs<P: AsRef<Path>>(
+    fn copy_append_vecs(
         accounts_db: &AccountsDb,
-        output_dir: P,
+        output_dir: impl AsRef<Path>,
         storage_access: StorageAccess,
     ) -> Result<StorageAndNextAccountsFileId, AccountsFileError> {
         let storage_entries = accounts_db.get_snapshot_storages(RangeFull).0;
@@ -145,8 +140,7 @@ mod serde_snapshot_tests {
         for storage_entry in storage_entries.into_iter() {
             // Copy file to new directory
             let storage_path = storage_entry.path();
-            let file_name =
-                AccountsFile::file_name(storage_entry.slot(), storage_entry.append_vec_id());
+            let file_name = AccountsFile::file_name(storage_entry.slot(), storage_entry.id());
             let output_path = output_dir.as_ref().join(file_name);
             std::fs::copy(storage_path, &output_path)?;
 
@@ -158,15 +152,15 @@ mod serde_snapshot_tests {
             )?;
             let new_storage_entry = AccountStorageEntry::new_existing(
                 storage_entry.slot(),
-                storage_entry.append_vec_id(),
+                storage_entry.id(),
                 accounts_file,
                 num_accounts,
             );
-            next_append_vec_id = next_append_vec_id.max(new_storage_entry.append_vec_id());
+            next_append_vec_id = next_append_vec_id.max(new_storage_entry.id());
             storage.insert(
                 new_storage_entry.slot(),
                 AccountStorageReference {
-                    id: new_storage_entry.append_vec_id(),
+                    id: new_storage_entry.id(),
                     storage: Arc::new(new_storage_entry),
                 },
             );
@@ -186,7 +180,6 @@ mod serde_snapshot_tests {
         let mut writer = Cursor::new(vec![]);
         let snapshot_storages = accounts.get_snapshot_storages(..=slot).0;
         accountsdb_to_stream(
-            SerdeStyle::Newer,
             &mut writer,
             accounts,
             slot,
@@ -201,13 +194,8 @@ mod serde_snapshot_tests {
         // Simulate obtaining a copy of the AppendVecs from a tarball
         let storage_and_next_append_vec_id =
             copy_append_vecs(accounts, copied_accounts.path(), storage_access).unwrap();
-        let mut accounts_db = accountsdb_from_stream(
-            SerdeStyle::Newer,
-            &mut reader,
-            &[],
-            storage_and_next_append_vec_id,
-        )
-        .unwrap();
+        let mut accounts_db =
+            accountsdb_from_stream(&mut reader, &[], storage_and_next_append_vec_id).unwrap();
 
         // The append vecs will be used from `copied_accounts` directly by the new AccountsDb so keep
         // its TempDir alive
@@ -233,7 +221,8 @@ mod serde_snapshot_tests {
         }
     }
 
-    fn test_accounts_serialize_style(serde_style: SerdeStyle, storage_access: StorageAccess) {
+    #[test_case(StorageAccess::Mmap)]
+    fn test_accounts_serialize(storage_access: StorageAccess) {
         solana_logger::setup();
         let (_accounts_dir, paths) = get_temp_accounts_paths(4).unwrap();
         let accounts_db = AccountsDb::new_for_tests(paths, &ClusterType::Development);
@@ -252,7 +241,6 @@ mod serde_snapshot_tests {
 
         let mut writer = Cursor::new(vec![]);
         accountsdb_to_stream(
-            serde_style,
             &mut writer,
             &accounts.accounts_db,
             slot,
@@ -275,7 +263,6 @@ mod serde_snapshot_tests {
         let (_accounts_dir, daccounts_paths) = get_temp_accounts_paths(2).unwrap();
         let daccounts = Accounts::new(Arc::new(
             accountsdb_from_stream(
-                serde_style,
                 &mut reader,
                 &daccounts_paths,
                 storage_and_next_append_vec_id,
@@ -290,11 +277,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
-    fn test_accounts_serialize_newer(storage_access: StorageAccess) {
-        test_accounts_serialize_style(SerdeStyle::Newer, storage_access)
-    }
-
-    #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_remove_unrooted_slot_snapshot(storage_access: StorageAccess) {
         solana_logger::setup();
         let unrooted_slot = 9;
@@ -330,6 +313,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_accounts_db_serialize1(storage_access: StorageAccess) {
         for pass in 0..2 {
             solana_logger::setup();
@@ -445,6 +429,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_accounts_db_serialize_zero_and_free(storage_access: StorageAccess) {
         solana_logger::setup();
 
@@ -565,6 +550,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_accounts_purge_chained_purge_before_snapshot_restore(storage_access: StorageAccess) {
         solana_logger::setup();
         with_chained_zero_lamport_accounts(|accounts, current_slot| {
@@ -574,6 +560,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_accounts_purge_chained_purge_after_snapshot_restore(storage_access: StorageAccess) {
         solana_logger::setup();
         with_chained_zero_lamport_accounts(|accounts, current_slot| {
@@ -586,6 +573,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_accounts_purge_long_chained_after_snapshot_restore(storage_access: StorageAccess) {
         solana_logger::setup();
         let old_lamport = 223;
@@ -655,6 +643,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_accounts_clean_after_snapshot_restore_then_old_revives(storage_access: StorageAccess) {
         solana_logger::setup();
         let old_lamport = 223;
@@ -790,6 +779,7 @@ mod serde_snapshot_tests {
     }
 
     #[test_case(StorageAccess::Mmap)]
+    #[test_case(StorageAccess::File)]
     fn test_shrink_stale_slots_processed(storage_access: StorageAccess) {
         solana_logger::setup();
 
@@ -833,7 +823,7 @@ mod serde_snapshot_tests {
                 pubkey_count,
                 accounts.all_account_count_in_accounts_file(shrink_slot)
             );
-            accounts.shrink_all_slots(*startup, None, &EpochSchedule::default());
+            accounts.shrink_all_slots(*startup, &EpochSchedule::default(), None);
             assert_eq!(
                 pubkey_count_after_shrink,
                 accounts.all_account_count_in_accounts_file(shrink_slot)
@@ -861,7 +851,7 @@ mod serde_snapshot_tests {
                 .unwrap();
 
             // repeating should be no-op
-            accounts.shrink_all_slots(*startup, None, &epoch_schedule);
+            accounts.shrink_all_slots(*startup, &epoch_schedule, None);
             assert_eq!(
                 pubkey_count_after_shrink,
                 accounts.all_account_count_in_accounts_file(shrink_slot)

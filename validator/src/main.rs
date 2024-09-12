@@ -18,9 +18,10 @@ use {
     rand::{seq::SliceRandom, thread_rng},
     solana_accounts_db::{
         accounts_db::{AccountShrinkThreshold, AccountsDb, AccountsDbConfig, CreateAncientStorage},
+        accounts_file::StorageAccess,
         accounts_index::{
             AccountIndex, AccountSecondaryIndexes, AccountSecondaryIndexesIncludeExclude,
-            AccountsIndexConfig, IndexLimitMb,
+            AccountsIndexConfig, IndexLimitMb, ScanFilter,
         },
         partitioned_rewards::TestPartitionedEpochRewards,
         utils::{create_all_accounts_run_and_snapshot_dirs, create_and_canonicalize_directories},
@@ -33,7 +34,7 @@ use {
         tpu::DEFAULT_TPU_COALESCE,
         validator::{
             is_snapshot_config_valid, BlockProductionMethod, BlockVerificationMethod, Validator,
-            ValidatorConfig, ValidatorStartProgress,
+            ValidatorConfig, ValidatorError, ValidatorStartProgress,
         },
     },
     solana_gossip::{
@@ -450,7 +451,7 @@ fn configure_banking_trace_dir_byte_limit(
     matches: &ArgMatches,
 ) {
     validator_config.banking_trace_dir_byte_limit = if matches.is_present("disable_banking_trace") {
-        // disable with an explicit flag; This effectively becomes `opt-out` by reseting to
+        // disable with an explicit flag; This effectively becomes `opt-out` by resetting to
         // DISABLED_BAKING_TRACE_DIR, while allowing us to specify a default sensible limit in clap
         // configuration for cli help.
         DISABLED_BAKING_TRACE_DIR
@@ -956,10 +957,10 @@ pub fn main() {
         .value_of("staked_nodes_overrides")
         .map(str::to_string);
     let staked_nodes_overrides = Arc::new(RwLock::new(
-        match staked_nodes_overrides_path {
+        match &staked_nodes_overrides_path {
             None => StakedNodesOverrides::default(),
-            Some(p) => load_staked_nodes_overrides(&p).unwrap_or_else(|err| {
-                error!("Failed to load stake-nodes-overrides from {}: {}", &p, err);
+            Some(p) => load_staked_nodes_overrides(p).unwrap_or_else(|err| {
+                error!("Failed to load stake-nodes-overrides from {}: {}", p, err);
                 clap::Error::with_description(
                     "Failed to load configuration of stake-nodes-overrides argument",
                     clap::ErrorKind::InvalidValue,
@@ -1186,14 +1187,11 @@ pub fn main() {
             TestPartitionedEpochRewards::None
         };
 
-    accounts_index_config.index_limit_mb =
-        if let Ok(limit) = value_t!(matches, "accounts_index_memory_limit_mb", usize) {
-            IndexLimitMb::Limit(limit)
-        } else if matches.is_present("disable_accounts_disk_index") {
-            IndexLimitMb::InMemOnly
-        } else {
-            IndexLimitMb::Unspecified
-        };
+    accounts_index_config.index_limit_mb = if matches.is_present("disable_accounts_disk_index") {
+        IndexLimitMb::InMemOnly
+    } else {
+        IndexLimitMb::Unlimited
+    };
 
     {
         let mut accounts_index_paths: Vec<PathBuf> = if matches.is_present("accounts_index_path") {
@@ -1261,6 +1259,30 @@ pub fn main() {
             }
         })
         .unwrap_or_default();
+    let storage_access = matches
+        .value_of("accounts_db_access_storages_method")
+        .map(|method| match method {
+            "mmap" => StorageAccess::Mmap,
+            "file" => StorageAccess::File,
+            _ => {
+                // clap will enforce one of the above values is given
+                unreachable!("invalid value given to accounts-db-access-storages-method")
+            }
+        })
+        .unwrap_or_default();
+
+    let scan_filter_for_shrinking = matches
+        .value_of("accounts_db_scan_filter_for_shrinking")
+        .map(|filter| match filter {
+            "all" => ScanFilter::All,
+            "only-abnormal" => ScanFilter::OnlyAbnormal,
+            "only-abnormal-with-verify" => ScanFilter::OnlyAbnormalWithVerify,
+            _ => {
+                // clap will enforce one of the above values is given
+                unreachable!("invalid value given to accounts_db_scan_filter_for_shrinking")
+            }
+        })
+        .unwrap_or_default();
 
     let accounts_db_config = AccountsDbConfig {
         index: Some(accounts_index_config),
@@ -1277,6 +1299,8 @@ pub fn main() {
         test_partitioned_epoch_rewards,
         test_skip_rewrites_but_include_in_bank_hash: matches
             .is_present("accounts_db_test_skip_rewrites"),
+        storage_access,
+        scan_filter_for_shrinking,
         ..AccountsDbConfig::default()
     };
 
@@ -1290,7 +1314,7 @@ pub fn main() {
                 .collect(),
         )
     } else {
-        None
+        value_t_or_exit!(matches, "geyser_plugin_always_enabled", bool).then(Vec::new)
     };
     let starting_with_geyser_plugins: bool = on_start_geyser_plugin_config_files.is_some();
 
@@ -1389,7 +1413,6 @@ pub fn main() {
                 solana_net_utils::parse_host_port(address).expect("failed to parse faucet address")
             }),
             full_api,
-            obsolete_v1_7_api: matches.is_present("obsolete_v1_7_rpc_api"),
             max_multiple_accounts: Some(value_t_or_exit!(
                 matches,
                 "rpc_max_multiple_accounts",
@@ -1410,6 +1433,7 @@ pub fn main() {
                 "rpc_max_request_body_size",
                 usize
             )),
+            skip_preflight_health_check: matches.is_present("skip_preflight_health_check"),
         },
         on_start_geyser_plugin_config_files,
         rpc_addrs: value_t!(matches, "rpc_port", u16).ok().map(|rpc_port| {
@@ -1511,6 +1535,7 @@ pub fn main() {
         replay_transactions_threads,
         delay_leader_block_for_pending_fork: matches
             .is_present("delay_leader_block_for_pending_fork"),
+        wen_restart_proto_path: value_t!(matches, "wen_restart", PathBuf).ok(),
         ..ValidatorConfig::default()
     };
 
@@ -1576,36 +1601,63 @@ pub fn main() {
     let maximum_snapshot_download_abort =
         value_t_or_exit!(matches, "maximum_snapshot_download_abort", u64);
 
-    let full_snapshot_archives_dir = if matches.is_present("snapshots") {
-        PathBuf::from(matches.value_of("snapshots").unwrap())
+    let snapshots_dir = if let Some(snapshots) = matches.value_of("snapshots") {
+        Path::new(snapshots)
     } else {
-        ledger_path.clone()
+        &ledger_path
     };
-    let incremental_snapshot_archives_dir =
-        if matches.is_present("incremental_snapshot_archive_path") {
-            let incremental_snapshot_archives_dir = PathBuf::from(
-                matches
-                    .value_of("incremental_snapshot_archive_path")
-                    .unwrap(),
-            );
-            fs::create_dir_all(&incremental_snapshot_archives_dir).unwrap_or_else(|err| {
-                eprintln!(
-                    "Failed to create incremental snapshot archives directory {:?}: {}",
-                    incremental_snapshot_archives_dir.display(),
-                    err
-                );
-                exit(1);
-            });
-            incremental_snapshot_archives_dir
-        } else {
-            full_snapshot_archives_dir.clone()
-        };
-    let bank_snapshots_dir = incremental_snapshot_archives_dir.join("snapshot");
+    let snapshots_dir = fs::canonicalize(snapshots_dir).unwrap_or_else(|err| {
+        eprintln!(
+            "Failed to canonicalize snapshots path '{}': {err}",
+            snapshots_dir.display(),
+        );
+        exit(1);
+    });
+    if account_paths
+        .iter()
+        .any(|account_path| account_path == &snapshots_dir)
+    {
+        eprintln!(
+            "Failed: The --accounts and --snapshots paths must be unique since they \
+             both create 'snapshots' subdirectories, otherwise there may be collisions",
+        );
+        exit(1);
+    }
+
+    let bank_snapshots_dir = snapshots_dir.join("snapshots");
     fs::create_dir_all(&bank_snapshots_dir).unwrap_or_else(|err| {
         eprintln!(
-            "Failed to create snapshots directory {:?}: {}",
+            "Failed to create bank snapshots directory '{}': {err}",
             bank_snapshots_dir.display(),
-            err
+        );
+        exit(1);
+    });
+
+    let full_snapshot_archives_dir =
+        if let Some(full_snapshot_archive_path) = matches.value_of("full_snapshot_archive_path") {
+            PathBuf::from(full_snapshot_archive_path)
+        } else {
+            snapshots_dir.clone()
+        };
+    fs::create_dir_all(&full_snapshot_archives_dir).unwrap_or_else(|err| {
+        eprintln!(
+            "Failed to create full snapshot archives directory '{}': {err}",
+            full_snapshot_archives_dir.display(),
+        );
+        exit(1);
+    });
+
+    let incremental_snapshot_archives_dir = if let Some(incremental_snapshot_archive_path) =
+        matches.value_of("incremental_snapshot_archive_path")
+    {
+        PathBuf::from(incremental_snapshot_archive_path)
+    } else {
+        snapshots_dir.clone()
+    };
+    fs::create_dir_all(&incremental_snapshot_archives_dir).unwrap_or_else(|err| {
+        eprintln!(
+            "Failed to create incremental snapshot archives directory '{}': {err}",
+            incremental_snapshot_archives_dir.display(),
         );
         exit(1);
     });
@@ -1626,27 +1678,42 @@ pub fn main() {
                 })
             });
 
-    let incremental_snapshot_interval_slots =
-        value_t_or_exit!(matches, "incremental_snapshot_interval_slots", u64);
-    let (full_snapshot_archive_interval_slots, incremental_snapshot_archive_interval_slots) =
-        if incremental_snapshot_interval_slots > 0 {
-            if !matches.is_present("no_incremental_snapshots") {
-                (
-                    value_t_or_exit!(matches, "full_snapshot_interval_slots", u64),
-                    incremental_snapshot_interval_slots,
-                )
-            } else {
-                (
-                    incremental_snapshot_interval_slots,
-                    DISABLED_SNAPSHOT_ARCHIVE_INTERVAL,
-                )
-            }
-        } else {
+    let (full_snapshot_archive_interval_slots, incremental_snapshot_archive_interval_slots) = match (
+        !matches.is_present("no_incremental_snapshots"),
+        value_t_or_exit!(matches, "snapshot_interval_slots", u64),
+    ) {
+        (_, 0) => {
+            // snapshots are disabled
             (
                 DISABLED_SNAPSHOT_ARCHIVE_INTERVAL,
                 DISABLED_SNAPSHOT_ARCHIVE_INTERVAL,
             )
-        };
+        }
+        (true, incremental_snapshot_interval_slots) => {
+            // incremental snapshots are enabled
+            // use --snapshot-interval-slots for the incremental snapshot interval
+            (
+                value_t_or_exit!(matches, "full_snapshot_interval_slots", u64),
+                incremental_snapshot_interval_slots,
+            )
+        }
+        (false, full_snapshot_interval_slots) => {
+            // incremental snapshots are *disabled*
+            // use --snapshot-interval-slots for the *full* snapshot interval
+            // also warn if --full-snapshot-interval-slots was specified
+            if matches.occurrences_of("full_snapshot_interval_slots") > 0 {
+                warn!(
+                    "Incremental snapshots are disabled, yet --full-snapshot-interval-slots was specified! \
+                     Note that --full-snapshot-interval-slots is *ignored* when incremental snapshots are disabled. \
+                     Use --snapshot-interval-slots instead.",
+                );
+            }
+            (
+                full_snapshot_interval_slots,
+                DISABLED_SNAPSHOT_ARCHIVE_INTERVAL,
+            )
+        }
+    };
 
     validator_config.snapshot_config = SnapshotConfig {
         usage: if full_snapshot_archive_interval_slots == DISABLED_SNAPSHOT_ARCHIVE_INTERVAL {
@@ -1673,29 +1740,30 @@ pub fn main() {
         incremental_snapshot_archive_interval_slots,
     );
 
+    info!(
+        "Snapshot configuration: full snapshot interval: {} slots, incremental snapshot interval: {} slots",
+        if full_snapshot_archive_interval_slots == DISABLED_SNAPSHOT_ARCHIVE_INTERVAL {
+            "disabled".to_string()
+        } else {
+            full_snapshot_archive_interval_slots.to_string()
+        },
+        if incremental_snapshot_archive_interval_slots == DISABLED_SNAPSHOT_ARCHIVE_INTERVAL {
+            "disabled".to_string()
+        } else {
+            incremental_snapshot_archive_interval_slots.to_string()
+        },
+    );
+
     if !is_snapshot_config_valid(
         &validator_config.snapshot_config,
         validator_config.accounts_hash_interval_slots,
     ) {
         eprintln!(
             "Invalid snapshot configuration provided: snapshot intervals are incompatible. \
-             \n\t- full snapshot interval MUST be a multiple of incremental snapshot interval (if \
-             enabled)\
-             \n\t- full snapshot interval MUST be larger than incremental snapshot \
-             interval (if enabled)\
-             \nSnapshot configuration values:\
-             \n\tfull snapshot interval: {}\
-             \n\tincremental snapshot interval: {}",
-            if full_snapshot_archive_interval_slots == DISABLED_SNAPSHOT_ARCHIVE_INTERVAL {
-                "disabled".to_string()
-            } else {
-                full_snapshot_archive_interval_slots.to_string()
-            },
-            if incremental_snapshot_archive_interval_slots == DISABLED_SNAPSHOT_ARCHIVE_INTERVAL {
-                "disabled".to_string()
-            } else {
-                incremental_snapshot_archive_interval_slots.to_string()
-            },
+             \n\t- full snapshot interval MUST be a multiple of incremental snapshot interval \
+             (if enabled) \
+             \n\t- full snapshot interval MUST be larger than incremental snapshot interval \
+             (if enabled)",
         );
         exit(1);
     }
@@ -1728,6 +1796,7 @@ pub fn main() {
         BlockProductionMethod
     )
     .unwrap_or_default();
+    validator_config.enable_block_production_forwarding = staked_nodes_overrides_path.is_some();
     validator_config.unified_scheduler_handler_threads =
         value_t!(matches, "unified_scheduler_handler_threads", usize).ok();
 
@@ -1746,16 +1815,26 @@ pub fn main() {
             None => ShredStorageType::default(),
             Some(shred_compaction_string) => match shred_compaction_string {
                 "level" => ShredStorageType::RocksLevel,
-                "fifo" => match matches.value_of("rocksdb_fifo_shred_storage_size") {
-                    None => ShredStorageType::rocks_fifo(default_fifo_shred_storage_size(
-                        &validator_config,
-                    )),
-                    Some(_) => ShredStorageType::rocks_fifo(Some(value_t_or_exit!(
-                        matches,
-                        "rocksdb_fifo_shred_storage_size",
-                        u64
-                    ))),
-                },
+                "fifo" => {
+                    warn!(
+                        "The value \"fifo\" for --rocksdb-shred-compaction has been deprecated. \
+                         Use of \"fifo\" will still work for now, but is planned for full removal \
+                         in v2.1. To update, use \"level\" for --rocksdb-shred-compaction, or \
+                         remove the --rocksdb-shred-compaction argument altogether. Note that the \
+                         entire \"rocksdb_fifo\" subdirectory within the ledger directory will \
+                         need to be manually removed once the validator is running with \"level\"."
+                    );
+                    match matches.value_of("rocksdb_fifo_shred_storage_size") {
+                        None => ShredStorageType::rocks_fifo(default_fifo_shred_storage_size(
+                            &validator_config,
+                        )),
+                        Some(_) => ShredStorageType::rocks_fifo(Some(value_t_or_exit!(
+                            matches,
+                            "rocksdb_fifo_shred_storage_size",
+                            u64
+                        ))),
+                    }
+                }
                 _ => panic!("Unrecognized rocksdb-shred-compaction: {shred_compaction_string}"),
             },
         },
@@ -1877,6 +1956,7 @@ pub fn main() {
                 })
             });
 
+    let num_quic_endpoints = value_t_or_exit!(matches, "num_quic_endpoints", NonZeroUsize);
     let node_config = NodeConfig {
         gossip_addr,
         port_range: dynamic_port_range,
@@ -1884,6 +1964,7 @@ pub fn main() {
         public_tpu_addr,
         public_tpu_forwards_addr,
         num_tvu_sockets: tvu_receive_threads,
+        num_quic_endpoints,
     };
 
     let cluster_entrypoints = entrypoint_addrs
@@ -1894,6 +1975,11 @@ pub fn main() {
     let mut node = Node::new_with_external_ip(&identity_keypair.pubkey(), node_config);
 
     if restricted_repair_only_mode {
+        if validator_config.wen_restart_proto_path.is_some() {
+            error!("--restricted-repair-only-mode is not compatible with --wen_restart");
+            exit(1);
+        }
+
         // When in --restricted_repair_only_mode is enabled only the gossip and repair ports
         // need to be reachable by the entrypoint to respond to gossip pull requests and repair
         // requests initiated by the node.  All other ports are unused.
@@ -1967,7 +2053,14 @@ pub fn main() {
         return;
     }
 
-    let validator = Validator::new(
+    // Bootstrap code above pushes a contact-info with more recent timestamp to
+    // gossip. If the node is staked the contact-info lingers in gossip causing
+    // false duplicate nodes error.
+    // Below line refreshes the timestamp on contact-info so that it overrides
+    // the one pushed by bootstrap.
+    node.info.hot_swap_pubkey(identity_keypair.pubkey());
+
+    let validator = match Validator::new(
         node,
         identity_keypair,
         &ledger_path,
@@ -1984,11 +2077,19 @@ pub fn main() {
         tpu_enable_udp,
         tpu_max_connections_per_ipaddr_per_minute,
         admin_service_post_init,
-    )
-    .unwrap_or_else(|e| {
-        error!("Failed to start validator: {:?}", e);
-        exit(1);
-    });
+    ) {
+        Ok(validator) => validator,
+        Err(err) => match err.downcast_ref() {
+            Some(ValidatorError::WenRestartFinished) => {
+                error!("Please remove --wen_restart and use --wait_for_supermajority as instructed above");
+                exit(200);
+            }
+            _ => {
+                error!("Failed to start validator: {:?}", err);
+                exit(1);
+            }
+        },
+    };
 
     if let Some(filename) = init_complete_file {
         File::create(filename).unwrap_or_else(|_| {

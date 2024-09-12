@@ -3,7 +3,6 @@
 use {
     super::state::TowerSync,
     crate::{
-        clock::{Slot, UnixTimestamp},
         hash::Hash,
         instruction::{AccountMeta, Instruction},
         pubkey::Pubkey,
@@ -18,6 +17,7 @@ use {
         },
     },
     serde_derive::{Deserialize, Serialize},
+    solana_clock::{Slot, UnixTimestamp},
 };
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
@@ -209,6 +209,19 @@ impl VoteInstruction {
         }
     }
 
+    /// Only to be used on vote instructions (guard with is_simple_vote), panics otherwise
+    pub fn hash(&self) -> Hash {
+        assert!(self.is_simple_vote());
+        match self {
+            Self::Vote(v) | Self::VoteSwitch(v, _) => v.hash,
+            Self::UpdateVoteState(vote_state_update)
+            | Self::UpdateVoteStateSwitch(vote_state_update, _)
+            | Self::CompactUpdateVoteState(vote_state_update)
+            | Self::CompactUpdateVoteStateSwitch(vote_state_update, _) => vote_state_update.hash,
+            Self::TowerSync(tower_sync) | Self::TowerSyncSwitch(tower_sync, _) => tower_sync.hash,
+            _ => panic!("Tried to get hash on non simple vote instruction"),
+        }
+    }
     /// Only to be used on vote instructions (guard with is_simple_vote),  panics otherwise
     pub fn timestamp(&self) -> Option<UnixTimestamp> {
         assert!(self.is_simple_vote());
@@ -255,49 +268,6 @@ impl<'a> Default for CreateVoteAccountConfig<'a> {
             with_seed: None,
         }
     }
-}
-
-#[deprecated(
-    since = "1.16.0",
-    note = "Please use `create_account_with_config()` instead."
-)]
-pub fn create_account(
-    from_pubkey: &Pubkey,
-    vote_pubkey: &Pubkey,
-    vote_init: &VoteInit,
-    lamports: u64,
-) -> Vec<Instruction> {
-    create_account_with_config(
-        from_pubkey,
-        vote_pubkey,
-        vote_init,
-        lamports,
-        CreateVoteAccountConfig::default(),
-    )
-}
-
-#[deprecated(
-    since = "1.16.0",
-    note = "Please use `create_account_with_config()` instead."
-)]
-pub fn create_account_with_seed(
-    from_pubkey: &Pubkey,
-    vote_pubkey: &Pubkey,
-    base: &Pubkey,
-    seed: &str,
-    vote_init: &VoteInit,
-    lamports: u64,
-) -> Vec<Instruction> {
-    create_account_with_config(
-        from_pubkey,
-        vote_pubkey,
-        vote_init,
-        lamports,
-        CreateVoteAccountConfig {
-            with_seed: Some((base, seed)),
-            ..CreateVoteAccountConfig::default()
-        },
-    )
 }
 
 pub fn create_account_with_config(

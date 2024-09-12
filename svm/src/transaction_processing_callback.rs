@@ -1,11 +1,4 @@
-use {
-    solana_program_runtime::loaded_programs::ProgramCacheMatchCriteria,
-    solana_sdk::{
-        account::AccountSharedData, feature_set::FeatureSet, hash::Hash, pubkey::Pubkey,
-        rent_collector::RentCollector,
-    },
-    std::sync::Arc,
-};
+use solana_sdk::{account::AccountSharedData, pubkey::Pubkey};
 
 /// Runtime callbacks for transaction processing.
 pub trait TransactionProcessingCallback {
@@ -13,15 +6,17 @@ pub trait TransactionProcessingCallback {
 
     fn get_account_shared_data(&self, pubkey: &Pubkey) -> Option<AccountSharedData>;
 
-    fn get_last_blockhash_and_lamports_per_signature(&self) -> (Hash, u64);
-
-    fn get_rent_collector(&self) -> &RentCollector;
-
-    fn get_feature_set(&self) -> Arc<FeatureSet>;
-
-    fn get_program_match_criteria(&self, _program: &Pubkey) -> ProgramCacheMatchCriteria {
-        ProgramCacheMatchCriteria::NoCriteria
-    }
-
     fn add_builtin_account(&self, _name: &str, _program_id: &Pubkey) {}
+
+    fn inspect_account(&self, _address: &Pubkey, _account_state: AccountState, _is_writable: bool) {
+    }
+}
+
+/// The state the account is in initially, before transaction processing
+#[derive(Debug)]
+pub enum AccountState<'a> {
+    /// This account is dead, and will be created by this transaction
+    Dead,
+    /// This account is alive, and already existed prior to this transaction
+    Alive(&'a AccountSharedData),
 }

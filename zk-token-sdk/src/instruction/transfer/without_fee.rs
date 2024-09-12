@@ -29,7 +29,7 @@ use {
         instruction::{ProofType, ZkProofData},
         zk_token_elgamal::pod,
     },
-    bytemuck::{Pod, Zeroable},
+    bytemuck_derive::{Pod, Zeroable},
 };
 
 #[cfg(not(target_os = "solana"))]
@@ -470,7 +470,7 @@ impl TransferProof {
 
 #[cfg(test)]
 mod test {
-    use {super::*, crate::encryption::elgamal::ElGamalKeypair};
+    use {super::*, crate::encryption::elgamal::ElGamalKeypair, bytemuck::Zeroable};
 
     #[test]
     fn test_transfer_correctness() {
@@ -506,7 +506,7 @@ mod test {
         // Case 2: transfer max amount
 
         // create source account spendable ciphertext
-        let spendable_balance: u64 = u64::max_value();
+        let spendable_balance: u64 = u64::MAX;
         let spendable_ciphertext = source_keypair.pubkey().encrypt(spendable_balance);
 
         // transfer amount

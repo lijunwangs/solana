@@ -1,11 +1,7 @@
 use {
-    crate::{
-        invoke_context::{BuiltinFunctionWithContext, InvokeContext},
-        timings::ExecuteDetailsTimings,
-    },
+    crate::invoke_context::{BuiltinFunctionWithContext, InvokeContext},
     log::{debug, error, log_enabled, trace},
     percentage::PercentageInteger,
-    rand::{thread_rng, Rng},
     solana_measure::measure::Measure,
     solana_rbpf::{
         elf::Executable,
@@ -20,13 +16,19 @@ use {
         pubkey::Pubkey,
         saturating_add_assign,
     },
-    std::{
-        collections::{hash_map::Entry, HashMap},
-        fmt::{Debug, Formatter},
+    solana_timings::ExecuteDetailsTimings,
+    solana_type_overrides::{
+        rand::{thread_rng, Rng},
         sync::{
             atomic::{AtomicU64, Ordering},
             Arc, Condvar, Mutex, RwLock,
         },
+        thread,
+    },
+    std::{
+        collections::{hash_map::Entry, HashMap},
+        fmt::{Debug, Formatter},
+        sync::Weak,
     },
 };
 
@@ -53,11 +55,6 @@ pub enum BlockRelation {
 pub trait ForkGraph {
     /// Returns the BlockRelation of A to B
     fn relationship(&self, a: Slot, b: Slot) -> BlockRelation;
-
-    /// Returns the epoch of the given slot
-    fn slot_epoch(&self, _slot: Slot) -> Option<Epoch> {
-        Some(0)
-    }
 }
 
 /// The owner of a programs accounts, thus the loader of a program
@@ -229,6 +226,8 @@ pub struct ProgramCacheStats {
     pub prunes_environment: AtomicU64,
     /// a program had no entries because all slot versions got pruned
     pub empty_entries: AtomicU64,
+    /// water level of loaded entries currently cached
+    pub water_level: AtomicU64,
 }
 
 impl ProgramCacheStats {
@@ -247,9 +246,10 @@ impl ProgramCacheStats {
         let prunes_orphan = self.prunes_orphan.load(Ordering::Relaxed);
         let prunes_environment = self.prunes_environment.load(Ordering::Relaxed);
         let empty_entries = self.empty_entries.load(Ordering::Relaxed);
+        let water_level = self.water_level.load(Ordering::Relaxed);
         debug!(
-            "Loaded Programs Cache Stats -- Hits: {}, Misses: {}, Evictions: {}, Reloads: {}, Insertions: {} Lost-Insertions: {}, Replacements: {}, One-Hit-Wonders: {}, Prunes-Orphan: {}, Prunes-Environment: {}, Empty: {}",
-            hits, misses, evictions, reloads, insertions, lost_insertions, replacements, one_hit_wonders, prunes_orphan, prunes_environment, empty_entries
+            "Loaded Programs Cache Stats -- Hits: {}, Misses: {}, Evictions: {}, Reloads: {}, Insertions: {}, Lost-Insertions: {}, Replacements: {}, One-Hit-Wonders: {}, Prunes-Orphan: {}, Prunes-Environment: {}, Empty: {}, Water-Level: {}",
+            hits, misses, evictions, reloads, insertions, lost_insertions, replacements, one_hit_wonders, prunes_orphan, prunes_environment, empty_entries, water_level
         );
         if log_enabled!(log::Level::Trace) && !self.evictions.is_empty() {
             let mut evictions = self.evictions.iter().collect::<Vec<_>>();
@@ -595,7 +595,7 @@ enum IndexImplementation {
         /// It is possible that multiple TX batches from different slots need different versions of a
         /// program. The deployment slot of a program is only known after load tho,
         /// so all loads for a given program key are serialized.
-        loading_entries: Mutex<HashMap<Pubkey, (Slot, std::thread::ThreadId)>>,
+        loading_entries: Mutex<HashMap<Pubkey, (Slot, thread::ThreadId)>>,
     },
 }
 
@@ -609,7 +609,7 @@ enum IndexImplementation {
 /// - also keeps the compiled executables around, but only for the most used programs.
 /// - supports various kinds of tombstones to avoid loading programs which can not be loaded.
 /// - cleans up entries on orphan branches when the block store is rerooted.
-/// - supports the recompilation phase before feature activations which can change cached programs.
+/// - supports the cache preparation phase before feature activations which can change cached programs.
 /// - manages the environments of the programs and upcoming environments for the next epoch.
 /// - allows for cooperative loading of TX batches which hit the same missing programs simultaneously.
 /// - enforces that all programs used in a batch are eagerly loaded ahead of execution.
@@ -626,7 +626,7 @@ pub struct ProgramCache<FG: ForkGraph> {
     /// Anticipated replacement for `environments` at the next epoch
     ///
     /// This is `None` during most of an epoch, and only `Some` around the boundaries (at the end and beginning of an epoch).
-    /// More precisely, it starts with the recompilation phase a few hundred slots before the epoch boundary,
+    /// More precisely, it starts with the cache preparation phase a few hundred slots before the epoch boundary,
     /// and it ends with the first rerooting after the epoch boundary.
     pub upcoming_environments: Option<ProgramRuntimeEnvironments>,
     /// List of loaded programs which should be recompiled before the next epoch (but don't have to).
@@ -634,7 +634,7 @@ pub struct ProgramCache<FG: ForkGraph> {
     /// Statistics counters
     pub stats: ProgramCacheStats,
     /// Reference to the block store
-    pub fork_graph: Option<Arc<RwLock<FG>>>,
+    pub fork_graph: Option<Weak<RwLock<FG>>>,
     /// Coordinates TX batches waiting for others to complete their task during cooperative loading
     pub loading_task_waiter: Arc<LoadingTaskWaiter>,
 }
@@ -660,12 +660,14 @@ pub struct ProgramCacheForTxBatch {
     /// Pubkey is the address of a program.
     /// ProgramCacheEntry is the corresponding program entry valid for the slot in which a transaction is being executed.
     entries: HashMap<Pubkey, Arc<ProgramCacheEntry>>,
+    /// Program entries modified during the transaction batch.
+    modified_entries: HashMap<Pubkey, Arc<ProgramCacheEntry>>,
     slot: Slot,
     pub environments: ProgramRuntimeEnvironments,
     /// Anticipated replacement for `environments` at the next epoch.
     ///
     /// This is `None` during most of an epoch, and only `Some` around the boundaries (at the end and beginning of an epoch).
-    /// More precisely, it starts with the recompilation phase a few hundred slots before the epoch boundary,
+    /// More precisely, it starts with the cache preparation phase a few hundred slots before the epoch boundary,
     /// and it ends with the first rerooting after the epoch boundary.
     /// Needed when a program is deployed at the last slot of an epoch, becomes effective in the next epoch.
     /// So needs to be compiled with the environment for the next epoch.
@@ -686,6 +688,7 @@ impl ProgramCacheForTxBatch {
     ) -> Self {
         Self {
             entries: HashMap::new(),
+            modified_entries: HashMap::new(),
             slot,
             environments,
             upcoming_environments,
@@ -703,8 +706,9 @@ impl ProgramCacheForTxBatch {
     ) -> Self {
         Self {
             entries: HashMap::new(),
+            modified_entries: HashMap::new(),
             slot,
-            environments: cache.get_environments_for_epoch(epoch).clone(),
+            environments: cache.get_environments_for_epoch(epoch),
             upcoming_environments: cache.get_upcoming_environments_for_epoch(epoch),
             latest_root_epoch: cache.latest_root_epoch,
             hit_max_limit: false,
@@ -736,21 +740,39 @@ impl ProgramCacheForTxBatch {
         (self.entries.insert(key, entry.clone()).is_some(), entry)
     }
 
+    /// Store an entry in `modified_entries` for a program modified during the
+    /// transaction batch.
+    pub fn store_modified_entry(&mut self, key: Pubkey, entry: Arc<ProgramCacheEntry>) {
+        self.modified_entries.insert(key, entry);
+    }
+
+    /// Drain the program cache's modified entries, returning the owned
+    /// collection.
+    pub fn drain_modified_entries(&mut self) -> HashMap<Pubkey, Arc<ProgramCacheEntry>> {
+        std::mem::take(&mut self.modified_entries)
+    }
+
     pub fn find(&self, key: &Pubkey) -> Option<Arc<ProgramCacheEntry>> {
-        self.entries.get(key).map(|entry| {
-            if entry.is_implicit_delay_visibility_tombstone(self.slot) {
-                // Found a program entry on the current fork, but it's not effective
-                // yet. It indicates that the program has delayed visibility. Return
-                // the tombstone to reflect that.
-                Arc::new(ProgramCacheEntry::new_tombstone(
-                    entry.deployment_slot,
-                    entry.account_owner,
-                    ProgramCacheEntryType::DelayVisibility,
-                ))
-            } else {
-                entry.clone()
-            }
-        })
+        // First lookup the cache of the programs modified by the current
+        // transaction. If not found, lookup the cache of the cache of the
+        // programs that are loaded for the transaction batch.
+        self.modified_entries
+            .get(key)
+            .or(self.entries.get(key))
+            .map(|entry| {
+                if entry.is_implicit_delay_visibility_tombstone(self.slot) {
+                    // Found a program entry on the current fork, but it's not effective
+                    // yet. It indicates that the program has delayed visibility. Return
+                    // the tombstone to reflect that.
+                    Arc::new(ProgramCacheEntry::new_tombstone(
+                        entry.deployment_slot,
+                        entry.account_owner,
+                        ProgramCacheEntryType::DelayVisibility,
+                    ))
+                } else {
+                    entry.clone()
+                }
+            })
     }
 
     pub fn slot(&self) -> Slot {
@@ -761,8 +783,8 @@ impl ProgramCacheForTxBatch {
         self.slot = slot;
     }
 
-    pub fn merge(&mut self, other: &Self) {
-        other.entries.iter().for_each(|(key, entry)| {
+    pub fn merge(&mut self, modified_entries: &HashMap<Pubkey, Arc<ProgramCacheEntry>>) {
+        modified_entries.iter().for_each(|(key, entry)| {
             self.merged_modified = true;
             self.replenish(*key, entry.clone());
         })
@@ -797,18 +819,18 @@ impl<FG: ForkGraph> ProgramCache<FG> {
         }
     }
 
-    pub fn set_fork_graph(&mut self, fork_graph: Arc<RwLock<FG>>) {
+    pub fn set_fork_graph(&mut self, fork_graph: Weak<RwLock<FG>>) {
         self.fork_graph = Some(fork_graph);
     }
 
     /// Returns the current environments depending on the given epoch
-    pub fn get_environments_for_epoch(&self, epoch: Epoch) -> &ProgramRuntimeEnvironments {
+    pub fn get_environments_for_epoch(&self, epoch: Epoch) -> ProgramRuntimeEnvironments {
         if epoch != self.latest_root_epoch {
             if let Some(upcoming_environments) = self.upcoming_environments.as_ref() {
-                return upcoming_environments;
+                return upcoming_environments.clone();
             }
         }
-        &self.environments
+        self.environments.clone()
     }
 
     /// Returns the upcoming environments depending on the given epoch
@@ -830,7 +852,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
             ProgramCacheEntryType::DelayVisibility
         ));
         // This function always returns `true` during normal operation.
-        // Only during the recompilation phase this can return `false`
+        // Only during the cache preparation phase this can return `false`
         // for entries with `upcoming_environments`.
         fn is_current_env(
             environments: &ProgramRuntimeEnvironments,
@@ -852,7 +874,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
                         .then(at.deployment_slot.cmp(&entry.deployment_slot))
                         .then(
                             // This `.then()` has no effect during normal operation.
-                            // Only during the recompilation phase this does allow entries
+                            // Only during the cache preparation phase this does allow entries
                             // which only differ in their environment to be interleaved in `slot_versions`.
                             is_current_env(&self.environments, at.program.get_environment()).cmp(
                                 &is_current_env(
@@ -920,15 +942,16 @@ impl<FG: ForkGraph> ProgramCache<FG> {
             error!("Program cache doesn't have fork graph.");
             return;
         };
+        let fork_graph = fork_graph.upgrade().unwrap();
         let Ok(fork_graph) = fork_graph.read() else {
             error!("Failed to lock fork graph for reading.");
             return;
         };
-        let mut recompilation_phase_ends = false;
+        let mut preparation_phase_ends = false;
         if self.latest_root_epoch != new_root_epoch {
             self.latest_root_epoch = new_root_epoch;
             if let Some(upcoming_environments) = self.upcoming_environments.take() {
-                recompilation_phase_ends = true;
+                preparation_phase_ends = true;
                 self.environments = upcoming_environments;
                 self.programs_to_recompile.clear();
             }
@@ -977,7 +1000,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
                         })
                         .filter(|entry| {
                             // Remove outdated environment of previous feature set
-                            if recompilation_phase_ends
+                            if preparation_phase_ends
                                 && !Self::matches_environment(entry, &self.environments)
                             {
                                 self.stats
@@ -1031,7 +1054,8 @@ impl<FG: ForkGraph> ProgramCache<FG> {
         is_first_round: bool,
     ) -> Option<(Pubkey, u64)> {
         debug_assert!(self.fork_graph.is_some());
-        let locked_fork_graph = self.fork_graph.as_ref().unwrap().read().unwrap();
+        let fork_graph = self.fork_graph.as_ref().unwrap().upgrade().unwrap();
+        let locked_fork_graph = fork_graph.read().unwrap();
         let mut cooperative_loading_task = None;
         match &self.index {
             IndexImplementation::V1 {
@@ -1097,7 +1121,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
                         if let Entry::Vacant(entry) = entry {
                             entry.insert((
                                 loaded_programs_for_tx_batch.slot,
-                                std::thread::current().id(),
+                                thread::current().id(),
                             ));
                             cooperative_loading_task = Some((*key, *usage_count));
                         }
@@ -1131,12 +1155,14 @@ impl<FG: ForkGraph> ProgramCache<FG> {
                 loading_entries, ..
             } => {
                 let loading_thread = loading_entries.get_mut().unwrap().remove(&key);
-                debug_assert_eq!(loading_thread, Some((slot, std::thread::current().id())));
+                debug_assert_eq!(loading_thread, Some((slot, thread::current().id())));
                 // Check that it will be visible to our own fork once inserted
                 if loaded_program.deployment_slot > self.latest_root_slot
                     && !matches!(
                         self.fork_graph
                             .as_ref()
+                            .unwrap()
+                            .upgrade()
                             .unwrap()
                             .read()
                             .unwrap()
@@ -1153,8 +1179,8 @@ impl<FG: ForkGraph> ProgramCache<FG> {
         }
     }
 
-    pub fn merge(&mut self, tx_batch_cache: &ProgramCacheForTxBatch) {
-        tx_batch_cache.entries.iter().for_each(|(key, entry)| {
+    pub fn merge(&mut self, modified_entries: &HashMap<Pubkey, Arc<ProgramCacheEntry>>) {
+        modified_entries.iter().for_each(|(key, entry)| {
             self.assign_program(*key, entry.clone());
         })
     }
@@ -1163,7 +1189,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
     pub fn get_flattened_entries(
         &self,
         include_program_runtime_v1: bool,
-        include_program_runtime_v2: bool,
+        _include_program_runtime_v2: bool,
     ) -> Vec<(Pubkey, Arc<ProgramCacheEntry>)> {
         match &self.index {
             IndexImplementation::V1 { entries, .. } => entries
@@ -1173,11 +1199,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
                         .iter()
                         .filter_map(move |program| match program.program {
                             ProgramCacheEntryType::Loaded(_) => {
-                                if (program.account_owner != ProgramCacheEntryOwner::LoaderV4
-                                    && include_program_runtime_v1)
-                                    || (program.account_owner == ProgramCacheEntryOwner::LoaderV4
-                                        && include_program_runtime_v2)
-                                {
+                                if include_program_runtime_v1 {
                                     Some((*id, program.clone()))
                                 } else {
                                     None
@@ -1227,6 +1249,9 @@ impl<FG: ForkGraph> ProgramCache<FG> {
     /// The eviction is performed enough number of times to reduce the cache usage to the given percentage.
     pub fn evict_using_2s_random_selection(&mut self, shrink_to: PercentageInteger, now: Slot) {
         let mut candidates = self.get_flattened_entries(true, true);
+        self.stats
+            .water_level
+            .store(candidates.len() as u64, Ordering::Relaxed);
         let num_to_unload = candidates
             .len()
             .saturating_sub(shrink_to.apply_to(MAX_LOADED_ENTRY_COUNT));
@@ -1322,7 +1347,7 @@ impl<FG: ForkGraph> ProgramCache<FG> {
     }
 }
 
-#[cfg(RUSTC_WITH_SPECIALIZATION)]
+#[cfg(all(RUSTC_WITH_SPECIALIZATION, feature = "frozen-abi"))]
 impl solana_frozen_abi::abi_example::AbiExample for ProgramCacheEntry {
     fn example() -> Self {
         // ProgramCacheEntry isn't serializable by definition.
@@ -1330,7 +1355,7 @@ impl solana_frozen_abi::abi_example::AbiExample for ProgramCacheEntry {
     }
 }
 
-#[cfg(RUSTC_WITH_SPECIALIZATION)]
+#[cfg(all(RUSTC_WITH_SPECIALIZATION, feature = "frozen-abi"))]
 impl<FG: ForkGraph> solana_frozen_abi::abi_example::AbiExample for ProgramCache<FG> {
     fn example() -> Self {
         // ProgramCache isn't serializable by definition.
@@ -1995,7 +2020,7 @@ mod tests {
             relation: BlockRelation::Unrelated,
         }));
 
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         cache.prune(0, 0);
         assert!(cache.get_flattened_entries_for_tests().is_empty());
@@ -2008,7 +2033,7 @@ mod tests {
             relation: BlockRelation::Ancestor,
         }));
 
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         cache.prune(0, 0);
         assert!(cache.get_flattened_entries_for_tests().is_empty());
@@ -2021,7 +2046,7 @@ mod tests {
             relation: BlockRelation::Descendant,
         }));
 
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         cache.prune(0, 0);
         assert!(cache.get_flattened_entries_for_tests().is_empty());
@@ -2033,7 +2058,7 @@ mod tests {
         let fork_graph = Arc::new(RwLock::new(TestForkGraph {
             relation: BlockRelation::Unknown,
         }));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         cache.prune(0, 0);
         assert!(cache.get_flattened_entries_for_tests().is_empty());
@@ -2050,7 +2075,7 @@ mod tests {
             relation: BlockRelation::Ancestor,
         }));
 
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         cache.assign_program(program1, new_test_entry(10, 10));
@@ -2140,7 +2165,8 @@ mod tests {
         loading_slot: Slot,
         keys: &[Pubkey],
     ) -> Vec<(Pubkey, (ProgramCacheMatchCriteria, u64))> {
-        let locked_fork_graph = cache.fork_graph.as_ref().unwrap().read().unwrap();
+        let fork_graph = cache.fork_graph.as_ref().unwrap().upgrade().unwrap();
+        let locked_fork_graph = fork_graph.read().unwrap();
         let entries = cache.get_flattened_entries_for_tests();
         keys.iter()
             .filter_map(|key| {
@@ -2208,7 +2234,7 @@ mod tests {
         fork_graph.insert_fork(&[0, 5, 11, 25, 27]);
 
         let fork_graph = Arc::new(RwLock::new(fork_graph));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         cache.assign_program(program1, new_test_entry(0, 1));
@@ -2403,7 +2429,7 @@ mod tests {
         fork_graph.insert_fork(&[0, 5, 11, 25, 27]);
 
         let fork_graph = Arc::new(RwLock::new(fork_graph));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         cache.assign_program(program1, new_test_entry(0, 1));
@@ -2460,7 +2486,7 @@ mod tests {
         fork_graph.insert_fork(&[0, 5, 11, 25, 27]);
 
         let fork_graph = Arc::new(RwLock::new(fork_graph));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         cache.assign_program(program1, new_test_entry(0, 1));
@@ -2516,7 +2542,7 @@ mod tests {
         let mut cache = new_mock_cache::<TestForkGraphSpecific>();
         let fork_graph = TestForkGraphSpecific::default();
         let fork_graph = Arc::new(RwLock::new(fork_graph));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         let mut missing = vec![(program1, (ProgramCacheMatchCriteria::NoCriteria, 1))];
@@ -2588,7 +2614,7 @@ mod tests {
         fork_graph.insert_fork(&[0, 10, 20]);
         fork_graph.insert_fork(&[0, 5]);
         let fork_graph = Arc::new(RwLock::new(fork_graph));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         cache.assign_program(program1, new_test_entry(0, 1));
@@ -2628,7 +2654,7 @@ mod tests {
         fork_graph.insert_fork(&[0, 10, 20]);
         fork_graph.insert_fork(&[0, 5, 6]);
         let fork_graph = Arc::new(RwLock::new(fork_graph));
-        cache.set_fork_graph(fork_graph);
+        cache.set_fork_graph(Arc::downgrade(&fork_graph));
 
         let program1 = Pubkey::new_unique();
         cache.assign_program(program1, new_test_entry(0, 1));

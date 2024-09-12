@@ -7,16 +7,15 @@ use {
         },
         crds_value::MAX_WALLCLOCK,
     },
-    solana_sdk::{
-        pubkey::Pubkey,
-        sanitize::{Sanitize, SanitizeError},
-    },
+    solana_sanitize::{Sanitize, SanitizeError},
+    solana_sdk::pubkey::Pubkey,
     solana_streamer::socket::SocketAddrSpace,
     std::net::{IpAddr, SocketAddr},
 };
 
 /// Structure representing a node on the network
-#[derive(Clone, Debug, Eq, PartialEq, AbiExample, Deserialize, Serialize)]
+#[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub(crate) struct LegacyContactInfo {
     id: Pubkey,
     /// gossip address
@@ -141,7 +140,12 @@ impl LegacyContactInfo {
         self.shred_version
     }
 
-    get_socket!(gossip);
+    pub(crate) fn gossip(&self) -> Result<SocketAddr, Error> {
+        let socket = &self.gossip;
+        crate::contact_info::sanitize_socket(socket)?;
+        Ok(socket).copied()
+    }
+
     get_socket!(tvu, tvu_quic);
     get_socket!(@quic tpu);
     get_socket!(@quic tpu_forwards);

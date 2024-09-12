@@ -6,6 +6,7 @@
 //! A regular twisted ElGamal ciphertext consists of two components:
 //! - A Pedersen commitment that encodes a message to be encrypted
 //! - A "decryption handle" that binds the Pedersen opening to a specific public key
+//!
 //! The ciphertext can be generalized to hold not a single decryption handle, but multiple handles
 //! pertaining to multiple ElGamal public keys. These ciphertexts are referred to as a "grouped"
 //! ElGamal ciphertext.
@@ -132,6 +133,15 @@ pub struct GroupedElGamalCiphertext<const N: usize> {
 }
 
 impl<const N: usize> GroupedElGamalCiphertext<N> {
+    /// Converts a grouped ElGamal ciphertext into a regular ElGamal ciphertext using the decrypt
+    /// handle at a specified index.
+    pub fn to_elgamal_ciphertext(
+        &self,
+        index: usize,
+    ) -> Result<ElGamalCiphertext, GroupedElGamalError> {
+        GroupedElGamal::to_elgamal_ciphertext(self, index)
+    }
+
     /// Decrypts the grouped ElGamal ciphertext using an ElGamal secret key pertaining to a
     /// specified index.
     ///

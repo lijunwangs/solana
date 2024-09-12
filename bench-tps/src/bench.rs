@@ -1,6 +1,5 @@
 use {
     crate::{
-        bench_tps_client::*,
         cli::{ComputeUnitPrice, Config, InstructionPaddingConfig},
         log_transaction_service::{
             create_log_transactions_service_and_sender, SignatureBatchSender, TransactionInfoBatch,
@@ -12,8 +11,9 @@ use {
     log::*,
     rand::distributions::{Distribution, Uniform},
     rayon::prelude::*,
-    solana_client::{nonce_utils, rpc_request::MAX_MULTIPLE_ACCOUNTS},
+    solana_client::nonce_utils,
     solana_metrics::{self, datapoint_info},
+    solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
     solana_sdk::{
         account::Account,
         clock::{DEFAULT_MS_PER_SLOT, DEFAULT_S_PER_SLOT, MAX_PROCESSING_AGE},
@@ -25,9 +25,10 @@ use {
         pubkey::Pubkey,
         signature::{Keypair, Signer},
         system_instruction,
-        timing::{duration_as_ms, duration_as_s, duration_as_us, timestamp},
+        timing::timestamp,
         transaction::Transaction,
     },
+    solana_tps_client::*,
     spl_instruction_padding::instruction::wrap_instruction,
     std::{
         collections::{HashSet, VecDeque},
@@ -154,7 +155,7 @@ struct TransactionChunkGenerator<'a, 'b, T: ?Sized> {
 
 impl<'a, 'b, T> TransactionChunkGenerator<'a, 'b, T>
 where
-    T: 'static + BenchTpsClient + Send + Sync + ?Sized,
+    T: 'static + TpsClient + Send + Sync + ?Sized,
 {
     fn new(
         client: Arc<T>,
@@ -232,12 +233,12 @@ where
             "Done. {:.2} thousand signatures per second, {:.2} us per signature, {} ms total time, {:?}",
             bsps * 1_000_000_f64,
             nsps / 1_000_f64,
-            duration_as_ms(&duration),
+            duration.as_millis(),
             blockhash,
         );
         datapoint_info!(
             "bench-tps-generate_txs",
-            ("duration", duration_as_us(&duration), i64)
+            ("duration", duration.as_micros() as i64, i64)
         );
 
         transactions
@@ -263,7 +264,7 @@ where
 
 fn wait_for_target_slots_per_epoch<T>(target_slots_per_epoch: u64, client: &Arc<T>)
 where
-    T: 'static + BenchTpsClient + Send + Sync + ?Sized,
+    T: 'static + TpsClient + Send + Sync + ?Sized,
 {
     if target_slots_per_epoch != 0 {
         info!(
@@ -293,7 +294,7 @@ fn create_sampler_thread<T>(
     maxes: &Arc<RwLock<Vec<(String, SampleStats)>>>,
 ) -> JoinHandle<()>
 where
-    T: 'static + BenchTpsClient + Send + Sync + ?Sized,
+    T: 'static + TpsClient + Send + Sync + ?Sized,
 {
     info!("Sampling TPS every {} second...", sample_period);
     let maxes = maxes.clone();
@@ -306,7 +307,7 @@ where
         .unwrap()
 }
 
-fn generate_chunked_transfers<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+fn generate_chunked_transfers<T: 'static + TpsClient + Send + Sync + ?Sized>(
     recent_blockhash: Arc<RwLock<Hash>>,
     shared_txs: &SharedTransactions,
     shared_tx_active_thread_count: Arc<AtomicIsize>,
@@ -369,7 +370,7 @@ fn create_sender_threads<T>(
     signatures_sender: Option<SignatureBatchSender>,
 ) -> Vec<JoinHandle<()>>
 where
-    T: 'static + BenchTpsClient + Send + Sync + ?Sized,
+    T: 'static + TpsClient + Send + Sync + ?Sized,
 {
     (0..threads)
         .map(|_| {
@@ -404,7 +405,7 @@ pub fn do_bench_tps<T>(
     nonce_keypairs: Option<Vec<Keypair>>,
 ) -> u64
 where
-    T: 'static + BenchTpsClient + Send + Sync + ?Sized,
+    T: 'static + TpsClient + Send + Sync + ?Sized,
 {
     let Config {
         id,
@@ -688,7 +689,7 @@ fn transfer_with_compute_unit_price_and_padding(
     Transaction::new(&[from_keypair], message, recent_blockhash)
 }
 
-fn get_nonce_accounts<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+fn get_nonce_accounts<T: 'static + TpsClient + Send + Sync + ?Sized>(
     client: &Arc<T>,
     nonce_pubkeys: &[Pubkey],
 ) -> Vec<Option<Account>> {
@@ -707,7 +708,7 @@ fn get_nonce_accounts<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
     }
 }
 
-fn get_nonce_blockhashes<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+fn get_nonce_blockhashes<T: 'static + TpsClient + Send + Sync + ?Sized>(
     client: &Arc<T>,
     nonce_pubkeys: &[Pubkey],
 ) -> Vec<Hash> {
@@ -789,7 +790,7 @@ fn nonced_transfer_with_padding(
     Transaction::new(&[from_keypair, nonce_authority], message, nonce_hash)
 }
 
-fn generate_nonced_system_txs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+fn generate_nonced_system_txs<T: 'static + TpsClient + Send + Sync + ?Sized>(
     client: Arc<T>,
     source: &[&Keypair],
     dest: &VecDeque<&Keypair>,
@@ -848,7 +849,7 @@ fn generate_nonced_system_txs<T: 'static + BenchTpsClient + Send + Sync + ?Sized
     transactions
 }
 
-fn generate_txs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+fn generate_txs<T: 'static + TpsClient + Send + Sync + ?Sized>(
     shared_txs: &SharedTransactions,
     blockhash: &Arc<RwLock<Hash>>,
     chunk_generator: &mut TransactionChunkGenerator<'_, '_, T>,
@@ -872,7 +873,7 @@ fn generate_txs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
     }
 }
 
-fn get_new_latest_blockhash<T: BenchTpsClient + ?Sized>(
+fn get_new_latest_blockhash<T: TpsClient + ?Sized>(
     client: &Arc<T>,
     blockhash: &Hash,
 ) -> Option<Hash> {
@@ -891,7 +892,7 @@ fn get_new_latest_blockhash<T: BenchTpsClient + ?Sized>(
     None
 }
 
-fn poll_blockhash<T: BenchTpsClient + ?Sized>(
+fn poll_blockhash<T: TpsClient + ?Sized>(
     exit_signal: &AtomicBool,
     blockhash: &Arc<RwLock<Hash>>,
     client: &Arc<T>,
@@ -941,7 +942,7 @@ fn poll_blockhash<T: BenchTpsClient + ?Sized>(
     }
 }
 
-fn do_tx_transfers<T: BenchTpsClient + ?Sized>(
+fn do_tx_transfers<T: TpsClient + ?Sized>(
     exit_signal: &AtomicBool,
     shared_txs: &SharedTransactions,
     shared_tx_thread_count: &Arc<AtomicIsize>,
@@ -1028,12 +1029,12 @@ fn do_tx_transfers<T: BenchTpsClient + ?Sized>(
             total_tx_sent_count.fetch_add(num_txs, Ordering::Relaxed);
             info!(
                 "Tx send done. {} ms {} tps",
-                duration_as_ms(&transfer_start.elapsed()),
-                num_txs as f32 / duration_as_s(&transfer_start.elapsed()),
+                transfer_start.elapsed().as_millis(),
+                num_txs as f32 / transfer_start.elapsed().as_secs_f32(),
             );
             datapoint_info!(
                 "bench-tps-do_tx_transfers",
-                ("duration", duration_as_us(&transfer_start.elapsed()), i64),
+                ("duration", transfer_start.elapsed().as_micros() as i64, i64),
                 ("count", num_txs, i64)
             );
         }
@@ -1106,18 +1107,18 @@ fn compute_and_report_stats(
     );
     info!(
         "\tAverage TPS: {}",
-        max_tx_count as f32 / duration_as_s(tx_send_elapsed)
+        max_tx_count as f32 / tx_send_elapsed.as_secs_f32()
     );
 }
 
-pub fn generate_and_fund_keypairs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+pub fn generate_and_fund_keypairs<T: 'static + TpsClient + Send + Sync + ?Sized>(
     client: Arc<T>,
     funding_key: &Keypair,
     keypair_count: usize,
     lamports_per_account: u64,
     skip_tx_account_data_size: bool,
     enable_padding: bool,
-) -> Result<Vec<Keypair>> {
+) -> TpsClientResult<Vec<Keypair>> {
     let rent = client.get_minimum_balance_for_rent_exemption(0)?;
     let lamports_per_account = lamports_per_account + rent;
 
@@ -1139,7 +1140,7 @@ pub fn generate_and_fund_keypairs<T: 'static + BenchTpsClient + Send + Sync + ?S
     Ok(keypairs)
 }
 
-pub fn fund_keypairs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
+pub fn fund_keypairs<T: 'static + TpsClient + Send + Sync + ?Sized>(
     client: Arc<T>,
     funding_key: &Keypair,
     keypairs: &[Keypair],
@@ -1147,7 +1148,7 @@ pub fn fund_keypairs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
     lamports_per_account: u64,
     skip_tx_account_data_size: bool,
     enable_padding: bool,
-) -> Result<()> {
+) -> TpsClientResult<()> {
     let rent = client.get_minimum_balance_for_rent_exemption(0)?;
     info!("Get lamports...");
 
@@ -1200,7 +1201,7 @@ pub fn fund_keypairs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
                 )
                 .is_err()
             {
-                return Err(BenchTpsError::AirdropFailure);
+                return Err(TpsClientError::AirdropFailure);
             }
         }
         let data_size_limit = (!skip_tx_account_data_size)
@@ -1223,10 +1224,10 @@ pub fn fund_keypairs<T: 'static + BenchTpsClient + Send + Sync + ?Sized>(
 mod tests {
     use {
         super::*,
-        solana_runtime::{bank::Bank, bank_client::BankClient},
+        solana_feature_set::FeatureSet,
+        solana_runtime::{bank::Bank, bank_client::BankClient, bank_forks::BankForks},
         solana_sdk::{
             commitment_config::CommitmentConfig,
-            feature_set::FeatureSet,
             fee_calculator::FeeRateGovernor,
             genesis_config::{create_genesis_config, GenesisConfig},
             native_token::sol_to_lamports,
@@ -1234,16 +1235,18 @@ mod tests {
         },
     };
 
-    fn bank_with_all_features(genesis_config: &GenesisConfig) -> Arc<Bank> {
+    fn bank_with_all_features(
+        genesis_config: &GenesisConfig,
+    ) -> (Arc<Bank>, Arc<RwLock<BankForks>>) {
         let mut bank = Bank::new_for_tests(genesis_config);
         bank.feature_set = Arc::new(FeatureSet::all_enabled());
-        bank.wrap_with_bank_forks_for_tests().0
+        bank.wrap_with_bank_forks_for_tests()
     }
 
     #[test]
     fn test_bench_tps_bank_client() {
         let (genesis_config, id) = create_genesis_config(sol_to_lamports(10_000.0));
-        let bank = bank_with_all_features(&genesis_config);
+        let (bank, _bank_forks) = bank_with_all_features(&genesis_config);
         let client = Arc::new(BankClient::new_shared(bank));
 
         let config = Config {
@@ -1264,7 +1267,7 @@ mod tests {
     #[test]
     fn test_bench_tps_fund_keys() {
         let (genesis_config, id) = create_genesis_config(sol_to_lamports(10_000.0));
-        let bank = bank_with_all_features(&genesis_config);
+        let (bank, _bank_forks) = bank_with_all_features(&genesis_config);
         let client = Arc::new(BankClient::new_shared(bank));
         let keypair_count = 20;
         let lamports = 20;
@@ -1289,7 +1292,7 @@ mod tests {
         let (mut genesis_config, id) = create_genesis_config(sol_to_lamports(10_000.0));
         let fee_rate_governor = FeeRateGovernor::new(11, 0);
         genesis_config.fee_rate_governor = fee_rate_governor;
-        let bank = bank_with_all_features(&genesis_config);
+        let (bank, _bank_forks) = bank_with_all_features(&genesis_config);
         let client = Arc::new(BankClient::new_shared(bank));
         let keypair_count = 20;
         let lamports = 20;
@@ -1307,7 +1310,7 @@ mod tests {
     #[test]
     fn test_bench_tps_create_durable_nonce() {
         let (genesis_config, id) = create_genesis_config(sol_to_lamports(10_000.0));
-        let bank = bank_with_all_features(&genesis_config);
+        let (bank, _bank_forks) = bank_with_all_features(&genesis_config);
         let client = Arc::new(BankClient::new_shared(bank));
         let keypair_count = 10;
         let lamports = 10_000_000;

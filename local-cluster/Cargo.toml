@@ -37,6 +37,7 @@ solana-turbine = { workspace = true }
 solana-vote = { workspace = true }
 solana-vote-program = { workspace = true }
 static_assertions = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
 tempfile = { workspace = true }
 trees = { workspace = true }
 
@@ -48,6 +49,7 @@ serial_test = { workspace = true }
 solana-core = { workspace = true, features = ["dev-context-only-utils"] }
 solana-download-utils = { workspace = true }
 solana-ledger = { workspace = true, features = ["dev-context-only-utils"] }
+solana-local-cluster = { path = ".", features = ["dev-context-only-utils"] }
 solana-runtime = { workspace = true, features = ["dev-context-only-utils"] }
 
 [package.metadata.docs.rs]

@@ -43,7 +43,6 @@ pub(crate) enum DependencyType {
     Normal,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Dependency {
     pub name: String,
@@ -111,7 +110,7 @@ impl Program {
             return Err("Signer doesn't match program ID".into());
         }
 
-        let mut program_data = read_and_verify_elf(self.path.as_ref())
+        let mut program_data = read_and_verify_elf(self.path.as_ref(), &client.rpc_client)
             .map_err(|e| format!("failed to read the program: {}", e))?;
 
         if APPEND_CRATE_TO_ELF {

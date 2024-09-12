@@ -3,10 +3,10 @@
 //! A batched grouped ciphertext validity proof certifies the validity of two instances of a
 //! standard grouped ciphertext validity proof. An instance of a standard grouped ciphertext
 //! with 3 handles validity proof consists of one ciphertext and three decryption handles:
-//! `(commitment, source_handle, destination_handle, auditor_handle)`. An instance of a batched
+//! `(commitment, first_handle, second_handle, third_handle)`. An instance of a batched
 //! grouped ciphertext with 3 handles validity proof consist of a pair of `(commitment_0,
-//! source_handle_0, destination_handle_0, auditor_handle_0)` and `(commitment_1, source_handle_1,
-//! destination_handle_1, auditor_handle_1)`. The proof certifies the anagolous decryptable
+//! first_handle_0, second_handle_0, third_handle_0)` and `(commitment_1, first_handle_1,
+//! second_handle_1, third_handle_1)`. The proof certifies the anagolous decryptable
 //! properties for each one of these pairs of commitment and decryption handles.
 //!
 //! The protocol guarantees computational soundness (by the hardness of discrete log) and perfect
@@ -48,9 +48,9 @@ impl BatchedGroupedCiphertext3HandlesValidityProof {
     /// The function simply batches the input openings and invokes the standard grouped ciphertext
     /// validity proof constructor.
     pub fn new<T: Into<Scalar>>(
-        source_pubkey: &ElGamalPubkey,
-        destination_pubkey: &ElGamalPubkey,
-        auditor_pubkey: &ElGamalPubkey,
+        first_pubkey: &ElGamalPubkey,
+        second_pubkey: &ElGamalPubkey,
+        third_pubkey: &ElGamalPubkey,
         amount_lo: T,
         amount_hi: T,
         opening_lo: &PedersenOpening,
@@ -65,9 +65,9 @@ impl BatchedGroupedCiphertext3HandlesValidityProof {
         let batched_opening = opening_lo + &(opening_hi * &t);
 
         BatchedGroupedCiphertext3HandlesValidityProof(GroupedCiphertext3HandlesValidityProof::new(
-            source_pubkey,
-            destination_pubkey,
-            auditor_pubkey,
+            first_pubkey,
+            second_pubkey,
+            third_pubkey,
             batched_message,
             &batched_opening,
             transcript,
@@ -84,17 +84,17 @@ impl BatchedGroupedCiphertext3HandlesValidityProof {
     #[allow(clippy::too_many_arguments)]
     pub fn verify(
         self,
-        source_pubkey: &ElGamalPubkey,
-        destination_pubkey: &ElGamalPubkey,
-        auditor_pubkey: &ElGamalPubkey,
+        first_pubkey: &ElGamalPubkey,
+        second_pubkey: &ElGamalPubkey,
+        third_pubkey: &ElGamalPubkey,
         commitment_lo: &PedersenCommitment,
         commitment_hi: &PedersenCommitment,
-        source_handle_lo: &DecryptHandle,
-        source_handle_hi: &DecryptHandle,
-        destination_handle_lo: &DecryptHandle,
-        destination_handle_hi: &DecryptHandle,
-        auditor_handle_lo: &DecryptHandle,
-        auditor_handle_hi: &DecryptHandle,
+        first_handle_lo: &DecryptHandle,
+        first_handle_hi: &DecryptHandle,
+        second_handle_lo: &DecryptHandle,
+        second_handle_hi: &DecryptHandle,
+        third_handle_lo: &DecryptHandle,
+        third_handle_hi: &DecryptHandle,
         transcript: &mut Transcript,
     ) -> Result<(), ValidityProofVerificationError> {
         transcript.batched_grouped_ciphertext_validity_proof_domain_separator(3);
@@ -102,20 +102,20 @@ impl BatchedGroupedCiphertext3HandlesValidityProof {
         let t = transcript.challenge_scalar(b"t");
 
         let batched_commitment = commitment_lo + commitment_hi * t;
-        let source_batched_handle = source_handle_lo + source_handle_hi * t;
-        let destination_batched_handle = destination_handle_lo + destination_handle_hi * t;
-        let auditor_batched_handle = auditor_handle_lo + auditor_handle_hi * t;
+        let first_batched_handle = first_handle_lo + first_handle_hi * t;
+        let second_batched_handle = second_handle_lo + second_handle_hi * t;
+        let third_batched_handle = third_handle_lo + third_handle_hi * t;
 
         let BatchedGroupedCiphertext3HandlesValidityProof(validity_proof) = self;
 
         validity_proof.verify(
             &batched_commitment,
-            source_pubkey,
-            destination_pubkey,
-            auditor_pubkey,
-            &source_batched_handle,
-            &destination_batched_handle,
-            &auditor_batched_handle,
+            first_pubkey,
+            second_pubkey,
+            third_pubkey,
+            &first_batched_handle,
+            &second_batched_handle,
+            &third_batched_handle,
             transcript,
         )
     }
@@ -133,19 +133,30 @@ impl BatchedGroupedCiphertext3HandlesValidityProof {
 mod test {
     use {
         super::*,
-        crate::encryption::{elgamal::ElGamalKeypair, pedersen::Pedersen},
+        crate::{
+            encryption::{
+                elgamal::ElGamalKeypair,
+                pedersen::Pedersen,
+                pod::{
+                    elgamal::{PodDecryptHandle, PodElGamalPubkey},
+                    pedersen::PodPedersenCommitment,
+                },
+            },
+            sigma_proofs::pod::PodBatchedGroupedCiphertext3HandlesValidityProof,
+        },
+        std::str::FromStr,
     };
 
     #[test]
-    fn test_batched_grouped_ciphertext_validity_proof() {
-        let source_keypair = ElGamalKeypair::new_rand();
-        let source_pubkey = source_keypair.pubkey();
+    fn test_batched_grouped_ciphertext_3_handles_validity_proof() {
+        let first_keypair = ElGamalKeypair::new_rand();
+        let first_pubkey = first_keypair.pubkey();
 
-        let destination_keypair = ElGamalKeypair::new_rand();
-        let destination_pubkey = destination_keypair.pubkey();
+        let second_keyapir = ElGamalKeypair::new_rand();
+        let second_pubkey = second_keyapir.pubkey();
 
-        let auditor_keypair = ElGamalKeypair::new_rand();
-        let auditor_pubkey = auditor_keypair.pubkey();
+        let third_keypair = ElGamalKeypair::new_rand();
+        let third_pubkey = third_keypair.pubkey();
 
         let amount_lo: u64 = 55;
         let amount_hi: u64 = 77;
@@ -153,22 +164,22 @@ mod test {
         let (commitment_lo, open_lo) = Pedersen::new(amount_lo);
         let (commitment_hi, open_hi) = Pedersen::new(amount_hi);
 
-        let source_handle_lo = source_pubkey.decrypt_handle(&open_lo);
-        let source_handle_hi = source_pubkey.decrypt_handle(&open_hi);
+        let first_handle_lo = first_pubkey.decrypt_handle(&open_lo);
+        let first_handle_hi = first_pubkey.decrypt_handle(&open_hi);
 
-        let destination_handle_lo = destination_pubkey.decrypt_handle(&open_lo);
-        let destination_handle_hi = destination_pubkey.decrypt_handle(&open_hi);
+        let second_handle_lo = second_pubkey.decrypt_handle(&open_lo);
+        let second_handle_hi = second_pubkey.decrypt_handle(&open_hi);
 
-        let auditor_handle_lo = auditor_pubkey.decrypt_handle(&open_lo);
-        let auditor_handle_hi = auditor_pubkey.decrypt_handle(&open_hi);
+        let third_handle_lo = third_pubkey.decrypt_handle(&open_lo);
+        let third_handle_hi = third_pubkey.decrypt_handle(&open_hi);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = BatchedGroupedCiphertext3HandlesValidityProof::new(
-            source_pubkey,
-            destination_pubkey,
-            auditor_pubkey,
+            first_pubkey,
+            second_pubkey,
+            third_pubkey,
             amount_lo,
             amount_hi,
             &open_lo,
@@ -176,21 +187,92 @@ mod test {
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
-                source_pubkey,
-                destination_pubkey,
-                auditor_pubkey,
+                first_pubkey,
+                second_pubkey,
+                third_pubkey,
                 &commitment_lo,
                 &commitment_hi,
-                &source_handle_lo,
-                &source_handle_hi,
-                &destination_handle_lo,
-                &destination_handle_hi,
-                &auditor_handle_lo,
-                &auditor_handle_hi,
+                &first_handle_lo,
+                &first_handle_hi,
+                &second_handle_lo,
+                &second_handle_hi,
+                &third_handle_lo,
+                &third_handle_hi,
                 &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
+    }
+
+    #[test]
+    fn test_batched_grouped_ciphertext_3_handles_validity_proof_string() {
+        let first_pubkey_str = "PFQ4AD4W/Y4BEg3nI/qckFLhnjMQ12xPHyaMg9Bkg3w=";
+        let pod_first_pubkey = PodElGamalPubkey::from_str(first_pubkey_str).unwrap();
+        let first_pubkey: ElGamalPubkey = pod_first_pubkey.try_into().unwrap();
+
+        let second_pubkey_str = "2CZ4h5oK7zh4/3P6s/kCQoNlpUPk1IrsrAtTWjCtfFo=";
+        let pod_second_pubkey = PodElGamalPubkey::from_str(second_pubkey_str).unwrap();
+        let second_pubkey: ElGamalPubkey = pod_second_pubkey.try_into().unwrap();
+
+        let third_pubkey_str = "yonKhqkoXNvMbN/tU6fjHFhfZuNPpvMj8L55aP2bBG4=";
+        let pod_third_pubkey = PodElGamalPubkey::from_str(third_pubkey_str).unwrap();
+        let third_pubkey: ElGamalPubkey = pod_third_pubkey.try_into().unwrap();
+
+        let commitment_lo_str = "atIteiveexponnuF2Z1nbovZYYtcGWjglpEA3caMShM=";
+        let pod_commitment_lo = PodPedersenCommitment::from_str(commitment_lo_str).unwrap();
+        let commitment_lo: PedersenCommitment = pod_commitment_lo.try_into().unwrap();
+
+        let commitment_hi_str = "IoZlSj7spae2ogiAUiEuuwAjYA5khgBH8FhaHzkh+lc=";
+        let pod_commitment_hi = PodPedersenCommitment::from_str(commitment_hi_str).unwrap();
+        let commitment_hi: PedersenCommitment = pod_commitment_hi.try_into().unwrap();
+
+        let first_handle_lo_str = "6PlKiitdapVZnh7VccQNbskXop9nmITGppLsV42UMkU=";
+        let pod_first_handle_lo_str = PodDecryptHandle::from_str(first_handle_lo_str).unwrap();
+        let first_handle_lo: DecryptHandle = pod_first_handle_lo_str.try_into().unwrap();
+
+        let first_handle_hi_str = "vF+oZ3WWnrJyJ95Wl8EW+aVJiFmruiuRw6+TT3QVMBI=";
+        let pod_first_handle_hi_str = PodDecryptHandle::from_str(first_handle_hi_str).unwrap();
+        let first_handle_hi: DecryptHandle = pod_first_handle_hi_str.try_into().unwrap();
+
+        let second_handle_lo_str = "rvxzo5ZyrD6YTm7X3GjplgOGJjx6PtoZ+DKbL4LsQWA=";
+        let pod_second_handle_lo_str = PodDecryptHandle::from_str(second_handle_lo_str).unwrap();
+        let second_handle_lo: DecryptHandle = pod_second_handle_lo_str.try_into().unwrap();
+
+        let second_handle_hi_str = "0mdZSGiWQhOjqsExqFMD8hfgUlRRRrF/G3CJ7d0LEEk=";
+        let pod_second_handle_hi_str = PodDecryptHandle::from_str(second_handle_hi_str).unwrap();
+        let second_handle_hi: DecryptHandle = pod_second_handle_hi_str.try_into().unwrap();
+
+        let third_handle_lo_str = "bpT2LuFektFhI/sacjSsqNtCsO8ac5qn0jWeMeQq4WM=";
+        let pod_third_handle_lo_str = PodDecryptHandle::from_str(third_handle_lo_str).unwrap();
+        let third_handle_lo: DecryptHandle = pod_third_handle_lo_str.try_into().unwrap();
+
+        let third_handle_hi_str = "OE8z7Bbv2AHnjxebK6ASJfkJbOlYQdnN6ZPkG2u4SnA=";
+        let pod_third_handle_hi_str = PodDecryptHandle::from_str(third_handle_hi_str).unwrap();
+        let third_handle_hi: DecryptHandle = pod_third_handle_hi_str.try_into().unwrap();
+
+        let proof_str = "GkjZ7QKcJq5X/OU8wb26wZ7p2D9thVK+Cb11CzRjWUoihYvGfuCbVG1vr4qtnfx65SS4jVK1H0q/948A9wy8ZPTrOZJA122G4+cpt5mKnSrKq/vbv4ZRha0oR9RGJFZ2SPT3gx2jysKDKRAQgBLOzSGfQg9Hsbz57i55SQfliUF5mByZKuzGKHSIHi81BDqbrFAj6x5bOeMAaLqsCboCA5XGDUZ2HMPUGuAd9F+OaVH+eJZnuoDjwwcBQ2eANgMB";
+        let pod_proof =
+            PodBatchedGroupedCiphertext3HandlesValidityProof::from_str(proof_str).unwrap();
+        let proof: BatchedGroupedCiphertext3HandlesValidityProof = pod_proof.try_into().unwrap();
+
+        let mut verifier_transcript = Transcript::new(b"Test");
+
+        proof
+            .verify(
+                &first_pubkey,
+                &second_pubkey,
+                &third_pubkey,
+                &commitment_lo,
+                &commitment_hi,
+                &first_handle_lo,
+                &first_handle_hi,
+                &second_handle_lo,
+                &second_handle_hi,
+                &third_handle_lo,
+                &third_handle_hi,
+                &mut verifier_transcript,
+            )
+            .unwrap();
     }
 }

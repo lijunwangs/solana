@@ -6,8 +6,8 @@ use {
     crate::errors::AuthenticatedEncryptionError,
     base64::{prelude::BASE64_STANDARD, Engine},
     sha3::{Digest, Sha3_512},
+    solana_derivation_path::DerivationPath,
     solana_sdk::{
-        derivation_path::DerivationPath,
         signature::Signature,
         signer::{
             keypair::generate_seed_from_seed_phrase_and_passphrase, EncodableKey, SeedDerivable,
@@ -25,7 +25,7 @@ use {
 #[cfg(not(target_os = "solana"))]
 use {
     aes_gcm_siv::{
-        aead::{Aead, NewAead},
+        aead::{Aead, KeyInit},
         Aes128GcmSiv,
     },
     rand::{rngs::OsRng, Rng},

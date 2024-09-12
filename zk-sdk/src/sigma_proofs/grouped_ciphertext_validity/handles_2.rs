@@ -65,14 +65,14 @@ impl GroupedCiphertext2HandlesValidityProof {
     /// Note that the proof constructor does not take the actual Pedersen commitment or decryption
     /// handles as input; it only takes the associated Pedersen opening instead.
     ///
-    /// * `destination_pubkey` - The destination ElGamal public key
-    /// * `auditor_pubkey` - The auditor ElGamal public key
+    /// * `first_pubkey` - The first ElGamal public key
+    /// * `second_pubkey` - The second ElGamal public key
     /// * `amount` - The committed message in the commitment
     /// * `opening` - The opening associated with the Pedersen commitment
     /// * `transcript` - The transcript that does the bookkeeping for the Fiat-Shamir heuristic
     pub fn new<T: Into<Scalar>>(
-        destination_pubkey: &ElGamalPubkey,
-        auditor_pubkey: &ElGamalPubkey,
+        first_pubkey: &ElGamalPubkey,
+        second_pubkey: &ElGamalPubkey,
         amount: T,
         opening: &PedersenOpening,
         transcript: &mut Transcript,
@@ -80,8 +80,8 @@ impl GroupedCiphertext2HandlesValidityProof {
         transcript.grouped_ciphertext_validity_proof_domain_separator(2);
 
         // extract the relevant scalar and Ristretto points from the inputs
-        let P_dest = destination_pubkey.get_point();
-        let P_auditor = auditor_pubkey.get_point();
+        let P_first = first_pubkey.get_point();
+        let P_second = second_pubkey.get_point();
 
         let x = amount.into();
         let r = opening.get_scalar();
@@ -91,8 +91,8 @@ impl GroupedCiphertext2HandlesValidityProof {
         let mut y_x = Scalar::random(&mut OsRng);
 
         let Y_0 = RistrettoPoint::multiscalar_mul(vec![&y_r, &y_x], vec![&(*H), &(*G)]).compress();
-        let Y_1 = (&y_r * P_dest).compress();
-        let Y_2 = (&y_r * P_auditor).compress();
+        let Y_1 = (&y_r * P_first).compress();
+        let Y_2 = (&y_r * P_second).compress();
 
         // record masking factors in transcript and get challenges
         transcript.append_point(b"Y_0", &Y_0);
@@ -121,18 +121,18 @@ impl GroupedCiphertext2HandlesValidityProof {
     /// Verifies a grouped ciphertext validity proof for 2 handles.
     ///
     /// * `commitment` - The Pedersen commitment
-    /// * `destination_pubkey` - The destination ElGamal public key
-    /// * `auditor_pubkey` - The auditor ElGamal public key
-    /// * `destination_handle` - The destination decryption handle
-    /// * `auditor_handle` - The auditor decryption handle
+    /// * `first_pubkey` - The first ElGamal public key
+    /// * `second_pubkey` - The second ElGamal public key
+    /// * `first_handle` - The first decryption handle
+    /// * `second_handle` - The second decryption handle
     /// * `transcript` - The transcript that does the bookkeeping for the Fiat-Shamir heuristic
     pub fn verify(
         self,
         commitment: &PedersenCommitment,
-        destination_pubkey: &ElGamalPubkey,
-        auditor_pubkey: &ElGamalPubkey,
-        destination_handle: &DecryptHandle,
-        auditor_handle: &DecryptHandle,
+        first_pubkey: &ElGamalPubkey,
+        second_pubkey: &ElGamalPubkey,
+        first_handle: &DecryptHandle,
+        second_handle: &DecryptHandle,
         transcript: &mut Transcript,
     ) -> Result<(), ValidityProofVerificationError> {
         transcript.grouped_ciphertext_validity_proof_domain_separator(2);
@@ -140,7 +140,7 @@ impl GroupedCiphertext2HandlesValidityProof {
         // include Y_0, Y_1, Y_2 to transcript and extract challenges
         transcript.validate_and_append_point(b"Y_0", &self.Y_0)?;
         transcript.validate_and_append_point(b"Y_1", &self.Y_1)?;
-        // Y_2 can be an all zero point if the auditor public key is all zero
+        // Y_2 can be an all zero point if the second public key is all zero
         transcript.append_point(b"Y_2", &self.Y_2);
 
         let c = transcript.challenge_scalar(b"c");
@@ -164,19 +164,19 @@ impl GroupedCiphertext2HandlesValidityProof {
             .decompress()
             .ok_or(SigmaProofVerificationError::Deserialization)?;
 
-        let P_dest = destination_pubkey.get_point();
-        let P_auditor = auditor_pubkey.get_point();
+        let P_first = first_pubkey.get_point();
+        let P_second = second_pubkey.get_point();
 
         let C = commitment.get_point();
-        let D_dest = destination_handle.get_point();
-        let D_auditor = auditor_handle.get_point();
+        let D_first = first_handle.get_point();
+        let D_second = second_handle.get_point();
 
         let check = RistrettoPoint::vartime_multiscalar_mul(
             vec![
                 &self.z_r,           // z_r
                 &self.z_x,           // z_x
                 &(-&c),              // -c
-                &-(&Scalar::one()),  // -identity
+                &-(&Scalar::ONE),    // -identity
                 &(&w * &self.z_r),   // w * z_r
                 &(&w_negated * &c),  // -w * c
                 &w_negated,          // -w
@@ -185,16 +185,16 @@ impl GroupedCiphertext2HandlesValidityProof {
                 &ww_negated,         // -ww
             ],
             vec![
-                &(*H),     // H
-                &(*G),     // G
-                C,         // C
-                &Y_0,      // Y_0
-                P_dest,    // P_dest
-                D_dest,    // D_dest
-                &Y_1,      // Y_1
-                P_auditor, // P_auditor
-                D_auditor, // D_auditor
-                &Y_2,      // Y_2
+                &(*H),    // H
+                &(*G),    // G
+                C,        // C
+                &Y_0,     // Y_0
+                P_first,  // P_first
+                D_first,  // D_first
+                &Y_1,     // Y_1
+                P_second, // P_second
+                D_second, // D_second
+                &Y_2,     // Y_2
             ],
         );
 
@@ -238,66 +238,77 @@ impl GroupedCiphertext2HandlesValidityProof {
 mod test {
     use {
         super::*,
-        crate::encryption::{elgamal::ElGamalKeypair, pedersen::Pedersen},
+        crate::{
+            encryption::{
+                elgamal::ElGamalKeypair,
+                pedersen::Pedersen,
+                pod::{
+                    elgamal::{PodDecryptHandle, PodElGamalPubkey},
+                    pedersen::PodPedersenCommitment,
+                },
+            },
+            sigma_proofs::pod::PodGroupedCiphertext2HandlesValidityProof,
+        },
+        std::str::FromStr,
     };
 
     #[test]
     fn test_grouped_ciphertext_validity_proof_correctness() {
-        let destination_keypair = ElGamalKeypair::new_rand();
-        let destination_pubkey = destination_keypair.pubkey();
+        let first_keypair = ElGamalKeypair::new_rand();
+        let first_pubkey = first_keypair.pubkey();
 
-        let auditor_keypair = ElGamalKeypair::new_rand();
-        let auditor_pubkey = auditor_keypair.pubkey();
+        let second_keypair = ElGamalKeypair::new_rand();
+        let second_pubkey = second_keypair.pubkey();
 
         let amount: u64 = 55;
         let (commitment, opening) = Pedersen::new(amount);
 
-        let destination_handle = destination_pubkey.decrypt_handle(&opening);
-        let auditor_handle = auditor_pubkey.decrypt_handle(&opening);
+        let first_handle = first_pubkey.decrypt_handle(&opening);
+        let second_handle = second_pubkey.decrypt_handle(&opening);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = GroupedCiphertext2HandlesValidityProof::new(
-            destination_pubkey,
-            auditor_pubkey,
+            first_pubkey,
+            second_pubkey,
             amount,
             &opening,
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
                 &commitment,
-                destination_pubkey,
-                auditor_pubkey,
-                &destination_handle,
-                &auditor_handle,
+                first_pubkey,
+                second_pubkey,
+                &first_handle,
+                &second_handle,
                 &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
     }
 
     #[test]
     fn test_grouped_ciphertext_validity_proof_edge_cases() {
-        // if destination public key zeroed, then the proof should always reject
-        let destination_pubkey = ElGamalPubkey::try_from([0u8; 32].as_slice()).unwrap();
+        // if the first public key zeroed, then the proof should always reject
+        let first_pubkey = ElGamalPubkey::try_from([0u8; 32].as_slice()).unwrap();
 
-        let auditor_keypair = ElGamalKeypair::new_rand();
-        let auditor_pubkey = auditor_keypair.pubkey();
+        let second_keypair = ElGamalKeypair::new_rand();
+        let second_pubkey = second_keypair.pubkey();
 
         let amount: u64 = 55;
         let (commitment, opening) = Pedersen::new(amount);
 
-        let destination_handle = destination_pubkey.decrypt_handle(&opening);
-        let auditor_handle = auditor_pubkey.decrypt_handle(&opening);
+        let first_handle = first_pubkey.decrypt_handle(&opening);
+        let second_handle = second_pubkey.decrypt_handle(&opening);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = GroupedCiphertext2HandlesValidityProof::new(
-            &destination_pubkey,
-            auditor_pubkey,
+            &first_pubkey,
+            second_pubkey,
             amount,
             &opening,
             &mut prover_transcript,
@@ -306,83 +317,123 @@ mod test {
         assert!(proof
             .verify(
                 &commitment,
-                &destination_pubkey,
-                auditor_pubkey,
-                &destination_handle,
-                &auditor_handle,
+                &first_pubkey,
+                second_pubkey,
+                &first_handle,
+                &second_handle,
                 &mut verifier_transcript,
             )
             .is_err());
 
         // all zeroed ciphertext should still be valid
-        let destination_keypair = ElGamalKeypair::new_rand();
-        let destination_pubkey = destination_keypair.pubkey();
+        let first_keypair = ElGamalKeypair::new_rand();
+        let first_pubkey = first_keypair.pubkey();
 
-        let auditor_keypair = ElGamalKeypair::new_rand();
-        let auditor_pubkey = auditor_keypair.pubkey();
+        let second_keypair = ElGamalKeypair::new_rand();
+        let second_pubkey = second_keypair.pubkey();
 
         let amount: u64 = 0;
         let commitment = PedersenCommitment::from_bytes(&[0u8; 32]).unwrap();
         let opening = PedersenOpening::from_bytes(&[0u8; 32]).unwrap();
 
-        let destination_handle = destination_pubkey.decrypt_handle(&opening);
-        let auditor_handle = auditor_pubkey.decrypt_handle(&opening);
+        let first_handle = first_pubkey.decrypt_handle(&opening);
+        let second_handle = second_pubkey.decrypt_handle(&opening);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = GroupedCiphertext2HandlesValidityProof::new(
-            destination_pubkey,
-            auditor_pubkey,
+            first_pubkey,
+            second_pubkey,
             amount,
             &opening,
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
                 &commitment,
-                destination_pubkey,
-                auditor_pubkey,
-                &destination_handle,
-                &auditor_handle,
+                first_pubkey,
+                second_pubkey,
+                &first_handle,
+                &second_handle,
                 &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
 
         // decryption handles can be zero as long as the Pedersen commitment is valid
-        let destination_keypair = ElGamalKeypair::new_rand();
-        let destination_pubkey = destination_keypair.pubkey();
+        let first_keypair = ElGamalKeypair::new_rand();
+        let first_pubkey = first_keypair.pubkey();
 
-        let auditor_keypair = ElGamalKeypair::new_rand();
-        let auditor_pubkey = auditor_keypair.pubkey();
+        let second_keypair = ElGamalKeypair::new_rand();
+        let second_pubkey = second_keypair.pubkey();
 
         let amount: u64 = 55;
         let (commitment, opening) = Pedersen::new(amount);
 
-        let destination_handle = destination_pubkey.decrypt_handle(&opening);
-        let auditor_handle = auditor_pubkey.decrypt_handle(&opening);
+        let first_handle = first_pubkey.decrypt_handle(&opening);
+        let second_handle = second_pubkey.decrypt_handle(&opening);
 
         let mut prover_transcript = Transcript::new(b"Test");
         let mut verifier_transcript = Transcript::new(b"Test");
 
         let proof = GroupedCiphertext2HandlesValidityProof::new(
-            destination_pubkey,
-            auditor_pubkey,
+            first_pubkey,
+            second_pubkey,
             amount,
             &opening,
             &mut prover_transcript,
         );
 
-        assert!(proof
+        proof
             .verify(
                 &commitment,
-                destination_pubkey,
-                auditor_pubkey,
-                &destination_handle,
-                &auditor_handle,
+                first_pubkey,
+                second_pubkey,
+                &first_handle,
+                &second_handle,
                 &mut verifier_transcript,
             )
-            .is_ok());
+            .unwrap();
+    }
+
+    #[test]
+    fn test_grouped_ciphertext_validity_proof_string() {
+        let commitment_str = "VjdpJcofkU/Lhd6RRvwsCoqaZ8XSbhiizI7jsxZNKSU=";
+        let pod_commitment = PodPedersenCommitment::from_str(commitment_str).unwrap();
+        let commitment: PedersenCommitment = pod_commitment.try_into().unwrap();
+
+        let first_pubkey_str = "YllcTvlVBp9nv+bi8d0Z9UOujPfMsgH3ZcCqQSwXfic=";
+        let pod_first_pubkey = PodElGamalPubkey::from_str(first_pubkey_str).unwrap();
+        let first_pubkey: ElGamalPubkey = pod_first_pubkey.try_into().unwrap();
+
+        let second_pubkey_str = "CCq+4oKGWlh3pkSbZpEsj6vfimhC/c3TxTVAghXq5Xo=";
+        let pod_second_pubkey = PodElGamalPubkey::from_str(second_pubkey_str).unwrap();
+        let second_pubkey: ElGamalPubkey = pod_second_pubkey.try_into().unwrap();
+
+        let first_handle_str = "EE1qdL/QLMGXvsWIjw2c07Vg/DgUsaexxQECKtjEwWE=";
+        let pod_first_handle_str = PodDecryptHandle::from_str(first_handle_str).unwrap();
+        let first_handle: DecryptHandle = pod_first_handle_str.try_into().unwrap();
+
+        let second_handle_str = "2Jn0+IVwpI5O/5pBU/nizS759k6dNn6UyUzxc1bt3RM=";
+        let pod_second_handle_str = PodDecryptHandle::from_str(second_handle_str).unwrap();
+        let second_handle: DecryptHandle = pod_second_handle_str.try_into().unwrap();
+
+        let proof_str = "/GITIw3LjQSphEG1GWYpKGjKUrYnC1n4yGFDvBwcE2V6XdSM8FKgc3AjQYJWGVkUMsciv/vMRv3lyDuW4VJJclQk9STY7Pd2F4r6Lz1P3fBmODbDp++k3Ni759FrV141Oy4puCzHV8+LHg6ePh3WlZ8yL+Ri6VDTyLc+3pblSQ0VIno0QoxyavznU6faQhuCXuy3bD+E87ZlRNtk9jPKDg==";
+        let pod_proof = PodGroupedCiphertext2HandlesValidityProof::from_str(proof_str).unwrap();
+        let proof: GroupedCiphertext2HandlesValidityProof = pod_proof.try_into().unwrap();
+
+        let mut verifier_transcript = Transcript::new(b"Test");
+
+        proof
+            .verify(
+                &commitment,
+                &first_pubkey,
+                &second_pubkey,
+                &first_handle,
+                &second_handle,
+                &mut verifier_transcript,
+            )
+            .unwrap();
     }
 }

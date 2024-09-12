@@ -1,10 +1,10 @@
 use {
     lazy_static,
     log::*,
-    solana_measure::measure,
+    solana_measure::measure_time,
     std::{
         collections::HashSet,
-        fs,
+        fs, io,
         path::{Path, PathBuf},
         sync::Mutex,
         thread,
@@ -121,7 +121,7 @@ pub fn move_and_async_delete_path(path: impl AsRef<Path>) {
         .name("solDeletePath".to_string())
         .spawn(move || {
             trace!("background deleting {}...", path_delete.display());
-            let (result, measure_delete) = measure!(fs::remove_dir_all(&path_delete));
+            let (result, measure_delete) = measure_time!(fs::remove_dir_all(&path_delete));
             if let Err(err) = result {
                 panic!("Failed to async delete '{}': {err}", path_delete.display());
             }
@@ -166,18 +166,20 @@ pub fn delete_contents_of_path(path: impl AsRef<Path>) {
     }
 }
 
-/// Creates directories if they do not exist, and canonicalizes the paths.
+/// Creates `directories` if they do not exist, and canonicalizes their paths
 pub fn create_and_canonicalize_directories(
     directories: impl IntoIterator<Item = impl AsRef<Path>>,
-) -> std::io::Result<Vec<PathBuf>> {
+) -> io::Result<Vec<PathBuf>> {
     directories
         .into_iter()
-        .map(|path| {
-            fs::create_dir_all(&path)?;
-            let path = fs::canonicalize(&path)?;
-            Ok(path)
-        })
+        .map(create_and_canonicalize_directory)
         .collect()
+}
+
+/// Creates `directory` if it does not exist, and canonicalizes its path
+pub fn create_and_canonicalize_directory(directory: impl AsRef<Path>) -> io::Result<PathBuf> {
+    fs::create_dir_all(&directory)?;
+    fs::canonicalize(directory)
 }
 
 #[cfg(test)]

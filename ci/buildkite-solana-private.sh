@@ -214,21 +214,6 @@ EOF
       "wasm skipped as no relevant files were modified"
   fi
 
-  # Benches...
-  if affects \
-             .rs$ \
-             Cargo.lock$ \
-             Cargo.toml$ \
-             ^ci/rust-version.sh \
-             ^ci/test-coverage.sh \
-             ^ci/test-bench.sh \
-      ; then
-    .buildkite/scripts/build-bench.sh sol-private >> "$output_file"
-  else
-    annotate --style info --context test-bench \
-      "Bench skipped as no .rs files were modified"
-  fi
-
   # Coverage...
   if affects \
              .rs$ \
@@ -289,10 +274,6 @@ if [[ $BUILDKITE_BRANCH =~ ^pull ]]; then
   annotate --style info --context pr-backlink \
     "Github Pull Request: https://github.com/anza-xyz/agave/$BUILDKITE_BRANCH"
 
-  if [[ $GITHUB_USER = "dependabot[bot]" ]]; then
-    command_step dependabot "ci/dependabot-pr.sh" 5
-    wait_step
-  fi
   pull_or_push_steps
   exit 0
 fi
