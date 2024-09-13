@@ -28,7 +28,8 @@ use {
         transport::Result as TransportResult,
     },
     solana_streamer::{
-        nonblocking::quic::ALPN_TPU_PROTOCOL_ID, tls_certificates::new_dummy_x509_certificate,
+        nonblocking::quic::ALPN_TPU_PROTOCOL_ID, quic::TLS_SIGVERIFY_SCHEMES,
+        tls_certificates::new_dummy_x509_certificate,
     },
     std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
@@ -40,27 +41,24 @@ use {
 };
 
 #[derive(Debug)]
-pub struct SkipServerVerification(Arc<rustls::crypto::CryptoProvider>);
+pub struct SkipServerVerification;
 
 impl SkipServerVerification {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self(Arc::new(rustls::crypto::ring::default_provider())))
+        Arc::new(Self)
     }
 }
 
 impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
     fn verify_tls12_signature(
         &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
+        Err(rustls::Error::PeerIncompatible(
+            rustls::PeerIncompatible::Tls13RequiredForQuic,
+        ))
     }
 
     fn verify_tls13_signature(
@@ -69,16 +67,11 @@ impl rustls::client::danger::ServerCertVerifier for SkipServerVerification {
         cert: &rustls::pki_types::CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &TLS_SIGVERIFY_SCHEMES)
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
+        TLS_SIGVERIFY_SCHEMES.supported_schemes()
     }
 
     fn verify_server_cert(

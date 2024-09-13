@@ -7848,6 +7848,7 @@ dependencies = [
  "bytes",
  "crossbeam-channel",
  "dashmap",
+ "ed25519-dalek",
  "futures 0.3.30",
  "futures-util",
  "governor",

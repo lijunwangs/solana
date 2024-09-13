@@ -3,6 +3,7 @@ use {
         nonblocking::quic::ALPN_TPU_PROTOCOL_ID, streamer::StakedNodes,
         tls_certificates::new_dummy_x509_certificate,
     },
+    ed25519_dalek::Verifier,
     crossbeam_channel::Sender,
     pem::Pem,
     quinn::{
@@ -10,9 +11,13 @@ use {
         Endpoint, IdleTimeout, ServerConfig,
     },
     rustls::{
-        pki_types::{CertificateDer, UnixTime},
+        crypto::WebPkiSupportedAlgorithms,
+        pki_types::{
+            AlgorithmIdentifier, CertificateDer, InvalidSignature, SignatureVerificationAlgorithm,
+            UnixTime,
+        },
         server::danger::ClientCertVerified,
-        DistinguishedName, KeyLogFile,
+        DistinguishedName, KeyLogFile, SignatureScheme,
     },
     solana_perf::packet::PacketBatch,
     solana_sdk::{
@@ -38,12 +43,48 @@ pub const MAX_UNSTAKED_CONNECTIONS: usize = 500;
 // This will be adjusted and parameterized in follow-on PRs.
 pub const DEFAULT_QUIC_ENDPOINTS: usize = 1;
 
+// Boilerplate required to use ed25519_dalek for signature verification.
 #[derive(Debug)]
-pub struct SkipClientVerification(Arc<rustls::crypto::CryptoProvider>);
+struct DalekEd25519;
+static DALEK_ED25519: &dyn SignatureVerificationAlgorithm = &DalekEd25519;
+const ED25519_ALG_ID: AlgorithmIdentifier =
+    AlgorithmIdentifier::from_slice(&[0x06, 0x03, 0x2b, 0x65, 0x70]);
+impl SignatureVerificationAlgorithm for DalekEd25519 {
+    fn public_key_alg_id(&self) -> AlgorithmIdentifier {
+        ED25519_ALG_ID
+    }
+
+    fn signature_alg_id(&self) -> AlgorithmIdentifier {
+        ED25519_ALG_ID
+    }
+
+    fn verify_signature(
+        &self,
+        public_key: &[u8],
+        message: &[u8],
+        signature: &[u8],
+    ) -> Result<(), InvalidSignature> {
+        let publickey =
+            ed25519_dalek::PublicKey::from_bytes(public_key).map_err(|_| InvalidSignature)?;
+        let signature =
+            ed25519_dalek::Signature::try_from(signature).map_err(|_| InvalidSignature)?;
+        publickey
+            .verify(message, &signature)
+            .map_err(|_| InvalidSignature)
+    }
+}
+
+pub static TLS_SIGVERIFY_SCHEMES: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
+    all: &[DALEK_ED25519],
+    mapping: &[(SignatureScheme::ED25519, &[DALEK_ED25519])],
+};
+
+#[derive(Debug)]
+pub struct SkipClientVerification;
 
 impl SkipClientVerification {
     pub fn new() -> Arc<Self> {
-        Arc::new(Self(Arc::new(rustls::crypto::ring::default_provider())))
+        Arc::new(Self)
     }
 }
 
@@ -69,16 +110,13 @@ impl rustls::server::danger::ClientCertVerifier for SkipClientVerification {
 
     fn verify_tls12_signature(
         &self,
-        message: &[u8],
-        cert: &rustls::pki_types::CertificateDer<'_>,
-        dss: &rustls::DigitallySignedStruct,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls12_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
+        Err(rustls::Error::PeerIncompatible(
+            rustls::PeerIncompatible::Tls13RequiredForQuic,
+        ))
     }
 
     fn verify_tls13_signature(
@@ -87,16 +125,11 @@ impl rustls::server::danger::ClientCertVerifier for SkipClientVerification {
         cert: &rustls::pki_types::CertificateDer<'_>,
         dss: &rustls::DigitallySignedStruct,
     ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        rustls::crypto::verify_tls13_signature(
-            message,
-            cert,
-            dss,
-            &self.0.signature_verification_algorithms,
-        )
+        rustls::crypto::verify_tls13_signature(message, cert, dss, &TLS_SIGVERIFY_SCHEMES)
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        self.0.signature_verification_algorithms.supported_schemes()
+        TLS_SIGVERIFY_SCHEMES.supported_schemes()
     }
 
     fn offer_client_auth(&self) -> bool {
