@@ -8101,6 +8101,7 @@ dependencies = [
  "rayon",
  "rustls 0.23.12",
  "solana-entry",
+ "solana-geyser-plugin-manager",
  "solana-gossip",
  "solana-ledger",
  "solana-logger",
