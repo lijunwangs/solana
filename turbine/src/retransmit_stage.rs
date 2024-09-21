@@ -9,8 +9,8 @@ use {
     lru::LruCache,
     rand::Rng,
     rayon::{prelude::*, ThreadPool, ThreadPoolBuilder},
-    solana_gossip::{cluster_info::ClusterInfo, contact_info::Protocol},
     solana_geyser_plugin_manager::slot_status_notifier::SlotStatusNotifier,
+    solana_gossip::{cluster_info::ClusterInfo, contact_info::Protocol},
     solana_ledger::{
         leader_schedule_cache::LeaderScheduleCache,
         shred::{self, ShredId},
@@ -301,7 +301,12 @@ fn retransmit(
                 .reduce(HashMap::new, RetransmitSlotStats::merge)
         })
     };
-    stats.upsert_slot_stats(slot_stats, root_bank.slot(), rpc_subscriptions, slot_status_notifier);
+    stats.upsert_slot_stats(
+        slot_stats,
+        root_bank.slot(),
+        rpc_subscriptions,
+        slot_status_notifier,
+    );
     timer_start.stop();
     stats.total_time += timer_start.as_us();
     stats.maybe_submit(&root_bank, &working_bank, cluster_info, cluster_nodes_cache);
@@ -383,7 +388,7 @@ pub fn retransmitter(
     shreds_receiver: Receiver<Vec</*shred:*/ Vec<u8>>>,
     max_slots: Arc<MaxSlots>,
     rpc_subscriptions: Option<Arc<RpcSubscriptions>>,
-    slot_status_notifier: Option<SlotStatusNotifier>,    
+    slot_status_notifier: Option<SlotStatusNotifier>,
 ) -> JoinHandle<()> {
     let cluster_nodes_cache = ClusterNodesCache::<RetransmitStage>::new(
         CLUSTER_NODES_CACHE_NUM_EPOCH_CAP,
@@ -533,7 +538,10 @@ impl RetransmitStats {
 
                     if let Some(slot_status_notifier) = &slot_status_notifier {
                         if slot > root {
-                            slot_status_notifier.read().unwrap().notify_shred_received(slot);
+                            slot_status_notifier
+                                .read()
+                                .unwrap()
+                                .notify_first_shred_received(slot);
                         }
                     }
 

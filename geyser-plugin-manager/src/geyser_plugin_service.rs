@@ -111,7 +111,7 @@ impl GeyserPluginService {
         let (slot_status_observer, block_metadata_notifier, slot_status_notifier): (
             Option<SlotStatusObserver>,
             Option<BlockMetadataNotifierArc>,
-            Option<SlotStatusNotifier>
+            Option<SlotStatusNotifier>,
         ) = if account_data_notifications_enabled
             || transaction_notifications_enabled
             || entry_notifications_enabled
