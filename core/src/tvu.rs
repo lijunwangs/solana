@@ -25,7 +25,10 @@ use {
     bytes::Bytes,
     crossbeam_channel::{unbounded, Receiver, Sender},
     solana_client::connection_cache::ConnectionCache,
-    solana_geyser_plugin_manager::{block_metadata_notifier_interface::BlockMetadataNotifierArc, slot_status_notifier::SlotStatusNotifier},
+    solana_geyser_plugin_manager::{
+        block_metadata_notifier_interface::BlockMetadataNotifierArc,
+        slot_status_notifier::SlotStatusNotifier,
+    },
     solana_gossip::{
         cluster_info::ClusterInfo, duplicate_shred_handler::DuplicateShredHandler,
         duplicate_shred_listener::DuplicateShredListener,
@@ -544,6 +547,7 @@ pub mod tests {
             outstanding_repair_requests,
             cluster_slots,
             wen_restart_repair_slots,
+            None,
         )
         .expect("assume success");
         if enable_wen_restart {
