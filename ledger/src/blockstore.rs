@@ -4947,7 +4947,7 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     ]
     .iter()
     .collect();
-    info!("zzzzzz path is {:?} {:?}", path, env::var("FARF_DIR"));
+    info!("zzzzzz path is {:?} {:?} out_dir: {out_dir}", path, env::var("FARF_DIR"));
     // whack any possible collision
     let _ignored = fs::remove_dir_all(&path);
 
