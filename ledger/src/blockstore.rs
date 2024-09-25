@@ -4797,7 +4797,9 @@ pub fn create_new_ledger(
     let last_hash = entries.last().unwrap().hash;
     let version = solana_sdk::shred_version::version_from_hash(&last_hash);
 
-    let shredder = Shredder::new(0, 0, 0, version).unwrap();
+    let shredder = Shredder::new(0, 0, 0, version);
+    info!("zzzzzz after created shredder {shredder:?}");
+    let shredder = shredder.unwrap();
     let (shreds, _) = shredder.entries_to_shreds(
         &Keypair::new(),
         &entries,
