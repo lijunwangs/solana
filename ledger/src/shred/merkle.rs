@@ -1178,6 +1178,8 @@ pub(super) fn make_shreds_from_data(
     info!("zzzzzz  check point 5");
 
     let shreds: Result<Vec<_>, Error> = if let Some(chained_merkle_root) = chained_merkle_root {
+        info!("zzzzzz  check point 5.1");
+
         shreds
             .into_iter()
             .zip(next_code_index)
@@ -1202,6 +1204,8 @@ pub(super) fn make_shreds_from_data(
             )
             .collect()
     } else if shreds.len() <= 1 {
+        info!("zzzzzz  check point 5.2");
+
         shreds
             .into_iter()
             .zip(next_code_index)
@@ -1218,6 +1222,8 @@ pub(super) fn make_shreds_from_data(
             })
             .collect()
     } else {
+        info!("zzzzzz  check point 5.3");
+
         thread_pool.install(|| {
             shreds
                 .into_par_iter()
