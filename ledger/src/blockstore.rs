@@ -4941,7 +4941,7 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     let keypair = Keypair::new();
 
     info!(
-        "zzzzzz from FARF_DIR: {:?} out_dir: {out_dir:?} current_dir: {:?}",
+        "zzzzzz from FARF_DIR: {:?} out_dir: {out_dir:?} current_dir: {:?} name: {name}, keypair: {keypair:?}",
         env::var("FARF_DIR"),
         std::env::current_dir()
     );
