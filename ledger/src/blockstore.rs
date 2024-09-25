@@ -4940,6 +4940,12 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     let out_dir = env::var("FARF_DIR").unwrap_or_else(|_| "farf".to_string());
     let keypair = Keypair::new();
 
+    info!(
+        "zzzzzz from FARF_DIR: {:?} out_dir: {out_dir:?} current_dir: {:?}",
+        env::var("FARF_DIR"),
+        std::env::current_dir()
+    );
+
     let path = [
         out_dir.clone(),
         "ledger".to_string(),
