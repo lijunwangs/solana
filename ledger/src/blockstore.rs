@@ -4947,7 +4947,7 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     ]
     .iter()
     .collect();
-
+    info!("zzzzzz path is {:?}", path);
     // whack any possible collision
     let _ignored = fs::remove_dir_all(&path);
 
