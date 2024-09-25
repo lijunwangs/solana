@@ -4790,6 +4790,7 @@ pub fn create_new_ledger(
             column_options: column_options.clone(),
         },
     )?;
+    info!("zzzzzz opened blockstore");
     let ticks_per_slot = genesis_config.ticks_per_slot;
     let hashes_per_tick = genesis_config.poh_config.hashes_per_tick.unwrap_or(0);
     let entries = create_ticks(ticks_per_slot, hashes_per_tick, genesis_config.hash());
