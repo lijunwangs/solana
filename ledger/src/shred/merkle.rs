@@ -1069,6 +1069,8 @@ pub(super) fn make_shreds_from_data(
         }
         data = rest;
     }
+    info!("zzzzzz  check point 1");
+
     // If shreds.is_empty() then the data argument was empty. In that case we
     // want to generate one data shred with empty data.
     if !data.is_empty() || shreds.is_empty() {
@@ -1116,6 +1118,7 @@ pub(super) fn make_shreds_from_data(
             stats.data_buffer_residual += data_buffer_size - shred.data()?.len();
         }
     }
+    info!("zzzzzz  check point 2");
     // Only the trailing data shreds may have residual data buffer.
     debug_assert!(shreds
         .iter()
@@ -1135,6 +1138,8 @@ pub(super) fn make_shreds_from_data(
             ShredFlags::DATA_COMPLETE_SHRED
         };
     }
+    info!("zzzzzz  check point 3");
+
     // Write common and data headers into data shreds' payload buffer.
     thread_pool.install(|| {
         shreds.par_iter_mut().try_for_each(|shred| {
@@ -1154,6 +1159,8 @@ pub(super) fn make_shreds_from_data(
         .map(|(_, shreds)| shreds.collect())
         .collect();
     // Obtain the shred index for the first coding shred of each batch.
+    info!("zzzzzz  check point 4");
+
     let next_code_index: Vec<_> = shreds
         .iter()
         .scan(next_code_index, |next_code_index, chunk| {
@@ -1168,6 +1175,8 @@ pub(super) fn make_shreds_from_data(
         .collect();
     // Generate coding shreds, populate merkle proof
     // for all shreds and attach signature.
+    info!("zzzzzz  check point 5");
+
     let shreds: Result<Vec<_>, Error> = if let Some(chained_merkle_root) = chained_merkle_root {
         shreds
             .into_iter()
@@ -1227,6 +1236,8 @@ pub(super) fn make_shreds_from_data(
                 .collect()
         })
     };
+    info!("zzzzzz  check point 6");
+
     stats.gen_coding_elapsed += now.elapsed().as_micros() as u64;
     shreds
 }
