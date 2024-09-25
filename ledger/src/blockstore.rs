@@ -5083,9 +5083,9 @@ pub fn create_new_ledger_from_name_auto_delete(
         genesis_config,
         max_genesis_archive_unpacked_size,
         column_options,
-    )
-    .unwrap();
-    (ledger_path, blockhash)
+    );
+    info!("The block hash: {:?}", blockhash);
+    (ledger_path, blockhash.unwrap())
 }
 
 pub fn entries_to_test_shreds(
