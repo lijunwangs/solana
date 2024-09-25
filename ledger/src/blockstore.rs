@@ -4923,6 +4923,7 @@ macro_rules! get_tmp_ledger_path_auto_delete {
 }
 
 pub fn get_ledger_path_from_name_auto_delete(name: &str) -> TempDir {
+    info!("zzzzzz get_ledger_path_from_name_auto_delete name: {name}");
     let mut path = get_ledger_path_from_name(name);
     // path is a directory so .file_name() returns the last component of the path
     let last = path.file_name().unwrap().to_str().unwrap().to_string();
@@ -4949,7 +4950,7 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     let path = [
         out_dir.clone(),
         "ledger".to_string(),
-        format!("{}-{}", name, keypair.pubkey()),
+        format!("{}-{}", "zxxaaxxxa", keypair.pubkey()),
     ]
     .iter()
     .collect();
