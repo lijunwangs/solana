@@ -85,6 +85,8 @@ impl Shredder {
         Vec<Shred>, // data shreds
         Vec<Shred>, // coding shreds
     ) {
+        info!("zzzzz to call make_merkle_shreds_from_entries");
+
         if merkle_variant {
             return shred::make_merkle_shreds_from_entries(
                 &PAR_THREAD_POOL,
