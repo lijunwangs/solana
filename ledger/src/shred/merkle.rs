@@ -1259,6 +1259,7 @@ fn make_erasure_batch(
     is_last_in_slot: bool,
     reed_solomon_cache: &ReedSolomonCache,
 ) -> Result<(/*merkle root:*/ Hash, Vec<Shred>), Error> {
+    info!("zzzzz make_erasure_batch checkpoint 1");
     let num_data_shreds = shreds.len();
     let chained = chained_merkle_root.is_some();
     let resigned = chained && is_last_in_slot;
@@ -1280,6 +1281,8 @@ fn make_erasure_batch(
             shred.set_chained_merkle_root(&hash)?;
         }
     }
+    info!("zzzzz make_erasure_batch checkpoint 2");
+
     // Generate erasure codings for encoded shard of data shreds.
     let data: Vec<_> = shreds
         .iter()
@@ -1299,6 +1302,8 @@ fn make_erasure_batch(
         chained,
         resigned,
     };
+    info!("zzzzz make_erasure_batch checkpoint 3");
+
     let mut coding_header = CodingShredHeader {
         num_data_shreds: num_data_shreds as u16,
         num_coding_shreds: num_coding_shreds as u16,
@@ -1322,6 +1327,8 @@ fn make_erasure_batch(
         common_header.index += 1;
         coding_header.position += 1;
     }
+    info!("zzzzz make_erasure_batch checkpoint 4");
+
     // Compute Merkle tree for the erasure batch.
     let tree = make_merkle_tree(
         shreds
@@ -1347,6 +1354,8 @@ fn make_erasure_batch(
             &Shred::from_payload(shred).unwrap()
         });
     }
+    info!("zzzzz make_erasure_batch checkpoint 5");
+
     Ok((*root, shreds))
 }
 
