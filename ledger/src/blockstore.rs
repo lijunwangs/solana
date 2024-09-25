@@ -4941,7 +4941,7 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     let keypair = Keypair::new();
 
     let path = [
-        out_dir,
+        out_dir.clone(),
         "ledger".to_string(),
         format!("{}-{}", name, keypair.pubkey()),
     ]
