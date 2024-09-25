@@ -4810,6 +4810,8 @@ pub fn create_new_ledger(
         &ReedSolomonCache::default(),
         &mut ProcessShredsStats::default(),
     );
+    info!("zzzzzz after entries_to_shreds");
+
     assert!(shreds.last().unwrap().last_in_slot());
 
     blockstore.insert_shreds(shreds, None, false)?;
@@ -4831,6 +4833,9 @@ pub fn create_new_ledger(
         .args(args)
         .output()
         .unwrap();
+
+    info!("zzzzzz after tar");
+
     if !output.status.success() {
         use std::str::from_utf8;
         error!("tar stdout: {}", from_utf8(&output.stdout).unwrap_or("?"));
@@ -4848,6 +4853,8 @@ pub fn create_new_ledger(
     // ensure the genesis archive can be unpacked and it is under
     // max_genesis_archive_unpacked_size, immediately after creating it above.
     {
+        info!("zzzzzz unpacking genesis tar");
+
         let temp_dir = tempfile::tempdir_in(ledger_path).unwrap();
         // unpack into a temp dir, while completely discarding the unpacked files
         let unpack_check = unpack_genesis_archive(
@@ -4898,6 +4905,7 @@ pub fn create_new_ledger(
             )));
         }
     }
+    info!("zzzzzz done???");
 
     Ok(last_hash)
 }
