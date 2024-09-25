@@ -4828,6 +4828,9 @@ pub fn create_new_ledger(
         DEFAULT_GENESIS_FILE,
         blockstore_dir,
     ];
+
+    info!("zzzzzz going to do tar");
+
     let output = std::process::Command::new("tar")
         .env("COPYFILE_DISABLE", "1")
         .args(args)
