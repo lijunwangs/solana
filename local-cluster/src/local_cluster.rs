@@ -188,6 +188,7 @@ impl LocalCluster {
     }
 
     pub fn new(config: &mut ClusterConfig, socket_addr_space: SocketAddrSpace) -> Self {
+        info!("zzzzz creating cluster...");
         assert_eq!(config.validator_configs.len(), config.node_stakes.len());
 
         let connection_cache = if config.tpu_use_quic {
@@ -283,6 +284,8 @@ impl LocalCluster {
         let leader_vote_keypair = &keys_in_genesis[0].vote_keypair;
         let leader_pubkey = leader_keypair.pubkey();
         let leader_node = Node::new_localhost_with_pubkey(&leader_pubkey);
+
+        info!("zzzzz creating genesis config...");
 
         let GenesisConfigInfo {
             mut genesis_config,
