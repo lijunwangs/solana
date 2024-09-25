@@ -1293,10 +1293,18 @@ fn make_erasure_batch(
     debug_assert_eq!(data.iter().map(|shard| shard.len()).dedup().count(), 1);
     info!("zzzzz make_erasure_batch checkpoint 2.2");
     let mut parity = vec![vec![0u8; data[0].len()]; num_coding_shreds];
-    reed_solomon_cache
-        .get(num_data_shreds, num_coding_shreds)?
-        .encode_sep(&data, &mut parity[..])?;
-    info!("zzzzz make_erasure_batch checkpoint 2.3");
+    info!("zzzzz make_erasure_batch checkpoint 2.2.1");
+
+    let erasure = reed_solomon_cache.get(num_data_shreds, num_coding_shreds);
+
+    info!("zzzzz make_erasure_batch checkpoint 2.2.2 {erasure:?}");
+
+    let erasure = erasure?;
+
+    let result = erasure.encode_sep(&data, &mut parity[..]);
+
+    info!("zzzzz make_erasure_batch checkpoint 2.3 {result:?}");
+    result?;
 
     let mut shreds: Vec<_> = shreds.into_iter().map(Shred::ShredData).collect();
     // Initialize coding shreds from erasure coding shards.
