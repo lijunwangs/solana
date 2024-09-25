@@ -326,6 +326,8 @@ impl LocalCluster {
         let leader_keypair = Arc::new(leader_keypair.insecure_clone());
         let leader_vote_keypair = Arc::new(leader_vote_keypair.insecure_clone());
 
+        info!("zzzzzzz creating validator...");
+
         let leader_server = Validator::new(
             leader_node,
             leader_keypair.clone(),
@@ -347,6 +349,8 @@ impl LocalCluster {
             Arc::new(RwLock::new(None)),
         )
         .expect("assume successful validator start");
+
+        info!("zzzzzzz created validator...");
 
         let mut validators = HashMap::new();
         let leader_info = ValidatorInfo {
