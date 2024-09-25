@@ -105,8 +105,12 @@ impl Shredder {
             .into_iter()
             .partition(Shred::is_data);
         }
+        info!("zzzzz to call entries_to_data_shreds");
         let data_shreds =
             self.entries_to_data_shreds(keypair, entries, is_last_in_slot, next_shred_index, stats);
+
+        info!("zzzzz to call data_shreds_to_coding_shreds");
+
         let coding_shreds = Self::data_shreds_to_coding_shreds(
             keypair,
             &data_shreds,
@@ -115,6 +119,7 @@ impl Shredder {
             stats,
         )
         .unwrap();
+        info!("zzzzz done entries_to_shreds");
         (data_shreds, coding_shreds)
     }
 
