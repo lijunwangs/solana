@@ -4964,7 +4964,7 @@ pub fn get_ledger_path_from_name(name: &str) -> PathBuf {
     let path = [
         out_dir.clone(),
         "ledger".to_string(),
-        format!("{}-{}", "zxxaaxxxa", keypair.pubkey()),
+        format!("{}-{}", name, keypair.pubkey()),
     ]
     .iter()
     .collect();
