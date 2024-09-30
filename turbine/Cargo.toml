@@ -25,8 +25,8 @@ rayon = { workspace = true }
 rustls = { workspace = true }
 solana-entry = { workspace = true }
 solana-feature-set = { workspace = true }
-solana-gossip = { workspace = true }
 solana-geyser-plugin-manager = { workspace = true }
+solana-gossip = { workspace = true }
 solana-ledger = { workspace = true }
 solana-measure = { workspace = true }
 solana-metrics = { workspace = true }
