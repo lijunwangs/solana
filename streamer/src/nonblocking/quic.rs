@@ -323,22 +323,6 @@ async fn run_server(
                 .total_incoming_connection_attempts
                 .fetch_add(1, Ordering::Relaxed);
 
-            let open_connections = stats.open_connections.load(Ordering::Relaxed);
-            if open_connections >= max_concurrent_connections {
-                debug!(
-                    "There are too many concurrent connections opened already: open: {}, max: {}",
-                    open_connections, max_concurrent_connections
-                );
-                stats
-                    .refused_connections_too_many_open_connections
-                    .fetch_add(1, Ordering::Relaxed);
-                incoming.refuse();
-                stats.open_connections.fetch_sub(1, Ordering::Relaxed);
-
-                continue;
-            }
-            stats.open_connections.fetch_add(1, Ordering::Relaxed);
-
             let remote_address = incoming.remote_address();
 
             // first check overall connection rate limit:
@@ -351,7 +335,6 @@ async fn run_server(
                     .connection_rate_limited_across_all
                     .fetch_add(1, Ordering::Relaxed);
                 incoming.ignore();
-                stats.open_connections.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -373,6 +356,22 @@ async fn run_server(
                 incoming.ignore();
                 continue;
             }
+
+            let open_connections = stats.open_connections.load(Ordering::Relaxed);
+            if open_connections >= max_concurrent_connections {
+                debug!(
+                    "There are too many concurrent connections opened already: open: {}, max: {}",
+                    open_connections, max_concurrent_connections
+                );
+                stats
+                    .refused_connections_too_many_open_connections
+                    .fetch_add(1, Ordering::Relaxed);
+                incoming.refuse();
+                stats.open_connections.fetch_sub(1, Ordering::Relaxed);
+
+                continue;
+            }
+            stats.open_connections.fetch_add(1, Ordering::Relaxed);
 
             stats
                 .outstanding_incoming_connection_attempts
