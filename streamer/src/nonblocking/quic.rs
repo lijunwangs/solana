@@ -333,6 +333,8 @@ async fn run_server(
                     .refused_connections_too_many_open_connections
                     .fetch_add(1, Ordering::Relaxed);
                 incoming.refuse();
+                stats.open_connections.fetch_sub(1, Ordering::Relaxed);
+
                 continue;
             }
             stats.open_connections.fetch_add(1, Ordering::Relaxed);
@@ -349,6 +351,7 @@ async fn run_server(
                     .connection_rate_limited_across_all
                     .fetch_add(1, Ordering::Relaxed);
                 incoming.ignore();
+                stats.open_connections.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
 
@@ -393,6 +396,7 @@ async fn run_server(
                     ));
                 }
                 Err(err) => {
+                    stats.open_connections.fetch_sub(1, Ordering::Relaxed);
                     debug!("Incoming::accept(): error {:?}", err);
                 }
             }
