@@ -244,6 +244,7 @@ pub fn spawn_server_multi(
 
 struct ClientConnectionTracker {
     stats: Arc<StreamerStats>,
+    prev_open_connections: usize,
 }
 
 /// This is required by ConnectionEntry for supporting debug format.
@@ -266,11 +267,18 @@ impl Drop for ClientConnectionTracker {
 }
 
 impl ClientConnectionTracker {
-    /// Create StreamerClientConnection and increase open connection count.
+    /// Create StreamerClientConnection and increment open connection count.
     fn new(stats: Arc<StreamerStats>) -> Self {
-        stats.open_connections.fetch_add(1, Ordering::Relaxed);
+        let prev_open_connections = stats.open_connections.fetch_add(1, Ordering::Relaxed);
+        Self {
+            stats,
+            prev_open_connections,
+        }
+    }
 
-        Self { stats }
+    /// Get the previous open connections before our increment.
+    fn get_prev_open_connections(&self) -> usize {
+        self.prev_open_connections
     }
 }
 
@@ -395,7 +403,9 @@ async fn run_server(
                 continue;
             }
 
-            let open_connections = stats.open_connections.load(Ordering::Relaxed);
+            let client_connection_tracker: ClientConnectionTracker =
+                ClientConnectionTracker::new(stats.clone());
+            let open_connections = client_connection_tracker.get_prev_open_connections();
             if open_connections >= max_concurrent_connections {
                 debug!(
                     "There are too many concurrent connections opened already: open: {}, max: {}",
@@ -408,7 +418,6 @@ async fn run_server(
 
                 continue;
             }
-            let client_connection_tracker = ClientConnectionTracker::new(stats.clone());
 
             stats
                 .outstanding_incoming_connection_attempts
