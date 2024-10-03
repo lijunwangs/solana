@@ -185,7 +185,7 @@ fn retransmit(
     shred_deduper: &mut ShredDeduper<2>,
     max_slots: &MaxSlots,
     rpc_subscriptions: Option<&RpcSubscriptions>,
-    slot_status_notifier: Option<SlotStatusNotifier>,
+    slot_status_notifier: Option<&SlotStatusNotifier>,
 ) -> Result<(), RecvTimeoutError> {
     const RECV_TIMEOUT: Duration = Duration::from_secs(1);
     let mut shreds = shreds_receiver.recv_timeout(RECV_TIMEOUT)?;
@@ -420,7 +420,7 @@ pub fn retransmitter(
                 &mut shred_deduper,
                 &max_slots,
                 rpc_subscriptions.as_deref(),
-                slot_status_notifier.clone(),
+                slot_status_notifier.as_ref(),
             ) {
                 Ok(()) => (),
                 Err(RecvTimeoutError::Timeout) => (),
@@ -518,7 +518,7 @@ impl RetransmitStats {
         feed: I,
         root: Slot,
         rpc_subscriptions: Option<&RpcSubscriptions>,
-        slot_status_notifier: Option<SlotStatusNotifier>,
+        slot_status_notifier: Option<&SlotStatusNotifier>,
     ) where
         I: IntoIterator<Item = (Slot, RetransmitSlotStats)>,
     {
@@ -536,7 +536,7 @@ impl RetransmitStats {
                         }
                     }
 
-                    if let Some(slot_status_notifier) = &slot_status_notifier {
+                    if let Some(slot_status_notifier) = slot_status_notifier {
                         if slot > root {
                             slot_status_notifier
                                 .read()
