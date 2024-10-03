@@ -244,7 +244,6 @@ pub fn spawn_server_multi(
 
 struct ClientConnectionTracker {
     stats: Arc<StreamerStats>,
-    prev_open_connections: usize,
 }
 
 /// This is required by ConnectionEntry for supporting debug format.
@@ -267,18 +266,20 @@ impl Drop for ClientConnectionTracker {
 }
 
 impl ClientConnectionTracker {
-    /// Create StreamerClientConnection and increment open connection count.
-    fn new(stats: Arc<StreamerStats>) -> Self {
-        let prev_open_connections = stats.open_connections.fetch_add(1, Ordering::Relaxed);
-        Self {
-            stats,
-            prev_open_connections,
+    /// Check the max_concurrent_connections limit and if it is within the limit
+    /// create ClientConnectionTracker and increment open connection count. Otherwise returns Err
+    fn new(stats: Arc<StreamerStats>, max_concurrent_connections: usize) -> Result<Self, ()> {
+        let open_connections = stats.open_connections.fetch_add(1, Ordering::Relaxed);
+        if open_connections >= max_concurrent_connections {
+            stats.open_connections.fetch_sub(1, Ordering::Relaxed);
+            debug!(
+                "There are too many concurrent connections opened already: open: {}, max: {}",
+                open_connections, max_concurrent_connections
+            );
+            return Err(());
         }
-    }
 
-    /// Get the previous open connections before our increment.
-    fn get_prev_open_connections(&self) -> usize {
-        self.prev_open_connections
+        Ok(Self { stats })
     }
 }
 
@@ -403,21 +404,16 @@ async fn run_server(
                 continue;
             }
 
-            let client_connection_tracker: ClientConnectionTracker =
-                ClientConnectionTracker::new(stats.clone());
-            let open_connections = client_connection_tracker.get_prev_open_connections();
-            if open_connections >= max_concurrent_connections {
-                debug!(
-                    "There are too many concurrent connections opened already: open: {}, max: {}",
-                    open_connections, max_concurrent_connections
-                );
+            let client_connection_tracker =
+                ClientConnectionTracker::new(stats.clone(), max_concurrent_connections);
+            if client_connection_tracker.is_err() {
                 stats
                     .refused_connections_too_many_open_connections
                     .fetch_add(1, Ordering::Relaxed);
                 incoming.refuse();
-
                 continue;
             }
+            let client_connection_tracker = client_connection_tracker.unwrap();
 
             stats
                 .outstanding_incoming_connection_attempts
@@ -2089,7 +2085,7 @@ pub mod test {
                 .try_add_connection(
                     ConnectionTableKey::IP(socket.ip()),
                     socket.port(),
-                    ClientConnectionTracker::new(stats.clone()),
+                    ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                     None,
                     ConnectionPeerType::Unstaked,
                     i as u64,
@@ -2102,7 +2098,7 @@ pub mod test {
             .try_add_connection(
                 ConnectionTableKey::IP(sockets[0].ip()),
                 sockets[0].port(),
-                ClientConnectionTracker::new(stats.clone()),
+                ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                 None,
                 ConnectionPeerType::Unstaked,
                 5,
@@ -2144,7 +2140,7 @@ pub mod test {
                 .try_add_connection(
                     ConnectionTableKey::Pubkey(*pubkey),
                     0,
-                    ClientConnectionTracker::new(stats.clone()),
+                    ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                     None,
                     ConnectionPeerType::Unstaked,
                     i as u64,
@@ -2179,7 +2175,7 @@ pub mod test {
                 .try_add_connection(
                     ConnectionTableKey::Pubkey(pubkey),
                     0,
-                    ClientConnectionTracker::new(stats.clone()),
+                    ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                     None,
                     ConnectionPeerType::Unstaked,
                     i as u64,
@@ -2194,7 +2190,7 @@ pub mod test {
             .try_add_connection(
                 ConnectionTableKey::Pubkey(pubkey),
                 0,
-                ClientConnectionTracker::new(stats.clone()),
+                ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                 None,
                 ConnectionPeerType::Unstaked,
                 10,
@@ -2209,7 +2205,7 @@ pub mod test {
             .try_add_connection(
                 ConnectionTableKey::Pubkey(pubkey2),
                 0,
-                ClientConnectionTracker::new(stats.clone()),
+                ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                 None,
                 ConnectionPeerType::Unstaked,
                 10,
@@ -2247,7 +2243,7 @@ pub mod test {
                 .try_add_connection(
                     ConnectionTableKey::IP(socket.ip()),
                     socket.port(),
-                    ClientConnectionTracker::new(stats.clone()),
+                    ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                     None,
                     ConnectionPeerType::Staked((i + 1) as u64),
                     i as u64,
@@ -2289,7 +2285,7 @@ pub mod test {
                 .try_add_connection(
                     ConnectionTableKey::IP(socket.ip()),
                     socket.port(),
-                    ClientConnectionTracker::new(stats.clone()),
+                    ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                     None,
                     ConnectionPeerType::Unstaked,
                     (i * 2) as u64,
@@ -2301,7 +2297,7 @@ pub mod test {
                 .try_add_connection(
                     ConnectionTableKey::IP(socket.ip()),
                     socket.port(),
-                    ClientConnectionTracker::new(stats.clone()),
+                    ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                     None,
                     ConnectionPeerType::Unstaked,
                     (i * 2 + 1) as u64,
@@ -2316,7 +2312,7 @@ pub mod test {
             .try_add_connection(
                 ConnectionTableKey::IP(single_connection_addr.ip()),
                 single_connection_addr.port(),
-                ClientConnectionTracker::new(stats.clone()),
+                ClientConnectionTracker::new(stats.clone(), 1000).unwrap(),
                 None,
                 ConnectionPeerType::Unstaked,
                 (num_ips * 2) as u64,
@@ -2446,5 +2442,17 @@ pub mod test {
             expected_num_txs
         );
         assert!(stats.throttled_unstaked_streams.load(Ordering::Relaxed) > 0);
+    }
+
+    #[test]
+    fn test_client_connection_tracker() {
+        let stats = Arc::new(StreamerStats::default());
+        let tracker_1 = ClientConnectionTracker::new(stats.clone(), 1);
+        assert!(tracker_1.is_ok());
+        assert!(ClientConnectionTracker::new(stats.clone(), 1).is_err());
+        assert_eq!(stats.open_connections.load(Ordering::Relaxed), 1);
+        // dropping the connection, concurrent connections should become 0
+        drop(tracker_1);
+        assert_eq!(stats.open_connections.load(Ordering::Relaxed), 0);
     }
 }
