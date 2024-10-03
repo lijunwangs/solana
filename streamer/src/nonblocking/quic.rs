@@ -405,42 +405,41 @@ async fn run_server(
             }
 
             let client_connection_tracker =
-                ClientConnectionTracker::new(stats.clone(), max_concurrent_connections);
-            match client_connection_tracker {
-                Err(_) => {
-                    stats
-                        .refused_connections_too_many_open_connections
-                        .fetch_add(1, Ordering::Relaxed);
-                    incoming.refuse();
-                    continue;
-                }
-                Ok(client_connection_tracker) => {
-                    stats
-                        .outstanding_incoming_connection_attempts
-                        .fetch_add(1, Ordering::Relaxed);
-                    let connecting = incoming.accept();
-                    match connecting {
-                        Ok(connecting) => {
-                            tokio::spawn(setup_connection(
-                                connecting,
-                                client_connection_tracker,
-                                unstaked_connection_table.clone(),
-                                staked_connection_table.clone(),
-                                sender.clone(),
-                                max_connections_per_peer,
-                                staked_nodes.clone(),
-                                max_staked_connections,
-                                max_unstaked_connections,
-                                max_streams_per_ms,
-                                stats.clone(),
-                                wait_for_chunk_timeout,
-                                stream_load_ema.clone(),
-                            ));
-                        }
-                        Err(err) => {
-                            debug!("Incoming::accept(): error {:?}", err);
-                        }
+                match ClientConnectionTracker::new(stats.clone(), max_concurrent_connections) {
+                    Ok(client_connection_tracker) => client_connection_tracker,
+                    Err(_) => {
+                        stats
+                            .refused_connections_too_many_open_connections
+                            .fetch_add(1, Ordering::Relaxed);
+                        incoming.refuse();
+                        continue;
                     }
+                };
+
+            stats
+                .outstanding_incoming_connection_attempts
+                .fetch_add(1, Ordering::Relaxed);
+            let connecting = incoming.accept();
+            match connecting {
+                Ok(connecting) => {
+                    tokio::spawn(setup_connection(
+                        connecting,
+                        client_connection_tracker,
+                        unstaked_connection_table.clone(),
+                        staked_connection_table.clone(),
+                        sender.clone(),
+                        max_connections_per_peer,
+                        staked_nodes.clone(),
+                        max_staked_connections,
+                        max_unstaked_connections,
+                        max_streams_per_ms,
+                        stats.clone(),
+                        wait_for_chunk_timeout,
+                        stream_load_ema.clone(),
+                    ));
+                }
+                Err(err) => {
+                    debug!("Incoming::accept(): error {:?}", err);
                 }
             }
         } else {
