@@ -404,17 +404,15 @@ async fn run_server(
                 continue;
             }
 
-            let client_connection_tracker =
-                match ClientConnectionTracker::new(stats.clone(), max_concurrent_connections) {
-                    Ok(client_connection_tracker) => client_connection_tracker,
-                    Err(_) => {
-                        stats
-                            .refused_connections_too_many_open_connections
-                            .fetch_add(1, Ordering::Relaxed);
-                        incoming.refuse();
-                        continue;
-                    }
-                };
+            let Ok(client_connection_tracker) =
+                ClientConnectionTracker::new(stats.clone(), max_concurrent_connections)
+            else {
+                stats
+                    .refused_connections_too_many_open_connections
+                    .fetch_add(1, Ordering::Relaxed);
+                incoming.refuse();
+                continue;
+            };
 
             stats
                 .outstanding_incoming_connection_attempts
