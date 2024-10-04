@@ -322,6 +322,9 @@ pub enum SlotStatus {
 
     /// First Shred Received
     FirstShredReceived,
+
+    /// Completed
+    Completed,
 }
 
 impl SlotStatus {
@@ -331,6 +334,7 @@ impl SlotStatus {
             SlotStatus::Processed => "processed",
             SlotStatus::Rooted => "rooted",
             SlotStatus::FirstShredReceived => "first_shread_received",
+            SlotStatus::Completed => "completed",
         }
     }
 }
