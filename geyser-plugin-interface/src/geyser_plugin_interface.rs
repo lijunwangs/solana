@@ -323,7 +323,7 @@ pub enum SlotStatus {
     /// First Shred Received
     FirstShredReceived,
 
-    /// Completed
+    /// All shreds for the slot have been received.
     Completed,
 }
 
