@@ -2169,8 +2169,11 @@ impl ReplayStage {
             let root_slot = bank_forks.read().unwrap().root();
             datapoint_info!("replay_stage-my_leader_slot", ("slot", poh_slot, i64),);
             info!(
-                "new fork:{} parent:{} (leader) root:{}",
-                poh_slot, parent_slot, root_slot
+                "new fork:{} parent:{} (leader) root:{} notifier?? {}",
+                poh_slot,
+                parent_slot,
+                root_slot,
+                slot_status_notifier.is_some()
             );
 
             let root_distance = poh_slot - root_slot;
@@ -4011,10 +4014,11 @@ impl ReplayStage {
                     .slot_leader_at(child_slot, Some(parent_bank))
                     .unwrap();
                 info!(
-                    "new fork:{} parent:{} root:{}",
+                    "new fork:{} parent:{} root:{} notifier? {}",
                     child_slot,
                     parent_slot,
-                    forks.root()
+                    forks.root(),
+                    slot_status_notifier.is_some()
                 );
                 let child_bank = Self::new_bank_from_parent_with_notify(
                     parent_bank.clone(),
