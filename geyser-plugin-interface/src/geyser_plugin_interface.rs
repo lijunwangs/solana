@@ -338,7 +338,7 @@ impl SlotStatus {
             SlotStatus::Rooted => "rooted",
             SlotStatus::FirstShredReceived => "first_shread_received",
             SlotStatus::Completed => "completed",
-            Self::CreatedBank => "created_bank",
+            SlotStatus::CreatedBank => "created_bank",
         }
     }
 }
