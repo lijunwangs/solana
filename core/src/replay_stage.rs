@@ -54,7 +54,7 @@ use {
     solana_rpc::{
         optimistically_confirmed_bank_tracker::{BankNotification, BankNotificationSenderConfig},
         rpc_subscriptions::RpcSubscriptions,
-        slot_status_notifier::{self, SlotStatusNotifier},
+        slot_status_notifier::SlotStatusNotifier,
     },
     solana_rpc_client_api::response::SlotUpdate,
     solana_runtime::{
@@ -1126,6 +1126,7 @@ impl ReplayStage {
                         &poh_recorder,
                         &leader_schedule_cache,
                         &rpc_subscriptions,
+                        &slot_status_notifier,
                         &mut progress,
                         &retransmit_slots_sender,
                         &mut skipped_slots_info,
@@ -2056,7 +2057,7 @@ impl ReplayStage {
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         leader_schedule_cache: &Arc<LeaderScheduleCache>,
         rpc_subscriptions: &Arc<RpcSubscriptions>,
-        slot_status_notifier: Option<SlotStatusNotifier>,
+        slot_status_notifier: &Option<SlotStatusNotifier>,
         progress_map: &mut ProgressMap,
         retransmit_slots_sender: &Sender<Slot>,
         skipped_slots_info: &mut SkippedSlotsInfo,
@@ -4077,7 +4078,7 @@ impl ReplayStage {
             slot_status_notifier
                 .read()
                 .unwrap()
-                .notify_bank_created(slot, parent);
+                .notify_created_bank(slot, parent.slot());
         }
         Bank::new_from_parent_with_options(parent, leader, slot, new_bank_options)
     }
@@ -4425,6 +4426,7 @@ pub(crate) mod tests {
             &bank_forks,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &mut replay_timing,
         );
@@ -4453,6 +4455,7 @@ pub(crate) mod tests {
             &bank_forks,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &mut replay_timing,
         );
@@ -6322,6 +6325,7 @@ pub(crate) mod tests {
             &bank_forks,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &mut replay_timing,
         );
@@ -6351,6 +6355,7 @@ pub(crate) mod tests {
             &bank_forks,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &mut replay_timing,
         );
@@ -6381,6 +6386,7 @@ pub(crate) mod tests {
             &bank_forks,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &mut replay_timing,
         );
@@ -6410,6 +6416,7 @@ pub(crate) mod tests {
             &bank_forks,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &mut replay_timing,
         );
@@ -8344,6 +8351,7 @@ pub(crate) mod tests {
             &poh_recorder,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &retransmit_slots_sender,
             &mut SkippedSlotsInfo::default(),
@@ -9012,6 +9020,7 @@ pub(crate) mod tests {
             &poh_recorder,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &retransmit_slots_sender,
             &mut SkippedSlotsInfo::default(),
@@ -9038,6 +9047,7 @@ pub(crate) mod tests {
             &poh_recorder,
             &leader_schedule_cache,
             &rpc_subscriptions,
+            &None,
             &mut progress,
             &retransmit_slots_sender,
             &mut SkippedSlotsInfo::default(),
