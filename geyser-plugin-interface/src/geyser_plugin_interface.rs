@@ -326,7 +326,7 @@ pub enum SlotStatus {
     /// All shreds for the slot have been received.
     Completed,
 
-    /// A new bank is created with the slot
+    /// A new bank fork is created with the slot
     CreatedBank,
 }
 
