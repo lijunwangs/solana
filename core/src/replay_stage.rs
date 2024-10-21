@@ -4901,17 +4901,17 @@ pub(crate) mod tests {
         );
     }
 
-    struct SlotStatusNotifierForTest<'a> {
-        dead_slots: &'a std::sync::LazyLock<Mutex<HashSet<Slot>>>,
+    struct SlotStatusNotifierForTest {
+        dead_slots: Arc<Mutex<HashSet<Slot>>>,
     }
 
-    impl<'a> SlotStatusNotifierForTest<'a> {
-        pub fn new(dead_slots: &'a std::sync::LazyLock<Mutex<HashSet<Slot>>>) -> Self {
+    impl SlotStatusNotifierForTest {
+        pub fn new(dead_slots: Arc<Mutex<HashSet<Slot>>>) -> Self {
             Self { dead_slots }
         }
     }
 
-    impl<'a> SlotStatusNotifierInterface for SlotStatusNotifierForTest<'a> {
+    impl SlotStatusNotifierInterface for SlotStatusNotifierForTest {
         fn notify_slot_confirmed(&self, _slot: Slot, _parent: Option<Slot>) {}
 
         fn notify_slot_processed(&self, _slot: Slot, _parent: Option<Slot>) {}
@@ -4928,9 +4928,6 @@ pub(crate) mod tests {
             self.dead_slots.lock().unwrap().insert(slot);
         }
     }
-
-    static DEAD_SLOTS: std::sync::LazyLock<Mutex<HashSet<Slot>>> =
-        std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
 
     // Given a shred and a fatal expected error, check that replaying that shred causes causes the fork to be
     // marked as dead. Returns the error for caller to verify.
@@ -5000,9 +4997,10 @@ pub(crate) mod tests {
             ));
             let (ancestor_hashes_replay_update_sender, _ancestor_hashes_replay_update_receiver) =
                 unbounded();
+            let dead_slots = Arc::new(Mutex::new(HashSet::default()));
 
             let slot_status_notifier: Option<SlotStatusNotifier> = Some(Arc::new(RwLock::new(
-                SlotStatusNotifierForTest::new(&DEAD_SLOTS),
+                SlotStatusNotifierForTest::new(dead_slots.clone()),
             )));
 
             if let Err(err) = &res {
@@ -5023,7 +5021,7 @@ pub(crate) mod tests {
                     &mut PurgeRepairSlotCounter::default(),
                 );
             }
-            assert!(DEAD_SLOTS.lock().unwrap().contains(&bank1.slot()));
+            assert!(dead_slots.lock().unwrap().contains(&bank1.slot()));
             // Check that the erroring bank was marked as dead in the progress map
             assert!(progress
                 .get(&bank1.slot())
