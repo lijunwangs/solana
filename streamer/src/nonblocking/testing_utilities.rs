@@ -10,7 +10,7 @@ use {
         streamer::StakedNodes,
         tls_certificates::new_dummy_x509_certificate,
     },
-    crossbeam_channel::unbounded,
+    crossbeam_channel::{unbounded, Receiver},
     quinn::{
         crypto::rustls::QuicClientConfig, ClientConfig, Connection, EndpointConfig, IdleTimeout,
         TokioRuntime, TransportConfig,
@@ -24,8 +24,9 @@ use {
     std::{
         net::{SocketAddr, UdpSocket},
         sync::{atomic::AtomicBool, Arc, RwLock},
+        time::{Duration, Instant},
     },
-    tokio::task::JoinHandle,
+    tokio::{task::JoinHandle, time::sleep},
 };
 
 #[derive(Debug)]
@@ -134,37 +135,39 @@ pub struct SpawnTestServerResult {
     pub stats: Arc<StreamerStats>,
 }
 
+pub fn create_quic_server_sockets() -> Vec<UdpSocket> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::{
+            os::fd::{FromRawFd, IntoRawFd},
+            str::FromStr as _,
+        };
+        (0..10)
+            .map(|_| {
+                let sock = socket2::Socket::new(
+                    socket2::Domain::IPV4,
+                    socket2::Type::DGRAM,
+                    Some(socket2::Protocol::UDP),
+                )
+                .unwrap();
+                sock.set_reuse_port(true).unwrap();
+                sock.bind(&SocketAddr::from_str("127.0.0.1:0").unwrap().into())
+                    .unwrap();
+                unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
+            })
+            .collect::<Vec<_>>()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        vec![UdpSocket::bind("127.0.0.1:0").unwrap()]
+    }
+}
+
 pub fn setup_quic_server(
     option_staked_nodes: Option<StakedNodes>,
     config: TestServerConfig,
 ) -> SpawnTestServerResult {
-    let sockets = {
-        #[cfg(not(target_os = "windows"))]
-        {
-            use std::{
-                os::fd::{FromRawFd, IntoRawFd},
-                str::FromStr as _,
-            };
-            (0..10)
-                .map(|_| {
-                    let sock = socket2::Socket::new(
-                        socket2::Domain::IPV4,
-                        socket2::Type::DGRAM,
-                        Some(socket2::Protocol::UDP),
-                    )
-                    .unwrap();
-                    sock.set_reuse_port(true).unwrap();
-                    sock.bind(&SocketAddr::from_str("127.0.0.1:0").unwrap().into())
-                        .unwrap();
-                    unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
-                })
-                .collect::<Vec<_>>()
-        }
-        #[cfg(target_os = "windows")]
-        {
-            vec![UdpSocket::bind("127.0.0.1:0").unwrap()]
-        }
-    };
+    let sockets = create_quic_server_sockets();
     setup_quic_server_with_sockets(sockets, option_staked_nodes, config)
 }
 
@@ -238,4 +241,47 @@ pub async fn make_client_endpoint(
         .expect("Endpoint configuration should be correct")
         .await
         .expect("Test server should be already listening on 'localhost'")
+}
+
+pub async fn check_multiple_streams(
+    receiver: Receiver<PacketBatch>,
+    server_address: SocketAddr,
+    client_keypair: Option<&Keypair>,
+) {
+    let conn1 = Arc::new(make_client_endpoint(&server_address, client_keypair).await);
+    let conn2 = Arc::new(make_client_endpoint(&server_address, client_keypair).await);
+    let mut num_expected_packets = 0;
+    for i in 0..10 {
+        info!("sending: {}", i);
+        let c1 = conn1.clone();
+        let c2 = conn2.clone();
+        let mut s1 = c1.open_uni().await.unwrap();
+        let mut s2 = c2.open_uni().await.unwrap();
+        s1.write_all(&[0u8]).await.unwrap();
+        s1.finish().unwrap();
+        s2.write_all(&[0u8]).await.unwrap();
+        s2.finish().unwrap();
+        num_expected_packets += 2;
+        sleep(Duration::from_millis(200)).await;
+    }
+    let mut all_packets = vec![];
+    let now = Instant::now();
+    let mut total_packets = 0;
+    while now.elapsed().as_secs() < 10 {
+        if let Ok(packets) = receiver.try_recv() {
+            total_packets += packets.len();
+            all_packets.push(packets)
+        } else {
+            sleep(Duration::from_secs(1)).await;
+        }
+        if total_packets == num_expected_packets {
+            break;
+        }
+    }
+    for batch in all_packets {
+        for p in batch.iter() {
+            assert_eq!(p.meta().size, 1);
+        }
+    }
+    assert_eq!(total_packets, num_expected_packets);
 }
