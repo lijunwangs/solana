@@ -158,6 +158,7 @@ impl Tpu {
 
         let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
+        // Streamer for Votes:
         let SpawnServerResult {
             endpoints: _,
             thread: tpu_vote_quic_t,
@@ -169,10 +170,10 @@ impl Tpu {
             keypair,
             packet_sender.clone(),
             exit.clone(),
-            MAX_QUIC_CONNECTIONS_PER_PEER,
+            1,
             staked_nodes.clone(),
-            MAX_STAKED_CONNECTIONS,
-            MAX_UNSTAKED_CONNECTIONS,
+            MAX_STAKED_CONNECTIONS.saturating_add(MAX_UNSTAKED_CONNECTIONS),
+            0,
             DEFAULT_MAX_STREAMS_PER_MS,
             tpu_max_connections_per_ipaddr_per_minute,
             DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
@@ -180,6 +181,7 @@ impl Tpu {
         )
         .unwrap();
 
+        // Streamer for TPU
         let SpawnServerResult {
             endpoints: _,
             thread: tpu_quic_t,
@@ -201,6 +203,7 @@ impl Tpu {
         )
         .unwrap();
 
+        // Streamer for TPU forward
         let SpawnServerResult {
             endpoints: _,
             thread: tpu_forwards_quic_t,
