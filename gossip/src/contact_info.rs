@@ -259,6 +259,7 @@ impl ContactInfo {
     set_socket!(set_tpu_vote_quic, SOCKET_TAG_TPU_VOTE_QUIC);
     set_socket!(set_tvu, SOCKET_TAG_TVU);
     set_socket!(set_tvu_quic, SOCKET_TAG_TVU_QUIC);
+    set_socket!(set_tpu_vote_quic, SOCKET_TAG_TPU_VOTE_QUIC);
 
     remove_socket!(
         remove_serve_repair,
@@ -272,6 +273,12 @@ impl ContactInfo {
         SOCKET_TAG_TPU_FORWARDS_QUIC
     );
     remove_socket!(remove_tvu, SOCKET_TAG_TVU, SOCKET_TAG_TVU_QUIC);
+
+    remove_socket!(
+        remove_tpu_vote,
+        SOCKET_TAG_TPU_VOTE,
+        SOCKET_TAG_TPU_VOTE_QUIC
+    );
 
     #[cfg(test)]
     fn get_socket(&self, key: u8) -> Result<SocketAddr, Error> {
