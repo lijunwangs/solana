@@ -168,7 +168,7 @@ impl Tpu {
             "quic_streamer_tpu_vote",
             tpu_vote_quic_sockets,
             keypair,
-            packet_sender.clone(),
+            vote_packet_sender.clone(),
             exit.clone(),
             1,
             staked_nodes.clone(),
