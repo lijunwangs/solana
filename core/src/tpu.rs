@@ -170,14 +170,16 @@ impl Tpu {
             keypair,
             vote_packet_sender.clone(),
             exit.clone(),
-            1,
             staked_nodes.clone(),
-            MAX_STAKED_CONNECTIONS.saturating_add(MAX_UNSTAKED_CONNECTIONS),
-            0,
-            DEFAULT_MAX_STREAMS_PER_MS,
-            tpu_max_connections_per_ipaddr_per_minute,
-            DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
-            tpu_coalesce,
+            QuicServerParams {
+                max_connections_per_peer: 1,
+                max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
+                coalesce: tpu_coalesce,
+                max_staked_connections: MAX_STAKED_CONNECTIONS
+                    .saturating_add(MAX_UNSTAKED_CONNECTIONS),
+                max_unstaked_connections: 0,
+                ..QuicServerParams::default()
+            },
         )
         .unwrap();
 
