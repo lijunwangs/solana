@@ -273,12 +273,6 @@ impl ContactInfo {
     );
     remove_socket!(remove_tvu, SOCKET_TAG_TVU, SOCKET_TAG_TVU_QUIC);
 
-    remove_socket!(
-        remove_tpu_vote,
-        SOCKET_TAG_TPU_VOTE,
-        SOCKET_TAG_TPU_VOTE_QUIC
-    );
-
     #[cfg(test)]
     fn get_socket(&self, key: u8) -> Result<SocketAddr, Error> {
         let mut port = 0u16;
