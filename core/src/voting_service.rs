@@ -4,7 +4,7 @@ use {
         next_leader::upcoming_leader_tpu_vote_sockets,
     },
     crossbeam_channel::Receiver,
-    solana_gossip::cluster_info::ClusterInfo,
+    solana_gossip::{cluster_info::ClusterInfo, contact_info::Protocol},
     solana_measure::measure::Measure,
     solana_poh::poh_recorder::PohRecorder,
     solana_sdk::{
@@ -48,6 +48,7 @@ impl VotingService {
         cluster_info: Arc<ClusterInfo>,
         poh_recorder: Arc<RwLock<PohRecorder>>,
         tower_storage: Arc<dyn TowerStorage>,
+        vote_protocol: Protocol,
     ) -> Self {
         let thread_hdl = Builder::new()
             .name("solVoteService".to_string())
@@ -58,6 +59,7 @@ impl VotingService {
                         &poh_recorder,
                         tower_storage.as_ref(),
                         vote_op,
+                        vote_protocol,
                     );
                 }
             })
@@ -70,6 +72,7 @@ impl VotingService {
         poh_recorder: &RwLock<PohRecorder>,
         tower_storage: &dyn TowerStorage,
         vote_op: VoteOp,
+        vote_protocol: Protocol,
     ) {
         if let VoteOp::PushVote { saved_tower, .. } = &vote_op {
             let mut measure = Measure::start("tower storage save");
@@ -89,6 +92,7 @@ impl VotingService {
             cluster_info,
             poh_recorder,
             UPCOMING_LEADER_FANOUT_SLOTS,
+            vote_protocol,
         );
 
         if !upcoming_leader_sockets.is_empty() {

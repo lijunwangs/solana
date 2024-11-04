@@ -4245,7 +4245,7 @@ pub(crate) mod tests {
         crossbeam_channel::unbounded,
         itertools::Itertools,
         solana_entry::entry::{self, Entry},
-        solana_gossip::{cluster_info::Node, crds::Cursor},
+        solana_gossip::{cluster_info::Node, contact_info::Protocol, crds::Cursor},
         solana_ledger::{
             blockstore::{entries_to_test_shreds, make_slot_entries, BlockstoreError},
             create_new_tmp_ledger,
@@ -4274,6 +4274,7 @@ pub(crate) mod tests {
             transaction::TransactionError,
         },
         solana_streamer::socket::SocketAddrSpace,
+        solana_tpu_client::tpu_client::DEFAULT_VOTE_USE_QUIC,
         solana_transaction_status::VersionedTransactionWithStatusMeta,
         solana_vote_program::{
             vote_state::{self, TowerSync, VoteStateVersions},
@@ -7558,11 +7559,18 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
+        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
+            Protocol::QUIC
+        } else {
+            Protocol::UDP
+        };
+
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
             &poh_recorder,
             &tower_storage,
             vote_info,
+            vote_protocol,
         );
 
         let mut cursor = Cursor::default();
@@ -7633,11 +7641,18 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
+        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
+            Protocol::QUIC
+        } else {
+            Protocol::UDP
+        };
+
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
             &poh_recorder,
             &tower_storage,
             vote_info,
+            vote_protocol,
         );
         let votes = cluster_info.get_votes(&mut cursor);
         assert_eq!(votes.len(), 1);
@@ -7716,11 +7731,18 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
+        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
+            Protocol::QUIC
+        } else {
+            Protocol::UDP
+        };
+
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
             &poh_recorder,
             &tower_storage,
             vote_info,
+            vote_protocol,
         );
 
         assert!(last_vote_refresh_time.last_refresh_time > clone_refresh_time);
@@ -7831,11 +7853,18 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
+        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
+            Protocol::QUIC
+        } else {
+            Protocol::UDP
+        };
+
         crate::voting_service::VotingService::handle_vote(
             cluster_info,
             poh_recorder,
             tower_storage,
             vote_info,
+            vote_protocol,
         );
 
         let votes = cluster_info.get_votes(cursor);
