@@ -1186,7 +1186,10 @@ impl ClusterInfo {
         let result = client.send_data_async(buf);
         match result {
             Ok(_) => Ok(()),
-            Err(_) => Err(GossipError::SendError),
+            Err(err) => {
+                debug!("Ran into exception sending vote: {err:?}");
+                Err(GossipError::SendError)
+            }
         }
     }
 
