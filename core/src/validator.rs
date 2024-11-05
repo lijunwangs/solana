@@ -1017,6 +1017,28 @@ impl Validator {
             )),
         };
 
+        let vote_connection_cache = match vote_use_quic {
+            true => {
+                let vote_connection_cache = ConnectionCache::new_with_client_options(
+                    "connection_cache_vote_quic",
+                    1,
+                    None,
+                    Some((
+                        &identity_keypair,
+                        node.info
+                            .tpu_vote(Protocol::QUIC)
+                            .map_err(|err| {
+                                ValidatorError::Other(format!("Invalid TPU address: {err:?}"))
+                            })?
+                            .ip(),
+                    )),
+                    Some((&staked_nodes, &identity_keypair.pubkey())),
+                );
+                Arc::new(vote_connection_cache)
+            }
+            false => Arc::new(ConnectionCache::with_udp("connection_cache_vote_udp", 1)),
+        };
+
         let rpc_override_health_check =
             Arc::new(AtomicBool::new(config.rpc_config.disable_health_check));
         let (
@@ -1430,11 +1452,7 @@ impl Validator {
             cluster_slots.clone(),
             wen_restart_repair_slots.clone(),
             slot_status_notifier,
-            if vote_use_quic {
-                Protocol::QUIC
-            } else {
-                Protocol::UDP
-            },
+            vote_connection_cache,
         )
         .map_err(ValidatorError::Other)?;
 

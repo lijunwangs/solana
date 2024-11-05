@@ -27,8 +27,7 @@ use {
     solana_client::connection_cache::ConnectionCache,
     solana_geyser_plugin_manager::block_metadata_notifier_interface::BlockMetadataNotifierArc,
     solana_gossip::{
-        cluster_info::ClusterInfo, contact_info::Protocol,
-        duplicate_shred_handler::DuplicateShredHandler,
+        cluster_info::ClusterInfo, duplicate_shred_handler::DuplicateShredHandler,
         duplicate_shred_listener::DuplicateShredListener,
     },
     solana_ledger::{
@@ -163,7 +162,7 @@ impl Tvu {
         cluster_slots: Arc<ClusterSlots>,
         wen_restart_repair_slots: Option<Arc<RwLock<Vec<Slot>>>>,
         slot_status_notifier: Option<SlotStatusNotifier>,
-        vote_protocol: Protocol,
+        vote_connection_cache: Arc<ConnectionCache>,
     ) -> Result<Self, String> {
         let in_wen_restart = wen_restart_repair_slots.is_some();
 
@@ -332,7 +331,7 @@ impl Tvu {
             cluster_info.clone(),
             poh_recorder.clone(),
             tower_storage,
-            vote_protocol,
+            vote_connection_cache,
         );
 
         let warm_quic_cache_service = connection_cache.and_then(|connection_cache| {
@@ -426,10 +425,7 @@ pub mod tests {
             repair::quic_endpoint::RepairQuicAsyncSenders,
         },
         serial_test::serial,
-        solana_gossip::{
-            cluster_info::{ClusterInfo, Node},
-            contact_info::Protocol,
-        },
+        solana_gossip::cluster_info::{ClusterInfo, Node},
         solana_ledger::{
             blockstore::BlockstoreSignals,
             blockstore_options::BlockstoreOptions,
@@ -500,10 +496,9 @@ pub mod tests {
         } else {
             None
         };
-        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
-            Protocol::QUIC
-        } else {
-            Protocol::UDP
+        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
+            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
+            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
         };
 
         let tvu = Tvu::new(
@@ -567,7 +562,7 @@ pub mod tests {
             cluster_slots,
             wen_restart_repair_slots,
             None,
-            vote_protocol,
+            Arc::new(connection_cache),
         )
         .expect("assume success");
         if enable_wen_restart {

@@ -4244,8 +4244,9 @@ pub(crate) mod tests {
         },
         crossbeam_channel::unbounded,
         itertools::Itertools,
+        solana_client::connection_cache::ConnectionCache,
         solana_entry::entry::{self, Entry},
-        solana_gossip::{cluster_info::Node, contact_info::Protocol, crds::Cursor},
+        solana_gossip::{cluster_info::Node, crds::Cursor},
         solana_ledger::{
             blockstore::{entries_to_test_shreds, make_slot_entries, BlockstoreError},
             create_new_tmp_ledger,
@@ -7559,10 +7560,10 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
-            Protocol::QUIC
-        } else {
-            Protocol::UDP
+
+        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
+            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
+            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7570,7 +7571,7 @@ pub(crate) mod tests {
             &poh_recorder,
             &tower_storage,
             vote_info,
-            vote_protocol,
+            Arc::new(connection_cache),
         );
 
         let mut cursor = Cursor::default();
@@ -7641,10 +7642,10 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
-            Protocol::QUIC
-        } else {
-            Protocol::UDP
+
+        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
+            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
+            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7652,8 +7653,9 @@ pub(crate) mod tests {
             &poh_recorder,
             &tower_storage,
             vote_info,
-            vote_protocol,
+            Arc::new(connection_cache),
         );
+
         let votes = cluster_info.get_votes(&mut cursor);
         assert_eq!(votes.len(), 1);
         let vote_tx = &votes[0];
@@ -7731,10 +7733,9 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
-            Protocol::QUIC
-        } else {
-            Protocol::UDP
+        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
+            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
+            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7742,7 +7743,7 @@ pub(crate) mod tests {
             &poh_recorder,
             &tower_storage,
             vote_info,
-            vote_protocol,
+            Arc::new(connection_cache),
         );
 
         assert!(last_vote_refresh_time.last_refresh_time > clone_refresh_time);
@@ -7853,10 +7854,9 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        let vote_protocol = if DEFAULT_VOTE_USE_QUIC {
-            Protocol::QUIC
-        } else {
-            Protocol::UDP
+        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
+            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
+            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7864,7 +7864,7 @@ pub(crate) mod tests {
             poh_recorder,
             tower_storage,
             vote_info,
-            vote_protocol,
+            Arc::new(connection_cache),
         );
 
         let votes = cluster_info.get_votes(cursor);

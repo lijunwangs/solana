@@ -46,6 +46,8 @@ use {
     rand::{seq::SliceRandom, thread_rng, CryptoRng, Rng},
     rayon::{prelude::*, ThreadPool, ThreadPoolBuilder},
     serde::ser::Serialize,
+    solana_client::connection_cache::ConnectionCache,
+    solana_connection_cache::client_connection::ClientConnection,
     solana_feature_set::FeatureSet,
     solana_ledger::shred::Shred,
     solana_measure::measure::Measure,
@@ -173,7 +175,6 @@ pub struct ClusterInfo {
     my_contact_info: RwLock<ContactInfo>,
     ping_cache: Mutex<PingCache>,
     stats: GossipStats,
-    socket: UdpSocket,
     local_message_pending_push_queue: Mutex<Vec<CrdsValue>>,
     contact_debug_interval: u64, // milliseconds, 0 = disabled
     contact_save_interval: u64,  // milliseconds, 0 = disabled
@@ -471,7 +472,6 @@ impl ClusterInfo {
                 GOSSIP_PING_CACHE_CAPACITY,
             )),
             stats: GossipStats::default(),
-            socket: UdpSocket::bind("0.0.0.0:0").unwrap(),
             local_message_pending_push_queue: Mutex::default(),
             contact_debug_interval: DEFAULT_CONTACT_DEBUG_INTERVAL_MILLIS,
             instance: RwLock::new(NodeInstance::new(&mut thread_rng(), id, timestamp())),
@@ -1176,13 +1176,18 @@ impl ClusterInfo {
         &self,
         transaction: &Transaction,
         tpu: Option<SocketAddr>,
+        connection_cache: &Arc<ConnectionCache>,
     ) -> Result<(), GossipError> {
         let tpu = tpu
             .map(Ok)
-            .unwrap_or_else(|| self.my_contact_info().tpu(contact_info::Protocol::UDP))?;
+            .unwrap_or_else(|| self.my_contact_info().tpu(connection_cache.protocol()))?;
         let buf = serialize(transaction)?;
-        self.socket.send_to(&buf, tpu)?;
-        Ok(())
+        let client = connection_cache.get_connection(&tpu);
+        let result = client.send_data_async(buf);
+        match result {
+            Ok(_) => Ok(()),
+            Err(_) => Err(GossipError::SendError),
+        }
     }
 
     /// Returns votes inserted since the given cursor.
