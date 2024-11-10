@@ -103,7 +103,6 @@ const DEFAULT_EPOCH_DURATION: Duration =
 /// milliseconds we sleep for between gossip rounds
 pub const GOSSIP_SLEEP_MILLIS: u64 = 100;
 /// Interval between pull requests (in gossip rounds)
-#[allow(dead_code)]
 const PULL_REQUEST_PERIOD: usize = 5;
 
 /// Capacity for the [`ClusterInfo::run_socket_consume`] and [`ClusterInfo::run_listen`]
@@ -1162,7 +1161,6 @@ impl ClusterInfo {
     }
 
     // If the network entrypoint hasn't been discovered yet, add it to the crds table
-    #[allow(dead_code)]
     fn append_entrypoint_to_pulls(
         &self,
         thread_pool: &ThreadPool,
@@ -1213,7 +1211,6 @@ impl ClusterInfo {
         Either::Right(pulls.chain(repeat(entrypoint).zip(filters)))
     }
 
-    #[allow(dead_code)]
     fn new_pull_requests(
         &self,
         thread_pool: &ThreadPool,
@@ -1315,7 +1312,6 @@ impl ClusterInfo {
     }
 
     // Generate new push and pull requests
-    #[allow(dead_code)]
     fn generate_new_gossip_requests(
         &self,
         thread_pool: &ThreadPool,
@@ -1338,7 +1334,6 @@ impl ClusterInfo {
     }
 
     /// At random pick a node and try to get updated changes from them
-    #[allow(dead_code)]
     fn run_gossip(
         &self,
         thread_pool: &ThreadPool,
@@ -1395,7 +1390,6 @@ impl ClusterInfo {
             .all(|entrypoint| entrypoint.pubkey() != &Pubkey::default())
     }
 
-    #[allow(unused_variables)]
     fn handle_purge(
         &self,
         thread_pool: &ThreadPool,
@@ -1447,7 +1441,6 @@ impl ClusterInfo {
     }
 
     /// randomly pick a node and ask them for updates asynchronously
-    #[allow(unused_variables)]
     pub fn gossip(
         self: Arc<Self>,
         bank_forks: Option<Arc<RwLock<BankForks>>>,
@@ -1499,15 +1492,15 @@ impl ClusterInfo {
                         .cloned()
                         .unwrap_or_default();
 
-                    // let _ = self.run_gossip(
-                    //     &thread_pool,
-                    //     gossip_validators.as_ref(),
-                    //     &recycler,
-                    //     &stakes,
-                    //     &sender,
-                    //     // Make pull requests every PULL_REQUEST_PERIOD rounds
-                    //     gossip_round % PULL_REQUEST_PERIOD == 0,
-                    // );
+                    let _ = self.run_gossip(
+                        &thread_pool,
+                        gossip_validators.as_ref(),
+                        &recycler,
+                        &stakes,
+                        &sender,
+                        // Make pull requests every PULL_REQUEST_PERIOD rounds
+                        gossip_round % PULL_REQUEST_PERIOD == 0,
+                    );
                     let epoch_duration = epoch_specs
                         .as_mut()
                         .map(EpochSpecs::epoch_duration)
