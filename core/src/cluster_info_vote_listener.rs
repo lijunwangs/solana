@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use {
     crate::{
         banking_trace::{BankingPacketBatch, BankingPacketSender},
@@ -251,6 +252,7 @@ impl ClusterInfoVoteListener {
         self.thread_hdls.into_iter().try_for_each(JoinHandle::join)
     }
 
+    #[allow(unused_variables)]
     fn recv_loop(
         exit: Arc<AtomicBool>,
         cluster_info: &ClusterInfo,
@@ -262,16 +264,19 @@ impl ClusterInfoVoteListener {
         while !exit.load(Ordering::Relaxed) {
             let votes = cluster_info.get_votes(&mut cursor);
             inc_new_counter_debug!("cluster_info_vote_listener-recv_count", votes.len());
-            if !votes.is_empty() {
-                let (vote_txs, packets) = Self::verify_votes(votes, root_bank_cache);
-                verified_vote_transactions_sender.send(vote_txs)?;
-                verified_packets_sender.send(BankingPacketBatch::new((packets, None)))?;
-            }
+            // Disable votes via gossips
+            // if !votes.is_empty() {
+            //     let (vote_txs, packets) = Self::verify_votes(votes, root_bank_cache);
+            //     verified_vote_transactions_sender.send(vote_txs)?;
+            //     verified_packets_sender.send(BankingPacketBatch::new((packets, None)))?;
+            // }
+
             sleep(Duration::from_millis(GOSSIP_SLEEP_MILLIS));
         }
         Ok(())
     }
 
+    #[allow(dead_code)]
     #[allow(clippy::type_complexity)]
     fn verify_votes(
         votes: Vec<Transaction>,
