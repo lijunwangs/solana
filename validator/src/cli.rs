@@ -903,7 +903,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .long("vote-use-quic")
                 .takes_value(true)
                 .default_value(&default_args.vote_use_quic)
-                .help("Use QUIC to send votes."),
+                .help("Controls if to use QUIC to send votes."),
         )
         .arg(
             Arg::with_name("num_quic_endpoints")

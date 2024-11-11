@@ -1026,7 +1026,7 @@ impl Validator {
                         node.info
                             .tpu_vote(Protocol::QUIC)
                             .map_err(|err| {
-                                ValidatorError::Other(format!("Invalid TPU address: {err:?}"))
+                                ValidatorError::Other(format!("Invalid TPU Vote address: {err:?}"))
                             })?
                             .ip(),
                     )),

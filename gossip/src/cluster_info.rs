@@ -941,7 +941,7 @@ impl ClusterInfo {
         match result {
             Ok(_) => Ok(()),
             Err(err) => {
-                debug!("Ran into exception sending vote: {err:?}");
+                trace!("Ran into an error when sending vote: {err:?} to {tpu:?}");
                 Err(GossipError::SendError)
             }
         }
