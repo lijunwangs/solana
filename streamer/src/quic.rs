@@ -701,7 +701,9 @@ pub fn spawn_server_multi(
 #[cfg(test)]
 mod test {
     use {
-        super::*, crate::nonblocking::quic::test::*, crossbeam_channel::unbounded,
+        super::*,
+        crate::nonblocking::{quic::test::*, testing_utilities::check_multiple_streams},
+        crossbeam_channel::unbounded,
         std::net::SocketAddr,
     };
 
@@ -792,7 +794,7 @@ mod test {
         .unwrap();
 
         let runtime = rt("solQuicTestRt".to_string());
-        runtime.block_on(check_multiple_streams(receiver, server_address));
+        runtime.block_on(check_multiple_streams(receiver, server_address, None));
         exit.store(true, Ordering::Relaxed);
         t.join().unwrap();
     }
