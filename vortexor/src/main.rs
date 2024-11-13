@@ -2,6 +2,7 @@ use {
     clap::{value_t, value_t_or_exit},
     crossbeam_channel::unbounded,
     solana_clap_utils::input_parsers::keypair_of,
+    solana_core::banking_trace::BankingTracer,
     solana_sdk::net::DEFAULT_TPU_COALESCE,
     solana_streamer::streamer::StakedNodes,
     solana_vortexor::{
@@ -53,11 +54,18 @@ pub fn main() {
     let max_streams_per_ms = value_t_or_exit!(matches, "max_streams_per_ms", u64);
     let exit = Arc::new(AtomicBool::new(false));
     // To be linked with the Tpu sigverify and forwarder service
-    let (tpu_sender, _tpu_receiver) = unbounded();
+    let (tpu_sender, tpu_receiver) = unbounded();
     let (tpu_fwd_sender, _tpu_fwd_receiver) = unbounded();
 
     let tpu_sockets =
         Vortexor::create_tpu_sockets(bind_address, dynamic_port_range, num_quic_endpoints);
+
+    let (banking_tracer, _) = BankingTracer::new(None).unwrap();
+
+    // The _non_vote_receiver will forward the verified transactions to its configured validator
+    let (non_vote_sender, _non_vote_receiver) = banking_tracer.create_channel_non_vote();
+
+    let sigverify_stage = Vortexor::create_sigverify_stage(tpu_receiver, non_vote_sender);
 
     // To be linked with StakedNodes service.
     let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
@@ -79,4 +87,5 @@ pub fn main() {
         exit,
     );
     vortexor.join().unwrap();
+    sigverify_stage.join().unwrap();
 }

@@ -10285,6 +10285,7 @@ dependencies = [
  "smallvec",
  "socket2",
  "solana-clap-utils",
+ "solana-core",
  "solana-logger",
  "solana-measure",
  "solana-metrics",
