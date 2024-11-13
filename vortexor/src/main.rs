@@ -48,16 +48,7 @@ pub fn main() {
     let tpu_sockets =
         Vortexor::create_tpu_sockets(bind_address, dynamic_port_range, num_quic_endpoints);
 
-    // Not interesed of banking tracing
-    let (banking_tracer, _) = BankingTracer::new(None).unwrap();
-
-    // The _non_vote_receiver will forward the verified transactions to its configured validator
-    let (non_vote_sender, _non_vote_receiver) = banking_tracer.create_channel_non_vote();
-
-    let sigverify_stage = {
-        let verifier = TransactionSigVerifier::new(non_vote_sender);
-        SigVerifyStage::new(tpu_receiver, verifier, "solSigVerTpu", "tpu-verifier")
-    };
+    let sigverify_stage = create_sigverify_stage(tpu_receiver);
 
     // To be linked with StakedNodes service.
     let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
@@ -77,5 +68,19 @@ pub fn main() {
         exit,
     );
     vortexor.join().unwrap();
-    sigverify_stage.join().unwrap();
+sigverify_stage.join().unwrap();
 }
+
+fn create_sigverify_stage(tpu_receiver: crossbeam_channel::Receiver<solana_perf::packet::PacketBatch>) -> SigVerifyStage {
+    // Not interesed of banking tracing
+    let (banking_tracer, _) = BankingTracer::new(None).unwrap();
+    
+    // The _non_vote_receiver will forward the verified transactions to its configured validator
+    let (non_vote_sender, _non_vote_receiver) = banking_tracer.create_channel_non_vote();
+    
+    let sigverify_stage = {
+        let verifier = TransactionSigVerifier::new(non_vote_sender);
+        SigVerifyStage::new(tpu_receiver, verifier, "solSigVerTpu", "tpu-verifier")
+    };
+    sigverify_stage
+    }
