@@ -136,34 +136,31 @@ pub struct SpawnTestServerResult {
 }
 
 pub fn create_quic_server_sockets() -> Vec<UdpSocket> {
-    let sockets = {
-        #[cfg(not(target_os = "windows"))]
-        {
-            use std::{
-                os::fd::{FromRawFd, IntoRawFd},
-                str::FromStr as _,
-            };
-            (0..10)
-                .map(|_| {
-                    let sock = socket2::Socket::new(
-                        socket2::Domain::IPV4,
-                        socket2::Type::DGRAM,
-                        Some(socket2::Protocol::UDP),
-                    )
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::{
+            os::fd::{FromRawFd, IntoRawFd},
+            str::FromStr as _,
+        };
+        (0..10)
+            .map(|_| {
+                let sock = socket2::Socket::new(
+                    socket2::Domain::IPV4,
+                    socket2::Type::DGRAM,
+                    Some(socket2::Protocol::UDP),
+                )
+                .unwrap();
+                sock.set_reuse_port(true).unwrap();
+                sock.bind(&SocketAddr::from_str("127.0.0.1:0").unwrap().into())
                     .unwrap();
-                    sock.set_reuse_port(true).unwrap();
-                    sock.bind(&SocketAddr::from_str("127.0.0.1:0").unwrap().into())
-                        .unwrap();
-                    unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
-                })
-                .collect::<Vec<_>>()
-        }
-        #[cfg(target_os = "windows")]
-        {
-            vec![UdpSocket::bind("127.0.0.1:0").unwrap()]
-        }
-    };
-    sockets
+                unsafe { UdpSocket::from_raw_fd(sock.into_raw_fd()) }
+            })
+            .collect::<Vec<_>>()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        vec![UdpSocket::bind("127.0.0.1:0").unwrap()]
+    }
 }
 
 pub fn setup_quic_server(
