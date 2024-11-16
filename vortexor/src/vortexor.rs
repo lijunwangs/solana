@@ -1,7 +1,7 @@
 use {
     crossbeam_channel::{Receiver, Sender},
     solana_core::{
-        banking_trace::BankingTracer, sigverify::TransactionSigVerifier,
+        banking_trace::TracedSender, sigverify::TransactionSigVerifier,
         sigverify_stage::SigVerifyStage,
     },
     solana_net_utils::{bind_in_range_with_config, bind_more_with_config, SocketConfig},
@@ -105,12 +105,9 @@ impl Vortexor {
 
     pub fn create_sigverify_stage(
         tpu_receiver: Receiver<solana_perf::packet::PacketBatch>,
+        non_vote_sender: TracedSender,
     ) -> SigVerifyStage {
         // Not interesed of banking tracing
-        let (banking_tracer, _) = BankingTracer::new(None).unwrap();
-
-        // The _non_vote_receiver will forward the verified transactions to its configured validator
-        let (non_vote_sender, _non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
         let verifier = TransactionSigVerifier::new(non_vote_sender);
         SigVerifyStage::new(tpu_receiver, verifier, "solSigVerTpu", "tpu-verifier")
