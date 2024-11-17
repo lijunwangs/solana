@@ -1957,6 +1957,19 @@ pub fn main() {
                 })
             });
 
+    let tpu_vortexor_receiver_address =
+        matches
+            .value_of("tpu_vortexor_receiver_address")
+            .map(|tpu_vortexor_receiver_address| {
+                solana_net_utils::parse_host_port(tpu_vortexor_receiver_address).unwrap_or_else(
+                    |err| {
+                        eprintln!("Failed to parse --tpu-vortexor-receiver-address: {err}");
+                        exit(1);
+                    },
+                )
+            });
+
+    info!("tpu_vortexor_receiver_address is {tpu_vortexor_receiver_address:?}");
     let num_quic_endpoints = value_t_or_exit!(matches, "num_quic_endpoints", NonZeroUsize);
     let node_config = NodeConfig {
         gossip_addr,
@@ -1964,6 +1977,7 @@ pub fn main() {
         bind_ip_addr: bind_address,
         public_tpu_addr,
         public_tpu_forwards_addr,
+        vortexor_receiver_addr: tpu_vortexor_receiver_address,
         num_tvu_sockets: tvu_receive_threads,
         num_quic_endpoints,
     };

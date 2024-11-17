@@ -2574,6 +2574,7 @@ pub struct Sockets {
     pub tpu_quic: Vec<UdpSocket>,
     pub tpu_forwards_quic: Vec<UdpSocket>,
     pub tpu_vote_quic: Vec<UdpSocket>,
+    pub vortexor_receivers: Option<Vec<UdpSocket>>,
 }
 
 pub struct NodeConfig {
@@ -2582,6 +2583,8 @@ pub struct NodeConfig {
     pub bind_ip_addr: IpAddr,
     pub public_tpu_addr: Option<SocketAddr>,
     pub public_tpu_forwards_addr: Option<SocketAddr>,
+    pub vortexor_receiver_addr: Option<SocketAddr>,
+
     /// The number of TVU sockets to create
     pub num_tvu_sockets: NonZeroUsize,
     /// The number of QUIC tpu endpoints
@@ -2723,6 +2726,7 @@ impl Node {
                 tpu_quic,
                 tpu_forwards_quic,
                 tpu_vote_quic,
+                vortexor_receivers: None,
             },
         }
     }
@@ -2864,6 +2868,7 @@ impl Node {
                 tpu_quic,
                 tpu_forwards_quic,
                 tpu_vote_quic,
+                vortexor_receivers: None,
             },
         }
     }
@@ -2877,6 +2882,7 @@ impl Node {
             public_tpu_forwards_addr,
             num_tvu_sockets,
             num_quic_endpoints,
+            vortexor_receiver_addr,
         } = config;
 
         let (gossip_port, (gossip, ip_echo)) =
@@ -2960,6 +2966,22 @@ impl Node {
             .unwrap();
         info.set_tpu_vote_quic((addr, tpu_vote_quic_port)).unwrap();
 
+        let vortexor_receivers = vortexor_receiver_addr.map(|vortexor_receiver_addr| {
+            multi_bind_in_range(
+                vortexor_receiver_addr.ip(),
+                (
+                    vortexor_receiver_addr.port(),
+                    vortexor_receiver_addr.port() + 1,
+                ),
+                32,
+            )
+            .unwrap_or_else(|_| {
+                panic!("Could not bind to the set vortexor_receiver_addr {vortexor_receiver_addr}")
+            })
+            .1
+        });
+
+        info!("vortexor_receivers is {vortexor_receivers:?}");
         trace!("new ContactInfo: {:?}", info);
 
         Node {
@@ -2983,6 +3005,7 @@ impl Node {
                 tpu_quic,
                 tpu_forwards_quic,
                 tpu_vote_quic,
+                vortexor_receivers,
             },
         }
     }
@@ -3391,6 +3414,7 @@ mod tests {
             public_tpu_forwards_addr: None,
             num_tvu_sockets: MINIMUM_NUM_TVU_SOCKETS,
             num_quic_endpoints: DEFAULT_NUM_QUIC_ENDPOINTS,
+            vortexor_receiver_addr: None,
         };
 
         let node = Node::new_with_external_ip(&solana_sdk::pubkey::new_rand(), config);
@@ -3414,6 +3438,7 @@ mod tests {
             public_tpu_forwards_addr: None,
             num_tvu_sockets: MINIMUM_NUM_TVU_SOCKETS,
             num_quic_endpoints: DEFAULT_NUM_QUIC_ENDPOINTS,
+            vortexor_receiver_addr: None,
         };
 
         let node = Node::new_with_external_ip(&solana_sdk::pubkey::new_rand(), config);
