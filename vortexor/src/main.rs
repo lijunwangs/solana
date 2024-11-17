@@ -120,7 +120,7 @@ pub fn main() {
     let _logger_thread = redirect_stderr_to_file(logfile);
 
     info!("{} {}", crate_name!(), solana_version);
-    info!("Starting vortexor with: {:#?}", std::env::args_os());
+    info!("Starting vortexor {} with: {:#?}", identity_keypair.pubkey(), std::env::args_os());
 
     let bind_address = solana_net_utils::parse_host(matches.value_of("bind_address").unwrap())
         .expect("invalid bind_address");
