@@ -59,7 +59,7 @@ pub fn main() {
     let (tpu_sender, tpu_receiver) = unbounded();
 
     let tpu_sockets =
-        Vortexor::create_tpu_sockets(bind_address.clone(), dynamic_port_range, num_quic_endpoints);
+        Vortexor::create_tpu_sockets(bind_address, dynamic_port_range, num_quic_endpoints);
 
     let (banking_tracer, _) = BankingTracer::new(None).unwrap();
 
