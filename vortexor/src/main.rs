@@ -1,15 +1,21 @@
 use {
-    clap::{value_t, value_t_or_exit},
+    clap::{value_t, value_t_or_exit, values_t},
     crossbeam_channel::unbounded,
     solana_clap_utils::input_parsers::keypair_of,
     solana_core::banking_trace::BankingTracer,
+    solana_net_utils::{bind_in_range_with_config, SocketConfig},
     solana_sdk::net::DEFAULT_TPU_COALESCE,
     solana_streamer::streamer::StakedNodes,
     solana_vortexor::{
         cli::{app, DefaultArgs},
+        sender::{
+            PacketBatchSender, DEFAULT_BATCH_SIZE, DEFAULT_RECV_TIMEOUT,
+            DEFAULT_SENDER_THREADS_COUNT,
+        },
         vortexor::Vortexor,
     },
     std::{
+        collections::HashSet,
         sync::{atomic::AtomicBool, Arc, RwLock},
         time::Duration,
     },
@@ -53,12 +59,39 @@ pub fn main() {
     let (tpu_sender, tpu_receiver) = unbounded();
 
     let tpu_sockets =
-        Vortexor::create_tpu_sockets(bind_address, dynamic_port_range, num_quic_endpoints);
+        Vortexor::create_tpu_sockets(bind_address.clone(), dynamic_port_range, num_quic_endpoints);
 
     let (banking_tracer, _) = BankingTracer::new(None).unwrap();
 
+    let config = SocketConfig { reuseport: false };
+
+    let sender_socket =
+        bind_in_range_with_config(bind_address, dynamic_port_range, config).unwrap();
+
     // The _non_vote_receiver will forward the verified transactions to its configured validator
-    let (non_vote_sender, _non_vote_receiver) = banking_tracer.create_channel_non_vote();
+    let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
+
+    let destinations = values_t!(matches, "destination", String)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|destination| {
+            solana_net_utils::parse_host_port(&destination).unwrap_or_else(|e| {
+                panic!("Failed to parse destination address: {e}");
+            })
+        })
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    let destinations = Arc::new(RwLock::new(destinations));
+    let packet_sender = PacketBatchSender::new(
+        sender_socket.1,
+        non_vote_receiver,
+        DEFAULT_SENDER_THREADS_COUNT,
+        DEFAULT_BATCH_SIZE,
+        DEFAULT_RECV_TIMEOUT,
+        destinations,
+    );
 
     let sigverify_stage = Vortexor::create_sigverify_stage(tpu_receiver, non_vote_sender);
 
@@ -81,4 +114,5 @@ pub fn main() {
     );
     vortexor.join().unwrap();
     sigverify_stage.join().unwrap();
+    packet_sender.join().unwrap();
 }
