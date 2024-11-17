@@ -31,7 +31,6 @@ rand = { workspace = true }
 rustls = { workspace = true }
 smallvec = { workspace = true }
 socket2 = { workspace = true }
-solana-logger = { workspace = true }
 solana-measure = { workspace = true }
 solana-metrics = { workspace = true }
 solana-perf = { workspace = true }
