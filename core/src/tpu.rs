@@ -248,6 +248,7 @@ impl Tpu {
         .unwrap();
 
         let sig_verifier = if let Some(vortexor_receivers) = vortexor_receivers {
+            info!("starting vortexor adapter");
             let sockets = vortexor_receivers.into_iter().map(Arc::new).collect();
             let adapter = VortexorReceiverAdapter::new(
                 sockets,
@@ -258,6 +259,7 @@ impl Tpu {
             );
             SigVerifier::Remote(adapter)
         } else {
+            info!("starting regular sigverify stage");
             let verifier = TransactionSigVerifier::new(non_vote_sender);
             SigVerifier::Local(SigVerifyStage::new(
                 packet_receiver,

@@ -2981,6 +2981,7 @@ impl Node {
             .1
         });
 
+        info!("vortexor_receivers is {vortexor_receivers:?}");
         trace!("new ContactInfo: {:?}", info);
 
         Node {
