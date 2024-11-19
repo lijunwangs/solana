@@ -252,7 +252,7 @@ impl Tpu {
             let sockets = vortexor_receivers.into_iter().map(Arc::new).collect();
             let adapter = VortexorReceiverAdapter::new(
                 sockets,
-                Duration::from_millis(500),
+                Duration::from_millis(5),
                 tpu_coalesce,
                 non_vote_sender,
                 exit.clone(),
