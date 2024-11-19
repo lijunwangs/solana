@@ -3,7 +3,7 @@
 
 use {
     crossbeam_channel::RecvTimeoutError,
-    log::trace,
+    log::*,
     solana_core::banking_trace::{BankingPacketBatch, BankingPacketReceiver},
     solana_streamer::sendmmsg::batch_send,
     std::{
@@ -85,7 +85,18 @@ impl PacketBatchSender {
                                     packets.push((packet.data(0..).unwrap(), destination));
                                 }
                             });
-                            let _result = batch_send(&send_sock, &packets);
+                            let result = batch_send(&send_sock, &packets);
+                            match result {
+                                Ok(_) => {
+                                    info!("Sent {} to {destination:?}", packets.len());
+                                }
+                                Err(err) => {
+                                    info!(
+                                        "Failed to send {} to {destination:?} {err:?}",
+                                        packets.len()
+                                    );
+                                }
+                            }
                         });
                     }
                 }
