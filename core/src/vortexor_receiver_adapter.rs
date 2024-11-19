@@ -56,13 +56,16 @@ impl VortexorReceiverAdapter {
     ) {
         loop {
             match Self::receive_until(packet_batch_receiver.clone(), recv_timeout, batch_size) {
-                Ok(packet_batchea) => {
+                Ok(packet_batch) => {
+                    let count = packet_batch.0.len();
                     // Send out packet batches
-                    match traced_sender.send(packet_batchea) {
+                    match traced_sender.send(packet_batch) {
                         Ok(_) => {
+                            info!("Sent vortexor batch {count} successfully");
                             continue;
                         }
                         Err(_err) => {
+                            info!("Failed to send batch {count}");
                             break;
                         }
                     }
