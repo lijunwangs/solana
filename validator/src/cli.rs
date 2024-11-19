@@ -1655,7 +1655,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
             Arg::with_name("tpu_vortexor_receiver_address")
                 .long("tpu-vortexor-receiver-address")
                 .value_name("HOST:PORT")
-                .takes_value(false)
+                .takes_value(true)
                 .validator(solana_net_utils::is_host_port)
                 .help("TPU Vortexor Receiver address to which verified transaction packet will be forwarded."),
         )
