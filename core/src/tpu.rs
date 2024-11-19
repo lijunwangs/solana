@@ -16,6 +16,7 @@ use {
         staked_nodes_updater_service::StakedNodesUpdaterService,
         tpu_entry_notifier::TpuEntryNotifier,
         validator::{BlockProductionMethod, GeneratorConfig},
+        vortexor_receiver_adapter::VortexorReceiverAdapter,
     },
     bytes::Bytes,
     crossbeam_channel::{unbounded, Receiver},
@@ -65,11 +66,26 @@ pub struct TpuSockets {
     pub transactions_quic: Vec<UdpSocket>,
     pub transactions_forwards_quic: Vec<UdpSocket>,
     pub vote_quic: Vec<UdpSocket>,
+    pub vortexor_receivers: Option<Vec<UdpSocket>>,
+}
+
+enum SigVerifier {
+    Local(SigVerifyStage),
+    Remote(VortexorReceiverAdapter),
+}
+
+impl SigVerifier {
+    fn join(self) -> thread::Result<()> {
+        match self {
+            SigVerifier::Local(sig_verify_stage) => sig_verify_stage.join(),
+            SigVerifier::Remote(vortexor_receiver_adapter) => vortexor_receiver_adapter.join(),
+        }
+    }
 }
 
 pub struct Tpu {
     fetch_stage: FetchStage,
-    sigverify_stage: SigVerifyStage,
+    sig_verifier: SigVerifier,
     vote_sigverify_stage: SigVerifyStage,
     banking_stage: BankingStage,
     cluster_info_vote_listener: ClusterInfoVoteListener,
@@ -129,6 +145,7 @@ impl Tpu {
             transactions_quic: transactions_quic_sockets,
             transactions_forwards_quic: transactions_forwards_quic_sockets,
             vote_quic: tpu_vote_quic_sockets,
+            vortexor_receivers,
         } = sockets;
 
         let (packet_sender, packet_receiver) = unbounded();
@@ -230,9 +247,24 @@ impl Tpu {
         )
         .unwrap();
 
-        let sigverify_stage = {
+        let sig_verifier = if let Some(vortexor_receivers) = vortexor_receivers {
+            let sockets = vortexor_receivers.into_iter().map(Arc::new).collect();
+            let adapter = VortexorReceiverAdapter::new(
+                sockets,
+                Duration::from_millis(500),
+                tpu_coalesce,
+                non_vote_sender,
+                exit.clone(),
+            );
+            SigVerifier::Remote(adapter)
+        } else {
             let verifier = TransactionSigVerifier::new(non_vote_sender);
-            SigVerifyStage::new(packet_receiver, verifier, "solSigVerTpu", "tpu-verifier")
+            SigVerifier::Local(SigVerifyStage::new(
+                packet_receiver,
+                verifier,
+                "solSigVerTpu",
+                "tpu-verifier",
+            ))
         };
 
         let (tpu_vote_sender, tpu_vote_receiver) = banking_tracer.create_channel_tpu_vote();
@@ -309,7 +341,7 @@ impl Tpu {
         (
             Self {
                 fetch_stage,
-                sigverify_stage,
+                sig_verifier,
                 vote_sigverify_stage,
                 banking_stage,
                 cluster_info_vote_listener,
@@ -328,7 +360,7 @@ impl Tpu {
     pub fn join(self) -> thread::Result<()> {
         let results = vec![
             self.fetch_stage.join(),
-            self.sigverify_stage.join(),
+            self.sig_verifier.join(),
             self.vote_sigverify_stage.join(),
             self.cluster_info_vote_listener.join(),
             self.banking_stage.join(),

@@ -1651,6 +1651,14 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                     May get stuck if the leader used is different from others.",
                 ),
         )
+        .arg(
+            Arg::with_name("tpu_vortexor_receiver_address")
+                .long("tpu-vortexor-receiver-address")
+                .value_name("HOST:PORT")
+                .takes_value(false)
+                .validator(solana_net_utils::is_host_port)
+                .help("TPU Vortexor Receiver address to which verified transaction packet will be forwarded."),
+        )
         .args(&thread_args(&default_args.thread_args))
         .args(&get_deprecated_arguments())
         .after_help("The default subcommand is run")
@@ -1980,6 +1988,14 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                         .takes_value(true)
                         .validator(solana_net_utils::is_host_port)
                         .help("TPU address to advertise in gossip"),
+                )
+                .arg(
+                    Arg::with_name("tpu_vortexor_receiver_address")
+                        .long("receiver")
+                        .value_name("HOST:PORT")
+                        .takes_value(false)
+                        .validator(solana_net_utils::is_host_port)
+                        .help("TPU Vortexor Receiver address to which verified transaction packet will be forwarded."),
                 )
                 .arg(
                     Arg::with_name("tpu_forwards_addr")
