@@ -21,7 +21,7 @@ pub struct PacketBatchSender {
 pub const DEFAULT_SENDER_THREADS_COUNT: usize = 8;
 pub const DEFAULT_BATCH_SIZE: usize = 128;
 
-pub const DEFAULT_RECV_TIMEOUT: Duration = Duration::from_millis(100);
+pub const DEFAULT_RECV_TIMEOUT: Duration = Duration::from_millis(5);
 
 impl PacketBatchSender {
     pub fn new(
