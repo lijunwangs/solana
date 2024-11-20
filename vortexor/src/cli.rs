@@ -37,7 +37,7 @@ impl Default for DefaultArgs {
                 .saturating_add(MAX_UNSTAKED_CONNECTIONS)
                 .to_string(),
             max_fwd_unstaked_connections: 0.to_string(),
-            max_streams_per_ms: "5000".to_string(), //DEFAULT_MAX_STREAMS_PER_MS.to_string(),
+            max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS.to_string(),
             max_connections_per_ipaddr_per_min: DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE
                 .to_string(),
             num_quic_endpoints: NUM_QUIC_ENDPOINTS.to_string(),
