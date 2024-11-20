@@ -4275,7 +4275,7 @@ pub(crate) mod tests {
             transaction::TransactionError,
         },
         solana_streamer::socket::SocketAddrSpace,
-        solana_tpu_client::tpu_client::DEFAULT_VOTE_USE_QUIC,
+        solana_tpu_client::tpu_client::{DEFAULT_TPU_CONNECTION_POOL_SIZE, DEFAULT_VOTE_USE_QUIC},
         solana_transaction_status::VersionedTransactionWithStatusMeta,
         solana_vote_program::{
             vote_state::{self, TowerSync, VoteStateVersions},
@@ -7561,9 +7561,16 @@ pub(crate) mod tests {
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
 
-        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
-            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
-            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
+        let connection_cache = if DEFAULT_VOTE_USE_QUIC {
+            ConnectionCache::new_quic(
+                "connection_cache_vote_quic",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
+        } else {
+            ConnectionCache::with_udp(
+                "connection_cache_vote_udp",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7643,9 +7650,16 @@ pub(crate) mod tests {
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
 
-        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
-            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
-            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
+        let connection_cache = if DEFAULT_VOTE_USE_QUIC {
+            ConnectionCache::new_quic(
+                "connection_cache_vote_quic",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
+        } else {
+            ConnectionCache::with_udp(
+                "connection_cache_vote_udp",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7733,9 +7747,16 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
-            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
-            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
+        let connection_cache = if DEFAULT_VOTE_USE_QUIC {
+            ConnectionCache::new_quic(
+                "connection_cache_vote_quic",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
+        } else {
+            ConnectionCache::with_udp(
+                "connection_cache_vote_udp",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
         };
 
         crate::voting_service::VotingService::handle_vote(
@@ -7854,9 +7875,16 @@ pub(crate) mod tests {
         let vote_info = voting_receiver
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
-        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
-            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
-            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
+        let connection_cache = if DEFAULT_VOTE_USE_QUIC {
+            ConnectionCache::new_quic(
+                "connection_cache_vote_quic",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
+        } else {
+            ConnectionCache::with_udp(
+                "connection_cache_vote_udp",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
         };
 
         crate::voting_service::VotingService::handle_vote(

@@ -437,7 +437,7 @@ pub mod tests {
         solana_runtime::bank::Bank,
         solana_sdk::signature::{Keypair, Signer},
         solana_streamer::socket::SocketAddrSpace,
-        solana_tpu_client::tpu_client::DEFAULT_VOTE_USE_QUIC,
+        solana_tpu_client::tpu_client::{DEFAULT_TPU_CONNECTION_POOL_SIZE, DEFAULT_VOTE_USE_QUIC},
         std::sync::atomic::{AtomicU64, Ordering},
     };
 
@@ -496,9 +496,16 @@ pub mod tests {
         } else {
             None
         };
-        let connection_cache = match DEFAULT_VOTE_USE_QUIC {
-            true => ConnectionCache::new_quic("connection_cache_vote_quic", 1),
-            false => ConnectionCache::with_udp("connection_cache_vote_udp", 1),
+        let connection_cache = if DEFAULT_VOTE_USE_QUIC {
+            ConnectionCache::new_quic(
+                "connection_cache_vote_quic",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
+        } else {
+            ConnectionCache::with_udp(
+                "connection_cache_vote_udp",
+                DEFAULT_TPU_CONNECTION_POOL_SIZE,
+            )
         };
 
         let tvu = Tvu::new(

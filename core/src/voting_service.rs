@@ -3,9 +3,11 @@ use {
         consensus::tower_storage::{SavedTowerVersions, TowerStorage},
         next_leader::upcoming_leader_tpu_vote_sockets,
     },
+    bincode::serialize,
     crossbeam_channel::Receiver,
     solana_client::connection_cache::ConnectionCache,
-    solana_gossip::cluster_info::ClusterInfo,
+    solana_connection_cache::client_connection::ClientConnection,
+    solana_gossip::{cluster_info::ClusterInfo, gossip_error::GossipError},
     solana_measure::measure::Measure,
     solana_poh::poh_recorder::PohRecorder,
     solana_sdk::{
@@ -13,6 +15,7 @@ use {
         transaction::Transaction,
     },
     std::{
+        net::SocketAddr,
         sync::{Arc, RwLock},
         thread::{self, Builder, JoinHandle},
     },
@@ -35,6 +38,28 @@ impl VoteOp {
         match self {
             VoteOp::PushVote { tx, .. } => tx,
             VoteOp::RefreshVote { tx, .. } => tx,
+        }
+    }
+}
+
+fn send_vote_transaction(
+    cluster_info: &ClusterInfo,
+    transaction: &Transaction,
+    tpu: Option<SocketAddr>,
+    connection_cache: &Arc<ConnectionCache>,
+) -> Result<(), GossipError> {
+    let tpu = tpu.map(Ok).unwrap_or_else(|| {
+        cluster_info
+            .my_contact_info()
+            .tpu(connection_cache.protocol())
+    })?;
+    let buf = serialize(transaction)?;
+    let client = connection_cache.get_connection(&tpu);
+    match client.send_data_async(buf) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            trace!("Ran into an error when sending vote: {err:?} to {tpu:?}");
+            Err(GossipError::SendError)
         }
     }
 }
@@ -98,7 +123,8 @@ impl VotingService {
 
         if !upcoming_leader_sockets.is_empty() {
             for tpu_vote_socket in upcoming_leader_sockets {
-                let _ = cluster_info.send_transaction(
+                let _ = send_vote_transaction(
+                    cluster_info,
                     vote_op.tx(),
                     Some(tpu_vote_socket),
                     &connection_cache,
@@ -106,7 +132,7 @@ impl VotingService {
             }
         } else {
             // Send to our own tpu vote socket if we cannot find a leader to send to
-            let _ = cluster_info.send_transaction(vote_op.tx(), None, &connection_cache);
+            let _ = send_vote_transaction(cluster_info, vote_op.tx(), None, &connection_cache);
         }
 
         match vote_op {

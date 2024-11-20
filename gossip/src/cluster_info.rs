@@ -46,13 +46,10 @@ use {
         },
         weighted_shuffle::WeightedShuffle,
     },
-    bincode::serialize,
     crossbeam_channel::{Receiver, RecvTimeoutError, Sender},
     itertools::Itertools,
     rand::{seq::SliceRandom, thread_rng, CryptoRng, Rng},
     rayon::{prelude::*, ThreadPool, ThreadPoolBuilder},
-    solana_client::connection_cache::ConnectionCache,
-    solana_connection_cache::client_connection::ClientConnection,
     solana_feature_set::FeatureSet,
     solana_ledger::shred::Shred,
     solana_measure::measure::Measure,
@@ -225,7 +222,6 @@ impl ClusterInfo {
                 GOSSIP_PING_CACHE_CAPACITY,
             )),
             stats: GossipStats::default(),
-            socket: bind_to_unspecified().unwrap(),
             local_message_pending_push_queue: Mutex::default(),
             contact_debug_interval: DEFAULT_CONTACT_DEBUG_INTERVAL_MILLIS,
             instance: RwLock::new(NodeInstance::new(&mut thread_rng(), id, timestamp())),
@@ -923,27 +919,6 @@ impl ClusterInfo {
             };
             debug_assert!(vote_index < MAX_LOCKOUT_HISTORY as u8);
             self.push_vote_at_index(refresh_vote, vote_index);
-        }
-    }
-
-    pub fn send_transaction(
-        &self,
-        transaction: &Transaction,
-        tpu: Option<SocketAddr>,
-        connection_cache: &Arc<ConnectionCache>,
-    ) -> Result<(), GossipError> {
-        let tpu = tpu
-            .map(Ok)
-            .unwrap_or_else(|| self.my_contact_info().tpu(connection_cache.protocol()))?;
-        let buf = serialize(transaction)?;
-        let client = connection_cache.get_connection(&tpu);
-        let result = client.send_data_async(buf);
-        match result {
-            Ok(_) => Ok(()),
-            Err(err) => {
-                trace!("Ran into an error when sending vote: {err:?} to {tpu:?}");
-                Err(GossipError::SendError)
-            }
         }
     }
 
@@ -3156,6 +3131,7 @@ mod tests {
             protocol::tests::new_rand_remote_node,
             socketaddr,
         },
+        bincode::serialize,
         itertools::izip,
         solana_ledger::shred::Shredder,
         solana_net_utils::bind_to,

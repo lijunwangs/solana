@@ -34,7 +34,7 @@ use {
         tpu::DEFAULT_TPU_COALESCE,
         validator::{
             is_snapshot_config_valid, BlockProductionMethod, BlockVerificationMethod, Validator,
-            ValidatorConfig, ValidatorError, ValidatorStartProgress,
+            ValidatorConfig, ValidatorError, ValidatorStartProgress, ValidatorTpuConfig,
         },
     },
     solana_gossip::{
@@ -2079,11 +2079,13 @@ pub fn main() {
         rpc_to_plugin_manager_receiver,
         start_progress,
         socket_addr_space,
-        tpu_use_quic,
-        vote_use_quic,
-        tpu_connection_pool_size,
-        tpu_enable_udp,
-        tpu_max_connections_per_ipaddr_per_minute,
+        ValidatorTpuConfig {
+            use_quic: tpu_use_quic,
+            vote_use_quic,
+            tpu_connection_pool_size,
+            tpu_enable_udp,
+            tpu_max_connections_per_ipaddr_per_minute,
+        },
         admin_service_post_init,
     ) {
         Ok(validator) => validator,
