@@ -74,6 +74,7 @@ impl LoadBalancer {
         slot_sender: Sender<Slot>,
         exit: &Arc<AtomicBool>,
     ) -> Vec<JoinHandle<()>> {
+        info!("start_subscription_threads for servers: {servers:?}");
         let highest_slot = Arc::new(AtomicU64::default());
 
         servers
