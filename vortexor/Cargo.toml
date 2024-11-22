@@ -50,6 +50,7 @@ solana-version = { workspace = true }
 
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+url = { workspace = true }
 x509-parser = { workspace = true }
 
 [dev-dependencies]

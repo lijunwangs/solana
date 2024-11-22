@@ -9214,6 +9214,7 @@ dependencies = [
  "solana-version",
  "thiserror",
  "tokio",
+ "url 2.5.3",
  "x509-parser",
 ]
 
