@@ -176,5 +176,26 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .multiple(true)
                 .validator(solana_net_utils::is_host_port)
                 .help("The destination validator address to which the vortexor will forward transaction"),
+        )
+        .arg(
+            Arg::with_name("rpc_server")
+                .short("r")
+                .long("rpc-server")
+                .value_name("HOST:PORT")
+                .takes_value(true)
+                .multiple(true)
+                .validator(solana_net_utils::is_host_port)
+                .help("The address of RPC server to which the vortexor will forward transaction"),
+        )
+        .arg(
+            Arg::with_name("websocket_server")
+                .short("r")
+                .long("websocket-server")
+                .value_name("HOST:PORT")
+                .takes_value(true)
+                .multiple(true)
+                .validator(solana_net_utils::is_host_port)
+                .help("The address of websocket server to which the vortexor will forward transaction.  \
+                 If multiple rpc servers are set, the count of websocket servers must match that of the rpc servers."),
         );
 }
