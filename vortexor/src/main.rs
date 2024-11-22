@@ -181,7 +181,7 @@ pub fn main() {
         .into_iter()
         .collect::<Vec<_>>();
 
-    let websocket_servers = values_t!(matches, "websocket_servers", String)
+    let websocket_servers = values_t!(matches, "websocket_server", String)
         .unwrap_or_default()
         .into_iter()
         .collect::<Vec<_>>();
