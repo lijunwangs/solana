@@ -189,7 +189,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
         )
         .arg(
             Arg::with_name("websocket_server")
-                .short("r")
+                .short("w")
                 .long("websocket-server")
                 .value_name("HOST:PORT")
                 .takes_value(true)
