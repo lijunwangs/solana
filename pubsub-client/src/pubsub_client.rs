@@ -326,7 +326,6 @@ fn connect_with_retry(
                 continue;
             }
         }
-        info!("Resuult of connecting to {url:?}: {result:?}");
         return result;
     }
 }
