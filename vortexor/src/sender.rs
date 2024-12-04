@@ -105,6 +105,7 @@ impl PacketBatchSender {
                         continue;
                     }
                     RecvTimeoutError::Disconnected => {
+                        info!("Exiting the recv_sender as channel is disconnected.");
                         break;
                     }
                 },
