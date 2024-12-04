@@ -75,14 +75,14 @@ impl PacketBatchSender {
                 Ok((_packet_count, packet_batches)) => {
                     // Send out packet batches
 
-                    let destinations = destinations.read().unwrap();
+                    let destinations = destinations.read().expect("Expected to get destinations");
                     for destination in destinations.iter() {
                         let mut packets: Vec<(&[u8], &SocketAddr)> = Vec::new();
 
                         packet_batches.iter().for_each(|batch| {
                             batch.0.iter().for_each(|packet_batch| {
                                 for packet in packet_batch.iter() {
-                                    packets.push((packet.data(0..).unwrap(), destination));
+                                    packets.push((packet.data(0..).expect("Expected to receive non null packet"), destination));
                                 }
                             });
                             let result = batch_send(&send_sock, &packets);
