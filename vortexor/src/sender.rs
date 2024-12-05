@@ -82,7 +82,12 @@ impl PacketBatchSender {
                         packet_batches.iter().for_each(|batch| {
                             batch.0.iter().for_each(|packet_batch| {
                                 for packet in packet_batch.iter() {
-                                    packets.push((packet.data(0..).expect("Expected to receive non null packet"), destination));
+                                    let data = packet.data(0..);
+                                    if data.is_none() {
+                                        continue;
+                                    }
+                                    let data = data.unwrap();
+                                    packets.push((data, destination));
                                 }
                             });
                             let result = batch_send(&send_sock, &packets);
