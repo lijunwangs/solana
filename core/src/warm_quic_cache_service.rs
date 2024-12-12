@@ -5,9 +5,14 @@ use {
     rand::{thread_rng, Rng},
     solana_client::connection_cache::{ConnectionCache, Protocol},
     solana_connection_cache::client_connection::ClientConnection as TpuConnection,
-    solana_gossip::cluster_info::ClusterInfo,
+    solana_gossip::{
+        cluster_info::ClusterInfo,
+        contact_info::{ContactInfo, Error},
+    },
     solana_poh::poh_recorder::PohRecorder,
+    solana_sdk::pubkey::Pubkey,
     std::{
+        net::SocketAddr,
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc, RwLock,
@@ -26,6 +31,28 @@ const CACHE_OFFSET_SLOT: i64 = 100;
 const CACHE_JITTER_SLOT: i64 = 20;
 
 impl WarmQuicCacheService {
+    pub fn warmup_connection(
+        cache: Option<&Arc<ConnectionCache>>,
+        cluster_info: &ClusterInfo,
+        leader_pubkey: &Pubkey,
+        contact_info_selector: impl Fn(&ContactInfo) -> Result<SocketAddr, Error>,
+        log_context: &str,
+    ) {
+        if let Some(connection_cache) = cache {
+            if let Some(Ok(addr)) =
+                cluster_info.lookup_contact_info(leader_pubkey, contact_info_selector)
+            {
+                let conn = connection_cache.get_connection(&addr);
+                if let Err(err) = conn.send_data(&[]) {
+                    warn!(
+                        "Failed to warmup QUIC connection to the leader {:?} at {:?}, Context: {}, Error: {:?}",
+                        leader_pubkey, addr, log_context, err
+                    );
+                }
+            }
+        }
+    }
+
     pub fn new(
         tpu_connection_cache: Option<Arc<ConnectionCache>>,
         vote_connection_cache: Option<Arc<ConnectionCache>>,
@@ -60,39 +87,22 @@ impl WarmQuicCacheService {
                             .map_or(true, |last_leader| last_leader != leader_pubkey)
                         {
                             maybe_last_leader = Some(leader_pubkey);
-                            if let Some(tpu_connection_cache) = &tpu_connection_cache {
-                                if let Some(Ok(addr)) = cluster_info
-                                    .lookup_contact_info(&leader_pubkey, |node| {
-                                        node.tpu(Protocol::QUIC)
-                                    })
-                                {
-                                    let conn = tpu_connection_cache.get_connection(&addr);
-                                    if let Err(err) = conn.send_data(&[]) {
-                                        warn!(
-                                            "Failed to warmup QUIC connection to the leader {:?}, \
-                                            Error {:?}",
-                                            leader_pubkey, err
-                                        );
-                                    }
-                                }
-                            }
+                            // Warm cache for regular transactions
+                            Self::warmup_connection(
+                                tpu_connection_cache.as_ref(),
+                                cluster_info.as_ref(),
+                                &leader_pubkey,
+                                |node| node.tpu(Protocol::QUIC),
+                                "tpu",
+                            );
                             // Warm cache for vote
-                            if let Some(vote_connection_cache) = &vote_connection_cache {
-                                if let Some(Ok(addr)) = cluster_info
-                                    .lookup_contact_info(&leader_pubkey, |node| {
-                                        node.tpu_vote(Protocol::QUIC)
-                                    })
-                                {
-                                    let conn = vote_connection_cache.get_connection(&addr);
-                                    if let Err(err) = conn.send_data(&[]) {
-                                        warn!(
-                                            "Failed to warmup QUIC connection to the leader {:?} at {addr:?}, \
-                                            Error {:?}",
-                                            leader_pubkey, err
-                                        );
-                                    }
-                                }
-                            }
+                            Self::warmup_connection(
+                                vote_connection_cache.as_ref(),
+                                cluster_info.as_ref(),
+                                &leader_pubkey,
+                                |node| node.tpu_vote(Protocol::QUIC),
+                                "vote",
+                            );
                         }
                     }
                     sleep(Duration::from_millis(200));
