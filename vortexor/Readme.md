@@ -66,6 +66,24 @@ decide the vortexor is dead or disconnected it may choose to use another
 vortexor or use its own native QUI TPU streamer by updating the ContactInfo
 about TPU address.
 
+Relationship of Validator and Vortexor
+The validator always broadcast one TPU address which will be served by a
+vortexor. A validator can change its pairing vortexor to another. A vortexor
+based on its performance can serve 1 or more validators. The architecture
+also allows multiple vortexors sharing the TPU address behind a load balancer
+to serve a validator to make the solution more scalable -- see blow.
+
+                            Load Balancer
+                                 |
+                     __________________________
+                     |           |            |
+                 Vortexor       Vortexor     Vortexor
+                     |           |            |
+                     |           |            |
+                     __________________________
+                                 |
+                              Validator
+
 Deployment Considerations
 The vortexor while making the validator more scalable in handling transactions,
 does have its drawbacks:
