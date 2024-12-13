@@ -419,12 +419,8 @@ fn create_cache_warmer_if_needed(
     poh_recorder: &Arc<RwLock<PohRecorder>>,
     exit: &Arc<AtomicBool>,
 ) -> Option<WarmQuicCacheService> {
-    let tpu_connection_cache = connection_cache
-        .is_some_and(|cache| cache.use_quic())
-        .then(|| connection_cache.unwrap().clone());
-    let vote_connection_cache = vote_connection_cache
-        .use_quic()
-        .then_some(vote_connection_cache);
+    let tpu_connection_cache = connection_cache.filter(|cache| cache.use_quic()).cloned();
+    let vote_connection_cache = Some(vote_connection_cache).filter(|cache| cache.use_quic());
 
     (tpu_connection_cache.is_some() || vote_connection_cache.is_some()).then(|| {
         WarmQuicCacheService::new(

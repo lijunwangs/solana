@@ -31,8 +31,8 @@ const CACHE_OFFSET_SLOT: i64 = 100;
 const CACHE_JITTER_SLOT: i64 = 20;
 
 impl WarmQuicCacheService {
-    pub fn warmup_connection(
-        cache: Option<&Arc<ConnectionCache>>,
+    fn warmup_connection(
+        cache: Option<&ConnectionCache>,
         cluster_info: &ClusterInfo,
         leader_pubkey: &Pubkey,
         contact_info_selector: impl Fn(&ContactInfo) -> Result<SocketAddr, Error>,
@@ -45,8 +45,8 @@ impl WarmQuicCacheService {
                 let conn = connection_cache.get_connection(&addr);
                 if let Err(err) = conn.send_data(&[]) {
                     warn!(
-                        "Failed to warmup QUIC connection to the leader {:?} at {:?}, Context: {}, Error: {:?}",
-                        leader_pubkey, addr, log_context, err
+                        "Failed to warmup QUIC connection to the leader {leader_pubkey:?} at {addr:?}, \
+                        Context: {log_context}, Error: {err:?}"
                     );
                 }
             }
@@ -60,18 +60,14 @@ impl WarmQuicCacheService {
         poh_recorder: Arc<RwLock<PohRecorder>>,
         exit: Arc<AtomicBool>,
     ) -> Self {
-        assert!(
-            tpu_connection_cache.is_none()
-                || tpu_connection_cache
-                    .as_ref()
-                    .is_some_and(|cache| cache.use_quic())
-        );
-        assert!(
-            vote_connection_cache.is_none()
-                || vote_connection_cache
-                    .as_ref()
-                    .is_some_and(|cache| cache.use_quic())
-        );
+        assert!(matches!(
+            tpu_connection_cache.as_deref(),
+            None | Some(ConnectionCache::Quic(_))
+        ));
+        assert!(matches!(
+            vote_connection_cache.as_deref(),
+            None | Some(ConnectionCache::Quic(_))
+        ));
         let thread_hdl = Builder::new()
             .name("solWarmQuicSvc".to_string())
             .spawn(move || {
@@ -89,16 +85,16 @@ impl WarmQuicCacheService {
                             maybe_last_leader = Some(leader_pubkey);
                             // Warm cache for regular transactions
                             Self::warmup_connection(
-                                tpu_connection_cache.as_ref(),
-                                cluster_info.as_ref(),
+                                tpu_connection_cache.as_deref(),
+                                &cluster_info,
                                 &leader_pubkey,
                                 |node| node.tpu(Protocol::QUIC),
                                 "tpu",
                             );
                             // Warm cache for vote
                             Self::warmup_connection(
-                                vote_connection_cache.as_ref(),
-                                cluster_info.as_ref(),
+                                vote_connection_cache.as_deref(),
+                                &cluster_info,
                                 &leader_pubkey,
                                 |node| node.tpu_vote(Protocol::QUIC),
                                 "vote",
