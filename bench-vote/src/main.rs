@@ -212,11 +212,11 @@ fn main() -> Result<()> {
 
     if !(server_only) {
         let elapsed = start.elapsed().unwrap();
-        let ftime = elapsed.as_nanos() as f64;
+        let ftime = elapsed.as_nanos() as f64 / 1_000_000_000.0;
         let fcount = (TRANSACTIONS_PER_THREAD * num_producers) as f64;
 
         println!(
-            "Performance: {:?}/ns, count: {fcount}, time in nano-second: {ftime}",
+            "Performance: {:?}/s, count: {fcount}, time in second: {ftime}",
             fcount / ftime
         );
     }
