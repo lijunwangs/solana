@@ -73,6 +73,11 @@ impl WarmQuicCacheService {
             vote_connection_cache.as_deref(),
             None | Some(ConnectionCache::Quic(_))
         ));
+        info!(
+            "warming cache: tpu:{} vote:{}",
+            tpu_connection_cache.is_some(),
+            vote_connection_cache.is_some()
+        );
         let thread_hdl = Builder::new()
             .name("solWarmQuicSvc".to_string())
             .spawn(move || {

@@ -553,6 +553,7 @@ impl Validator {
             tpu_max_connections_per_ipaddr_per_minute,
         } = tpu_config;
 
+        info!("vote_use_quic is {vote_use_quic}");
         let start_time = Instant::now();
 
         // Initialize the global rayon pool first to ensure the value in config
