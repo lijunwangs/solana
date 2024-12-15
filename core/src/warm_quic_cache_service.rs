@@ -48,6 +48,11 @@ impl WarmQuicCacheService {
                         "Failed to warmup QUIC connection to the leader {leader_pubkey:?} at {addr:?}, \
                         Context: {log_context}, Error: {err:?}"
                     );
+                } else {
+                    info!(
+                        "Warmed QUIC connection to the leader {leader_pubkey:?} at {addr:?}, \
+                        Context: {log_context}"
+                    );
                 }
             }
         }
