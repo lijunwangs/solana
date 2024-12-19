@@ -1,5 +1,4 @@
 use {
-    crate::vortexor::{MAX_QUIC_CONNECTIONS_PER_PEER, NUM_QUIC_ENDPOINTS},
     clap::{crate_description, crate_name, App, AppSettings, Arg},
     solana_clap_utils::input_validators::{is_keypair_or_ask_keyword, is_parsable},
     solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE},
@@ -11,6 +10,9 @@ use {
         quic::{MAX_STAKED_CONNECTIONS, MAX_UNSTAKED_CONNECTIONS},
     },
 };
+
+pub const DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
+pub const DEFAULT_NUM_QUIC_ENDPOINTS: usize = 8;
 
 pub struct DefaultArgs {
     pub bind_address: String,
@@ -30,7 +32,7 @@ impl Default for DefaultArgs {
         Self {
             bind_address: "0.0.0.0".to_string(),
             dynamic_port_range: format!("{}-{}", VALIDATOR_PORT_RANGE.0, VALIDATOR_PORT_RANGE.1),
-            max_connections_per_peer: MAX_QUIC_CONNECTIONS_PER_PEER.to_string(),
+            max_connections_per_peer: DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER.to_string(),
             max_tpu_staked_connections: MAX_STAKED_CONNECTIONS.to_string(),
             max_tpu_unstaked_connections: MAX_UNSTAKED_CONNECTIONS.to_string(),
             max_fwd_staked_connections: MAX_STAKED_CONNECTIONS
@@ -40,7 +42,7 @@ impl Default for DefaultArgs {
             max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS.to_string(),
             max_connections_per_ipaddr_per_min: DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE
                 .to_string(),
-            num_quic_endpoints: NUM_QUIC_ENDPOINTS.to_string(),
+            num_quic_endpoints: DEFAULT_NUM_QUIC_ENDPOINTS.to_string(),
         }
     }
 }
@@ -104,7 +106,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .takes_value(true)
                 .default_value(&default_args.max_connections_per_peer)
                 .validator(is_parsable::<u32>)
-                .help("Controls the max concurrent connection per IpAddr."),
+                .help("Controls the max concurrent connections per IpAddr."),
         )
         .arg(
             Arg::with_name("max_tpu_staked_connections")
@@ -112,7 +114,7 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .takes_value(true)
                 .default_value(&default_args.max_tpu_staked_connections)
                 .validator(is_parsable::<u32>)
-                .help("Controls the max concurrent connection per IpAddr."),
+                .help("Controls the max concurrent connections for TPU from staked nodes."),
         )
         .arg(
             Arg::with_name("max_tpu_unstaked_connections")
@@ -120,7 +122,23 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .takes_value(true)
                 .default_value(&default_args.max_tpu_unstaked_connections)
                 .validator(is_parsable::<u32>)
-                .help("Controls the max concurrent connection per IpAddr."),
+                .help("Controls the max concurrent connections fort TPU from unstaked nodes."),
+        )
+        .arg(
+            Arg::with_name("max_fwd_staked_connections")
+                .long("max-fwd-staked-connections")
+                .takes_value(true)
+                .default_value(&default_args.max_fwd_staked_connections)
+                .validator(is_parsable::<u32>)
+                .help("Controls the max concurrent connections for TPU-forward from staked nodes."),
+        )
+        .arg(
+            Arg::with_name("max_fwd_unstaked_connections")
+                .long("max-fwd-unstaked-connections")
+                .takes_value(true)
+                .default_value(&default_args.max_fwd_unstaked_connections)
+                .validator(is_parsable::<u32>)
+                .help("Controls the max concurrent connections for TPU-forward from unstaked nodes."),
         )
         .arg(
             Arg::with_name("max_connections_per_ipaddr_per_minute")

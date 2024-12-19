@@ -16,20 +16,9 @@ use {
     },
 };
 
-pub const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
-pub const NUM_QUIC_ENDPOINTS: usize = 8;
-
 pub struct TpuSockets {
     pub tpu_quic: Vec<UdpSocket>,
     pub tpu_quic_fwd: Vec<UdpSocket>,
-}
-
-pub struct TpuStreamerConfig {
-    pub tpu_thread_name: &'static str,
-    pub tpu_metrics_name: &'static str,
-    pub tpu_fwd_thread_name: &'static str,
-    pub tpu_fwd_metrics_name: &'static str,
-    pub quic_server_params: QuicServerParams,
 }
 
 pub struct Vortexor {
@@ -108,67 +97,34 @@ impl Vortexor {
         max_connections_per_peer: u64,
         max_tpu_staked_connections: u64,
         max_tpu_unstaked_connections: u64,
+        max_fwd_staked_connections: u64,
+        max_fwd_unstaked_connections: u64,
         max_streams_per_ms: u64,
         max_connections_per_ipaddr_per_min: u64,
         tpu_coalesce: Duration,
         identity_keypair: &Keypair,
         exit: Arc<AtomicBool>,
     ) -> Self {
-        let config = TpuStreamerConfig {
-            tpu_thread_name: "solQuicTpu",
-            tpu_metrics_name: "quic_streamer_tpu",
-            tpu_fwd_thread_name: "solQuicTpuFwd",
-            tpu_fwd_metrics_name: "quic_streamer_tpu_forwards",
-            quic_server_params: QuicServerParams {
-                max_connections_per_peer: max_connections_per_peer.try_into().unwrap(),
-                max_staked_connections: max_tpu_staked_connections.try_into().unwrap(),
-                max_unstaked_connections: max_tpu_unstaked_connections.try_into().unwrap(),
-                max_streams_per_ms,
-                max_connections_per_ipaddr_per_min,
-                wait_for_chunk_timeout: DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
-                coalesce: tpu_coalesce,
-            },
+        let mut quic_server_params = QuicServerParams {
+            max_connections_per_peer: max_connections_per_peer.try_into().unwrap(),
+            max_staked_connections: max_tpu_staked_connections.try_into().unwrap(),
+            max_unstaked_connections: max_tpu_unstaked_connections.try_into().unwrap(),
+            max_streams_per_ms,
+            max_connections_per_ipaddr_per_min,
+            wait_for_chunk_timeout: DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
+            coalesce: tpu_coalesce,
         };
 
-        Vortexor::new(
-            identity_keypair,
-            tpu_sockets,
-            tpu_sender,
-            tpu_fwd_sender,
-            staked_nodes,
-            config,
-            exit,
-        )
-    }
-
-    /// Create a new TPU Vortexor
-    pub fn new(
-        keypair: &Keypair,
-        tpu_sockets: TpuSockets,
-        tpu_sender: Sender<PacketBatch>,
-        tpu_fwd_sender: Sender<PacketBatch>,
-        staked_nodes: Arc<RwLock<StakedNodes>>,
-        config: TpuStreamerConfig,
-        exit: Arc<AtomicBool>,
-    ) -> Self {
         let TpuSockets {
             tpu_quic,
             tpu_quic_fwd,
         } = tpu_sockets;
 
-        let TpuStreamerConfig {
-            tpu_thread_name,
-            tpu_metrics_name,
-            tpu_fwd_thread_name,
-            tpu_fwd_metrics_name,
-            mut quic_server_params,
-        } = config;
-
         let tpu_result = spawn_server_multi(
-            tpu_thread_name,
-            tpu_metrics_name,
+            "solVtxTpu",
+            "quic_vortexor_tpu",
             tpu_quic,
-            keypair,
+            identity_keypair,
             tpu_sender.clone(),
             exit.clone(),
             staked_nodes.clone(),
@@ -178,15 +134,14 @@ impl Vortexor {
 
         // Fot TPU forward -- we disallow unstaked connections. Allocate all connection resources
         // for staked connections:
-        quic_server_params.max_staked_connections = quic_server_params
-            .max_staked_connections
-            .saturating_add(quic_server_params.max_unstaked_connections);
-        quic_server_params.max_unstaked_connections = 0;
+        quic_server_params.max_staked_connections = max_fwd_staked_connections.try_into().unwrap();
+        quic_server_params.max_unstaked_connections =
+            max_fwd_unstaked_connections.try_into().unwrap();
         let tpu_fwd_result = spawn_server_multi(
-            tpu_fwd_thread_name,
-            tpu_fwd_metrics_name,
+            "solVtxTpuFwd",
+            "quic_vortexor_tpu_forwards",
             tpu_quic_fwd,
-            keypair,
+            identity_keypair,
             tpu_fwd_sender,
             exit.clone(),
             staked_nodes.clone(),

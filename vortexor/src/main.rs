@@ -32,6 +32,10 @@ pub fn main() {
         .expect("invalid bind_address");
     let max_connections_per_peer = value_t_or_exit!(matches, "max_connections_per_peer", u64);
     let max_tpu_staked_connections = value_t_or_exit!(matches, "max_tpu_staked_connections", u64);
+    let max_fwd_staked_connections = value_t_or_exit!(matches, "max_fwd_staked_connections", u64);
+    let max_fwd_unstaked_connections =
+        value_t_or_exit!(matches, "max_fwd_unstaked_connections", u64);
+
     let max_tpu_unstaked_connections =
         value_t_or_exit!(matches, "max_tpu_unstaked_connections", u64);
 
@@ -66,6 +70,8 @@ pub fn main() {
         max_connections_per_peer,
         max_tpu_staked_connections,
         max_tpu_unstaked_connections,
+        max_fwd_staked_connections,
+        max_fwd_unstaked_connections,
         max_streams_per_ms,
         max_connections_per_ipaddr_per_min,
         tpu_coalesce,
