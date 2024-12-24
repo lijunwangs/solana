@@ -1,25 +1,29 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use {
-    clap::{crate_description, crate_name, Arg, Command},
+    clap::{crate_description, crate_name, value_t, value_t_or_exit, App, Arg},
     crossbeam_channel::unbounded,
+    solana_clap_utils::{input_parsers::keypair_of, input_validators::is_keypair_or_ask_keyword},
     solana_client::connection_cache::ConnectionCache,
     solana_connection_cache::client_connection::ClientConnection,
     solana_net_utils::bind_to_unspecified,
     solana_sdk::{
-        hash::Hash, message::Message, signature::Keypair, signer::Signer, transaction::Transaction,
+        hash::Hash, message::Message, pubkey::Pubkey, signature::Keypair, signer::Signer,
+        transaction::Transaction,
     },
     solana_streamer::{
         packet::PacketBatchRecycler,
-        streamer::{receiver, PacketBatchReceiver, StreamerReceiveStats},
+        quic::{spawn_server_multi, QuicServerParams},
+        streamer::{receiver, PacketBatchReceiver, StakedNodes, StreamerReceiveStats},
     },
     solana_vote_program::{vote_instruction, vote_state::Vote},
     std::{
         cmp::max,
+        collections::HashMap,
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
-            Arc,
+            Arc, RwLock,
         },
         thread::{self, spawn, JoinHandle, Result},
         time::{Duration, Instant, SystemTime},
@@ -57,31 +61,40 @@ fn sink(
 const TRANSACTIONS_PER_THREAD: u64 = 1_000_000; // Number of transactions per thread
 
 fn main() -> Result<()> {
-    let matches = Command::new(crate_name!())
+    let matches = App::new(crate_name!())
         .about(crate_description!())
         .version(solana_version::version!())
         .arg(
-            Arg::new("num-recv-sockets")
+            Arg::with_name("identity")
+                .short("i")
+                .long("identity")
+                .value_name("KEYPAIR")
+                .takes_value(true)
+                .validator(is_keypair_or_ask_keyword)
+                .help("identity keypair for the QUIC server when --use-quic is true."),
+        )
+        .arg(
+            Arg::with_name("num-recv-sockets")
                 .long("num-recv-sockets")
                 .value_name("NUM")
                 .takes_value(true)
                 .help("Use NUM receive sockets"),
         )
         .arg(
-            Arg::new("num-producers")
+            Arg::with_name("num-producers")
                 .long("num-producers")
                 .value_name("NUM")
                 .takes_value(true)
                 .help("Use this many producer threads."),
         )
         .arg(
-            Arg::new("server-only")
+            Arg::with_name("server-only")
                 .long("server-only")
                 .takes_value(false)
                 .help("Run the bench tool as a server only."),
         )
         .arg(
-            Arg::new("client-only")
+            Arg::with_name("client-only")
                 .long("client-only")
                 .takes_value(false)
                 .requires("server-address")
@@ -89,7 +102,7 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("server-address")
-                .short('n')
+                .short("n")
                 .long("server-address")
                 .value_name("HOST:PORT")
                 .takes_value(true)
@@ -97,16 +110,24 @@ fn main() -> Result<()> {
                 .help("The destination streamer address to which the client will send transactions to"),
         )
         .arg(
-            Arg::new("use-connection-cache")
+            Arg::with_name("use-connection-cache")
                 .long("use-connection-cache")
                 .takes_value(false)
                 .help("Use this many producer threads."),
         )
         .arg(
-            Arg::new("verbose")
+            Arg::with_name("verbose")
                 .long("verbose")
                 .takes_value(false)
                 .help("Show verbose messages."),
+        )
+        .arg(
+            Arg::with_name("use-quic")
+                .long("use-quic")
+                .value_name("Boolean")
+                .takes_value(true)
+                .default_value("false")
+                .help("Controls if to use QUIC for sending/receiving vote transactions."),
         )
         .get_matches();
 
@@ -115,7 +136,14 @@ fn main() -> Result<()> {
         num_sockets = max(num_sockets, n.to_string().parse().expect("integer"));
     }
 
-    let num_producers: u64 = matches.value_of_t("num-producers").unwrap_or(4);
+    let vote_use_quic = value_t_or_exit!(matches, "use-quic", bool);
+
+    let identity_keypair = vote_use_quic.then_some(keypair_of(&matches, "identity").or_else(|| {
+        println!("--identity is not specified when --use-quic is on. Will generate a key dynamically.");
+        Some(Keypair::new())
+    }).unwrap());
+
+    let num_producers: u64 = value_t!(matches, "num-producers", u64).unwrap_or(4);
 
     let use_connection_cache = matches.is_present("use-connection-cache");
 
@@ -133,6 +161,21 @@ fn main() -> Result<()> {
     let port = destination.map_or(0, |addr| addr.port());
     let ip_addr = destination.map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |addr| addr.ip());
 
+    let staked_nodes = vote_use_quic.then(|| {
+        let stake: u64 = 1024;
+        let total_stake: u64 = 1024;
+
+        let stakes = HashMap::from([
+            (identity_keypair.as_ref().unwrap().pubkey(), stake),
+            (Pubkey::new_unique(), total_stake.saturating_sub(stake)),
+        ]);
+        let staked_nodes: Arc<RwLock<StakedNodes>> = Arc::new(RwLock::new(StakedNodes::new(
+            Arc::new(stakes),
+            HashMap::<Pubkey, u64>::default(), // overrides
+        )));
+        staked_nodes
+    });
+
     let (exit, read_threads, sink_threads, destination) = if !client_only {
         let exit = Arc::new(AtomicBool::new(false));
 
@@ -145,24 +188,44 @@ fn main() -> Result<()> {
             num_sockets,
         )
         .unwrap();
-        let stats = Arc::new(StreamerReceiveStats::new("bench-streamer-test"));
-        for read in read_sockets {
-            read.set_read_timeout(Some(SOCKET_RECEIVE_TIMEOUT)).unwrap();
+        let stats = Arc::new(StreamerReceiveStats::new("bench-vote-test"));
 
+        if vote_use_quic {
+            let quic_server_params = QuicServerParams::default();
             let (s_reader, r_reader) = unbounded();
             read_channels.push(r_reader);
-            read_threads.push(receiver(
-                "solRcvrBenStrmr".to_string(),
-                Arc::new(read),
-                exit.clone(),
+
+            let server = spawn_server_multi(
+                "solRcvrBenVote",
+                "bench_vote_metrics",
+                read_sockets,
+                &identity_keypair.as_ref().unwrap(),
                 s_reader,
-                recycler.clone(),
-                stats.clone(),
-                COALESCE_TIME, // coalesce
-                true,          // use_pinned_memory
-                None,          // in_vote_only_mode
-                false,         // is_staked_service
-            ));
+                exit.clone(),
+                staked_nodes.as_ref().unwrap().clone(),
+                quic_server_params,
+            )
+            .unwrap();
+            read_threads.push(server.thread);
+        } else {
+            for read in read_sockets {
+                read.set_read_timeout(Some(SOCKET_RECEIVE_TIMEOUT)).unwrap();
+
+                let (s_reader, r_reader) = unbounded();
+                read_channels.push(r_reader);
+                read_threads.push(receiver(
+                    "solRcvrBenVote".to_string(),
+                    Arc::new(read),
+                    exit.clone(),
+                    s_reader,
+                    recycler.clone(),
+                    stats.clone(),
+                    COALESCE_TIME, // coalesce
+                    true,          // use_pinned_memory
+                    None,          // in_vote_only_mode
+                    false,         // is_staked_service
+                ));
+            }
         }
 
         let received_size = Arc::new(AtomicUsize::new(0));
@@ -185,8 +248,17 @@ fn main() -> Result<()> {
 
     let start = SystemTime::now();
 
-    let producer_threads =
-        (!server_only).then(|| producer(destination, num_producers, use_connection_cache, verbose));
+    let producer_threads = (!server_only).then(|| {
+        producer(
+            destination,
+            num_producers,
+            use_connection_cache,
+            verbose,
+            vote_use_quic,
+            identity_keypair,
+            staked_nodes,
+        )
+    });
 
     producer_threads
         .into_iter()
@@ -234,13 +306,32 @@ fn producer(
     num_producers: u64,
     use_connection_cache: bool,
     verbose: bool,
+    vote_use_quic: bool,
+    identity_keypair: Option<Keypair>,
+    staked_nodes: Option<Arc<RwLock<StakedNodes>>>,
 ) -> Vec<JoinHandle<()>> {
     println!("Running clients against {sock:?}");
-    let transporter = if use_connection_cache {
-        Transporter::Cache(Arc::new(ConnectionCache::with_udp(
-            "connection_cache_vote_udp",
-            1, // connection_pool_size
-        )))
+    let transporter = if use_connection_cache || vote_use_quic {
+        if vote_use_quic {
+            Transporter::Cache(Arc::new(ConnectionCache::new_with_client_options(
+                "connection_cache_vote_quic",
+                1,    // connection_pool_size
+                None, // client_endpoint
+                Some((
+                    identity_keypair.as_ref().unwrap(),
+                    IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
+                )),
+                Some((
+                    staked_nodes.as_ref().unwrap(),
+                    &identity_keypair.as_ref().unwrap().pubkey(),
+                )),
+            )))
+        } else {
+            Transporter::Cache(Arc::new(ConnectionCache::with_udp(
+                "connection_cache_vote_udp",
+                1, // connection_pool_size
+            )))
+        }
     } else {
         Transporter::DirectSocket(Arc::new(bind_to_unspecified().unwrap()))
     };

@@ -5205,6 +5205,7 @@ version = "0.23.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5065c3f250cbd332cd894be57c40fa52387247659b14a2d6041d121547903b1b"
 dependencies = [
+ "log",
  "once_cell",
  "ring 0.17.3",
  "rustls-pki-types",
@@ -6154,8 +6155,9 @@ name = "solana-bench-vote"
 version = "2.2.0"
 dependencies = [
  "bincode",
- "clap 3.2.23",
+ "clap 2.33.3",
  "crossbeam-channel",
+ "solana-clap-utils",
  "solana-client",
  "solana-connection-cache",
  "solana-net-utils",
