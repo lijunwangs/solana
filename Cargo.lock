@@ -6160,6 +6160,7 @@ dependencies = [
  "solana-clap-utils",
  "solana-client",
  "solana-connection-cache",
+ "solana-logger",
  "solana-net-utils",
  "solana-sdk",
  "solana-streamer",
