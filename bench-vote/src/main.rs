@@ -131,6 +131,8 @@ fn main() -> Result<()> {
         )
         .get_matches();
 
+    solana_logger::setup();
+
     let mut num_sockets = 1usize;
     if let Some(n) = matches.value_of("num-recv-sockets") {
         num_sockets = max(num_sockets, n.to_string().parse().expect("integer"));
