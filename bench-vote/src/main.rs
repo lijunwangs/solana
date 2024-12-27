@@ -145,7 +145,7 @@ fn main() -> Result<()> {
     let client_only = matches.is_present("client-only");
     let verbose = matches.is_present("verbose");
 
-    let destination = matches.is_present("server-address").then(|| {
+    let destination = client_only.then(|| {
         let addr = matches
             .value_of("server-address")
             .expect("Server address must be set when --client-only is used");
