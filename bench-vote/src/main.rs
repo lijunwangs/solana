@@ -71,7 +71,7 @@ fn main() -> Result<()> {
                 .value_name("KEYPAIR")
                 .takes_value(true)
                 .validator(is_keypair_or_ask_keyword)
-                .help("identity keypair for the QUIC server when --use-quic is true."),
+                .help("Identity keypair for the QUIC endpoint when '--use-quic' is set true. If it is not specified a dynamic key is created."),
         )
         .arg(
             Arg::with_name("num-recv-sockets")
@@ -139,43 +139,44 @@ fn main() -> Result<()> {
     }
 
     let vote_use_quic = value_t_or_exit!(matches, "use-quic", bool);
-
-    let identity_keypair = vote_use_quic.then_some(keypair_of(&matches, "identity").or_else(|| {
-        println!("--identity is not specified when --use-quic is on. Will generate a key dynamically.");
-        Some(Keypair::new())
-    }).unwrap());
-
     let num_producers: u64 = value_t!(matches, "num-producers", u64).unwrap_or(4);
-
     let use_connection_cache = matches.is_present("use-connection-cache");
-
     let server_only = matches.is_present("server-only");
     let client_only = matches.is_present("client-only");
     let verbose = matches.is_present("verbose");
 
-    let destination = matches.is_present("server-address").then(|| {
+    let destination = client_only.then(|| {
         let addr = matches
             .value_of("server-address")
-            .expect("Destination must be set when --client-only is used");
+            .expect("Server address must be set when --client-only is used");
         solana_net_utils::parse_host_port(addr).expect("Expecting a valid server address")
     });
 
     let port = destination.map_or(0, |addr| addr.port());
     let ip_addr = destination.map_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED), |addr| addr.ip());
 
-    let staked_nodes = vote_use_quic.then(|| {
+    let quic_params = vote_use_quic.then(|| {
+        let identity_keypair = keypair_of(&matches, "identity").or_else(|| {
+            println!("--identity is not specified when --use-quic is on. Will generate a key dynamically.");
+            Some(Keypair::new())
+        }).unwrap();
+
         let stake: u64 = 1024;
         let total_stake: u64 = 1024;
 
         let stakes = HashMap::from([
-            (identity_keypair.as_ref().unwrap().pubkey(), stake),
+            (identity_keypair.pubkey(), stake),
             (Pubkey::new_unique(), total_stake.saturating_sub(stake)),
         ]);
         let staked_nodes: Arc<RwLock<StakedNodes>> = Arc::new(RwLock::new(StakedNodes::new(
             Arc::new(stakes),
             HashMap::<Pubkey, u64>::default(), // overrides
         )));
-        staked_nodes
+
+        QuicParams {
+            identity_keypair,
+            staked_nodes
+        }
     });
 
     let (exit, read_threads, sink_threads, destination) = if !client_only {
@@ -192,7 +193,7 @@ fn main() -> Result<()> {
         .unwrap();
         let stats = Arc::new(StreamerReceiveStats::new("bench-vote-test"));
 
-        if vote_use_quic {
+        if let Some(quic_params) = &quic_params {
             let quic_server_params = QuicServerParams::default();
             let (s_reader, r_reader) = unbounded();
             read_channels.push(r_reader);
@@ -201,10 +202,10 @@ fn main() -> Result<()> {
                 "solRcvrBenVote",
                 "bench_vote_metrics",
                 read_sockets,
-                &identity_keypair.as_ref().unwrap(),
+                &quic_params.identity_keypair,
                 s_reader,
                 exit.clone(),
-                staked_nodes.as_ref().unwrap().clone(),
+                quic_params.staked_nodes.clone(),
                 quic_server_params,
             )
             .unwrap();
@@ -256,9 +257,7 @@ fn main() -> Result<()> {
             num_producers,
             use_connection_cache,
             verbose,
-            vote_use_quic,
-            identity_keypair,
-            staked_nodes,
+            quic_params,
         )
     });
 
@@ -303,29 +302,32 @@ enum Transporter {
     DirectSocket(Arc<UdpSocket>),
 }
 
+struct QuicParams {
+    identity_keypair: Keypair,
+    staked_nodes: Arc<RwLock<StakedNodes>>,
+}
+
 fn producer(
     sock: SocketAddr,
     num_producers: u64,
     use_connection_cache: bool,
     verbose: bool,
-    vote_use_quic: bool,
-    identity_keypair: Option<Keypair>,
-    staked_nodes: Option<Arc<RwLock<StakedNodes>>>,
+    quic_params: Option<QuicParams>,
 ) -> Vec<JoinHandle<()>> {
     println!("Running clients against {sock:?}");
-    let transporter = if use_connection_cache || vote_use_quic {
-        if vote_use_quic {
+    let transporter = if use_connection_cache || quic_params.is_some() {
+        if let Some(quic_params) = &quic_params {
             Transporter::Cache(Arc::new(ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
                 1,    // connection_pool_size
                 None, // client_endpoint
                 Some((
-                    identity_keypair.as_ref().unwrap(),
+                    &quic_params.identity_keypair,
                     IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
                 )),
                 Some((
-                    staked_nodes.as_ref().unwrap(),
-                    &identity_keypair.as_ref().unwrap().pubkey(),
+                    &quic_params.staked_nodes,
+                    &quic_params.identity_keypair.pubkey(),
                 )),
             )))
         } else {
