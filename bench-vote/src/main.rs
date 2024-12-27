@@ -197,8 +197,8 @@ fn main() -> Result<()> {
 
         if let Some(quic_params) = &quic_params {
             let mut quic_server_params = QuicServerParams::default();
-            quic_server_params.max_connections_per_ipaddr_per_min = 32;
-            quic_server_params.max_connections_per_peer = 32;
+            quic_server_params.max_connections_per_ipaddr_per_min = 64;
+            quic_server_params.max_connections_per_peer = 64;
             let (s_reader, r_reader) = unbounded();
             read_channels.push(r_reader);
 
@@ -323,7 +323,7 @@ fn producer(
         if let Some(quic_params) = &quic_params {
             Transporter::Cache(Arc::new(ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
-                8,    // connection_pool_size
+                32,    // connection_pool_size
                 None, // client_endpoint
                 Some((
                     &quic_params.identity_keypair,
