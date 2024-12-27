@@ -321,7 +321,7 @@ fn producer(
         if let Some(quic_params) = &quic_params {
             Transporter::Cache(Arc::new(ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
-                512,    // connection_pool_size
+                256,    // connection_pool_size
                 None, // client_endpoint
                 Some((
                     &quic_params.identity_keypair,
