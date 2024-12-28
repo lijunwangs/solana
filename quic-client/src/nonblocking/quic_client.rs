@@ -74,9 +74,7 @@ impl QuicLazyInitializedEndpoint {
     }
 
     fn create_endpoint(&self) -> Endpoint {
-        let mut endpoint = if let Some(endpoint) = &self.client_endpoint {
-            endpoint.clone()
-        } else {
+        let mut endpoint = {
             let client_socket = solana_net_utils::bind_in_range(
                 IpAddr::V4(Ipv4Addr::UNSPECIFIED),
                 VALIDATOR_PORT_RANGE,
@@ -111,10 +109,11 @@ impl QuicLazyInitializedEndpoint {
     }
 
     async fn get_endpoint(&self) -> Arc<Endpoint> {
-        self.endpoint
-            .get_or_init(|| async { Arc::new(self.create_endpoint()) })
-            .await
-            .clone()
+        Arc::new(self.create_endpoint())
+        // self.endpoint
+        //     .get_or_init(|| async { Arc::new(self.create_endpoint()) })
+        //     .await
+        //     .clone()
     }
 }
 
