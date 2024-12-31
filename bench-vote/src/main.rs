@@ -58,7 +58,7 @@ fn sink(
     })
 }
 
-const TRANSACTIONS_PER_THREAD: u64 = 1_000_000; // Number of transactions per thread
+const TRANSACTIONS_PER_THREAD: u64 = 10_000_000; // Number of transactions per thread
 
 fn main() -> Result<()> {
     let matches = App::new(crate_name!())
