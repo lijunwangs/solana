@@ -93,6 +93,7 @@ pub(crate) fn configure_server(
 pub fn rt(name: String) -> Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .thread_name(name)
+        .worker_threads(8)
         .enable_all()
         .build()
         .unwrap()
