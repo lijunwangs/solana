@@ -186,13 +186,23 @@ fn main() -> Result<()> {
         let mut read_threads = Vec::new();
         let recycler = PacketBatchRecycler::default();
         let config = SocketConfig::default().reuseport(true);
-        let (port, read_sockets) = solana_net_utils::multi_bind_in_range_with_config(
+        let (port, mut read_sockets) = solana_net_utils::multi_bind_in_range_with_config(
             ip_addr,
             (port, port + num_sockets as u16),
             config,
-            num_sockets,
+            num_sockets / 2,
         )
         .unwrap();
+
+        let (port, mut read_sockets_2) = solana_net_utils::multi_bind_in_range_with_config(
+            ip_addr,
+            (port + 1, port + num_sockets as u16),
+            config,
+            num_sockets / 2,
+        )
+        .unwrap();
+        
+        read_sockets.append(&mut read_sockets_2);
         let stats = Arc::new(StreamerReceiveStats::new("bench-vote-test"));
 
         if let Some(quic_params) = &quic_params {
