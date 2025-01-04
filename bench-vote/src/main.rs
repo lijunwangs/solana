@@ -3,6 +3,7 @@
 use {
     clap::{crate_description, crate_name, value_t, value_t_or_exit, App, Arg},
     crossbeam_channel::unbounded,
+    rand::seq::SliceRandom,
     solana_clap_utils::{input_parsers::keypair_of, input_validators::is_keypair_or_ask_keyword},
     solana_client::connection_cache::ConnectionCache,
     solana_connection_cache::client_connection::ClientConnection,
@@ -200,6 +201,9 @@ fn main() -> Result<()> {
         .unwrap();
 
         read_sockets.append(&mut read_sockets_2);
+        let mut rng = rand::thread_rng();
+        read_sockets.shuffle(&mut rng);
+
         let stats = Arc::new(StreamerReceiveStats::new("bench-vote-test"));
 
         if let Some(quic_params) = &quic_params {
