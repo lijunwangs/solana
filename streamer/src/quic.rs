@@ -42,8 +42,8 @@ pub(crate) const DEFAULT_TPU_COALESCE: Duration = Duration::from_millis(5);
 
 pub struct SpawnServerResult {
     pub endpoints: Vec<Endpoint>,
-    pub thread: Vec<thread::JoinHandle<()>>,
-    pub key_updater: Vec<Arc<EndpointKeyUpdater>>,
+    pub thread: thread::JoinHandle<()>,
+    pub key_updater: Arc<EndpointKeyUpdater>,
 }
 
 /// Returns default server configuration along with its PEM certificate chain.
@@ -593,71 +593,13 @@ impl Default for QuicServerParams {
 pub fn spawn_server_multi(
     thread_name: &'static str,
     metrics_name: &'static str,
-    mut sockets: Vec<UdpSocket>,
-    keypair: &Keypair,
-    packet_sender: Sender<PacketBatch>,
-    exit: Arc<AtomicBool>,
-    staked_nodes: Arc<RwLock<StakedNodes>>,
-    quic_server_params: QuicServerParams,
-) -> Result<SpawnServerResult, QuicServerError> {
-    let mid = sockets.len() / 2;
-
-    let mut endpoints = Vec::new();
-    let mut threads = Vec::new();
-    let sockets_1: Vec<UdpSocket> = sockets.drain(..mid).collect();
-    let mut key_updaters: Vec<Arc<EndpointKeyUpdater>> = Vec::new();
-
-    if !sockets_1.is_empty() {
-        let (mut endpoints_t, handle, updater) = spawn_server_multi_internal(
-            metrics_name,
-            sockets_1,
-            keypair,
-            packet_sender.clone(),
-            exit.clone(),
-            staked_nodes.clone(),
-            quic_server_params.clone(),
-            thread_name,
-        )?;
-
-        endpoints.append(&mut endpoints_t);
-        threads.push(handle);
-        key_updaters.push(Arc::new(updater));
-    }
-
-    if !sockets.is_empty() {
-        let (mut endpoints_t, handle, updater) = spawn_server_multi_internal(
-            metrics_name,
-            sockets,
-            keypair,
-            packet_sender,
-            exit,
-            staked_nodes,
-            quic_server_params,
-            thread_name,
-        )?;
-
-        endpoints.append(&mut endpoints_t);
-        threads.push(handle);
-        key_updaters.push(Arc::new(updater));
-    }
-
-    Ok(SpawnServerResult {
-        endpoints: endpoints,
-        thread: threads,
-        key_updater: key_updaters,
-    })
-}
-
-fn spawn_server_multi_internal(
-    metrics_name: &'static str,
     sockets: Vec<UdpSocket>,
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
     quic_server_params: QuicServerParams,
-    thread_name: &'static str,
-) -> Result<(Vec<Endpoint>, thread::JoinHandle<()>, EndpointKeyUpdater), QuicServerError> {
+) -> Result<SpawnServerResult, QuicServerError> {
     let runtime = rt(format!("{thread_name}Rt"));
     let result = {
         let _guard = runtime.enter();
@@ -682,7 +624,11 @@ fn spawn_server_multi_internal(
     let updater = EndpointKeyUpdater {
         endpoints: result.endpoints.clone(),
     };
-    Ok((result.endpoints, handle, updater))
+    Ok(SpawnServerResult {
+        endpoints: result.endpoints,
+        thread: handle,
+        key_updater: Arc::new(updater),
+    })
 }
 
 #[cfg(test)]
