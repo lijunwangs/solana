@@ -213,7 +213,7 @@ fn main() -> Result<()> {
             let (s_reader, r_reader) = unbounded();
             read_channels.push(r_reader);
 
-            let mut server = spawn_server_multi(
+            let server = spawn_server_multi(
                 "solRcvrBenVote",
                 "bench_vote_metrics",
                 read_sockets,
@@ -224,7 +224,7 @@ fn main() -> Result<()> {
                 quic_server_params,
             )
             .unwrap();
-            read_threads.append(&mut server.thread);
+            read_threads.push(server.thread);
         } else {
             for read in read_sockets {
                 read.set_read_timeout(Some(SOCKET_RECEIVE_TIMEOUT)).unwrap();
