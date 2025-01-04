@@ -6202,6 +6202,7 @@ dependencies = [
  "bincode",
  "clap 2.33.3",
  "crossbeam-channel",
+ "rand 0.8.5",
  "solana-clap-utils",
  "solana-client",
  "solana-connection-cache",
