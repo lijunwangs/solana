@@ -49,9 +49,9 @@ fn sink(
                 received_size.fetch_add(packet_batch.len(), Ordering::Relaxed);
             }
 
-            let count = received_size.swap(0, Ordering::Relaxed);
 
             if verbose && last_report.elapsed() > SINK_REPORT_INTERVAL {
+                let count = received_size.swap(0, Ordering::Relaxed);
                 println!("Received txns count: {count}");
                 last_report = Instant::now();
             }
