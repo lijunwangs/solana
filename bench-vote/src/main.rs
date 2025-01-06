@@ -21,7 +21,7 @@ use {
     std::{
         cmp::max,
         collections::HashMap,
-        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+        net::{IpAddr, Ipv4Addr, SocketAddr},
         sync::{
             atomic::{AtomicBool, AtomicUsize, Ordering},
             Arc, RwLock,
