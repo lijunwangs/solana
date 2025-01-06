@@ -196,9 +196,9 @@ fn main() -> Result<()> {
         let stats = Arc::new(StreamerReceiveStats::new("bench-vote-test"));
 
         if let Some(quic_params) = &quic_params {
-            let mut quic_server_params = QuicServerParams::default();
-            quic_server_params.max_connections_per_ipaddr_per_min = 1024;
-            quic_server_params.max_connections_per_peer = 1024;
+            let mut quic_server_params = 
+                QuicServerParams { max_connections_per_ipaddr_per_min: 1024, max_connections_per_peer: 1024, ..Default::default() }  
+            ;
             let (s_reader, r_reader) = unbounded();
             read_channels.push(r_reader);
 
