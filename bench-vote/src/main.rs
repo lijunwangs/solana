@@ -26,7 +26,7 @@ use {
             atomic::{AtomicBool, AtomicUsize, Ordering},
             Arc, RwLock,
         },
-        thread::{self, spawn, JoinHandle, Result},
+        thread::{self, sleep, spawn, JoinHandle, Result},
         time::{Duration, Instant, SystemTime},
     },
 };
@@ -63,6 +63,7 @@ fn report_receive_performance(
                 println!("Received txns count: {count}");
                 last_report = Instant::now();
             }
+            sleep(Duration::from_millis(100));
         }
     })
 }
