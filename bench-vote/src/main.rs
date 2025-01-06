@@ -328,7 +328,7 @@ fn main() -> Result<()> {
 #[derive(Clone)]
 enum Transporter {
     Cache(Arc<ConnectionCache>),
-    DirectSocket(Arc<UdpSocket>),
+    DirectSocket,
 }
 
 struct QuicParams {
@@ -366,7 +366,7 @@ fn producer(
             )))
         }
     } else {
-        Transporter::DirectSocket(Arc::new(bind_to_unspecified().unwrap()))
+        Transporter::DirectSocket
     };
 
     let mut handles = vec![];
@@ -379,6 +379,12 @@ fn producer(
         let transporter = transporter.clone();
         let identity_keypair = identity_keypair.insecure_clone();
         handles.push(thread::spawn(move || {
+            let local_socket = if matches!(transporter, Transporter::DirectSocket) {
+                Some(bind_to_unspecified().unwrap())
+            } else {
+                None
+            };
+
             // Generate and send transactions
             for _j in 0..TRANSACTIONS_PER_THREAD {
                 // Create a vote instruction
@@ -417,8 +423,12 @@ fn producer(
                             }
                         }
                     }
-                    Transporter::DirectSocket(socket) => {
-                        match socket.send_to(&serialized_transaction, sock) {
+                    Transporter::DirectSocket => {
+                        match local_socket
+                            .as_ref()
+                            .unwrap()
+                            .send_to(&serialized_transaction, sock)
+                        {
                             Ok(_) => {
                                 if verbose {
                                     println!(
