@@ -389,6 +389,7 @@ fn producer(
             } else {
                 None
             };
+            println!("Local socket: {local_socket:?}");
 
             // Generate and send transactions
             for _j in 0..TRANSACTIONS_PER_THREAD {
