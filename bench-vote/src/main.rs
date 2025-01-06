@@ -40,16 +40,24 @@ fn sink(
     exit: Arc<AtomicBool>,
     received_size: Arc<AtomicUsize>,
     receiver: PacketBatchReceiver,
+) -> JoinHandle<()> {
+    spawn(move || {
+        while !exit.load(Ordering::Relaxed) {
+            if let Ok(packet_batch) = receiver.recv_timeout(SINK_RECEIVE_TIMEOUT) {
+                received_size.fetch_add(packet_batch.len(), Ordering::Relaxed);
+            }
+        }
+    })
+}
+
+fn report_receive_performance(
+    exit: Arc<AtomicBool>,
+    received_size: Arc<AtomicUsize>,
     verbose: bool,
 ) -> JoinHandle<()> {
     spawn(move || {
         let mut last_report = Instant::now();
         while !exit.load(Ordering::Relaxed) {
-            if let Ok(packet_batch) = receiver.recv_timeout(SINK_RECEIVE_TIMEOUT) {
-                received_size.fetch_add(packet_batch.len(), Ordering::Relaxed);
-            }
-
-
             if verbose && last_report.elapsed() > SINK_REPORT_INTERVAL {
                 let count = received_size.swap(0, Ordering::Relaxed);
                 println!("Received txns count: {count}");
@@ -180,7 +188,7 @@ fn main() -> Result<()> {
         }
     });
 
-    let (exit, read_threads, sink_threads, destination) = if !client_only {
+    let (exit, read_threads, sink_threads, destination, report_thread) = if !client_only {
         let exit = Arc::new(AtomicBool::new(false));
 
         let mut read_channels = Vec::new();
@@ -254,9 +262,10 @@ fn main() -> Result<()> {
         let received_size = Arc::new(AtomicUsize::new(0));
         let sink_threads: Vec<_> = read_channels
             .into_iter()
-            .map(|r_reader| sink(exit.clone(), received_size.clone(), r_reader, verbose))
+            .map(|r_reader| sink(exit.clone(), received_size.clone(), r_reader))
             .collect();
 
+        let report_thread = report_receive_performance(exit.clone(), received_size, verbose);
         let destination = SocketAddr::new(ip_addr, port);
         println!("Running server at {destination:?}");
         (
@@ -264,9 +273,10 @@ fn main() -> Result<()> {
             Some(read_threads),
             Some(sink_threads),
             destination,
+            Some(report_thread),
         )
     } else {
-        (None, None, None, destination.unwrap())
+        (None, None, None, destination.unwrap(), None)
     };
 
     let start = SystemTime::now();
@@ -302,6 +312,10 @@ fn main() -> Result<()> {
         .into_iter()
         .flatten()
         .try_for_each(JoinHandle::join)?;
+
+    if let Some(report_thread) = report_thread {
+        report_thread.join()?;
+    }
 
     if !(server_only) {
         let elapsed = start.elapsed().unwrap();
