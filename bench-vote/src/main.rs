@@ -223,6 +223,8 @@ fn main() -> Result<()> {
                 max_connections_per_peer: 1024,
                 ..Default::default()
             };
+            println!("Quic Parameters: {quic_server_params:?}");
+
             let (s_reader, r_reader) = unbounded();
             read_channels.push(r_reader);
 
@@ -335,7 +337,6 @@ enum Transporter {
     Cache(Arc<ConnectionCache>),
     DirectSocket,
 }
-
 struct QuicParams {
     identity_keypair: Keypair,
     staked_nodes: Arc<RwLock<StakedNodes>>,
