@@ -38,7 +38,7 @@ pub const MAX_UNSTAKED_CONNECTIONS: usize = 500;
 // This will be adjusted and parameterized in follow-on PRs.
 pub const DEFAULT_QUIC_ENDPOINTS: usize = 1;
 // inlined to avoid solana-sdk dep
-pub(crate) const DEFAULT_TPU_COALESCE: Duration = Duration::from_millis(5);
+pub(crate) const DEFAULT_TPU_COALESCE: Duration = Duration::from_nanos(100);
 
 pub struct SpawnServerResult {
     pub endpoints: Vec<Endpoint>,
