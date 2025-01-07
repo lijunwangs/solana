@@ -416,7 +416,7 @@ fn producer(
                     Transporter::Cache(cache) => {
                         let connection = cache.get_connection(&sock);
 
-                        match connection.send_data(&serialized_transaction) {
+                        match connection.send_data_async(serialized_transaction) {
                             Ok(_) => {
                                 if verbose {
                                     println!("Sent transaction successfully");
