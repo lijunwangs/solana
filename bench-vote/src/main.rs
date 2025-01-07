@@ -34,7 +34,7 @@ use {
 const SINK_REPORT_INTERVAL: Duration = Duration::from_secs(5);
 const SINK_RECEIVE_TIMEOUT: Duration = Duration::from_secs(1);
 const SOCKET_RECEIVE_TIMEOUT: Duration = Duration::from_secs(1);
-const COALESCE_TIME: Duration = Duration::from_millis(1);
+const COALESCE_TIME: Duration = Duration::from_nanos(1);
 
 fn sink(
     exit: Arc<AtomicBool>,
@@ -223,6 +223,7 @@ fn main() -> Result<()> {
                 max_connections_per_ipaddr_per_min: 1024,
                 max_connections_per_peer: 1024,
                 max_streams_per_ms: 1000,
+                coalesce: COALESCE_TIME,
                 ..Default::default()
             };
             println!("Quic Parameters: {quic_server_params:?}");
