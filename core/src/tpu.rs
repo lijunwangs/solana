@@ -51,6 +51,13 @@ use {
     tokio::sync::mpsc::Sender as AsyncSender,
 };
 
+// allow multiple connections for NAT and any open/close overlap
+#[deprecated(
+    since = "2.2.0",
+    note = "Use solana_streamer::quic::DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER instead"
+)]
+pub const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
+
 pub struct TpuSockets {
     pub transactions: Vec<UdpSocket>,
     pub transaction_forwards: Vec<UdpSocket>,
