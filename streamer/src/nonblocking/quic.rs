@@ -1168,7 +1168,7 @@ async fn handle_connection(
                         CONNECTION_CLOSE_REASON_INVALID_STREAM,
                     );
                     stats.total_streams.fetch_sub(1, Ordering::Relaxed);
-                    stream_load_ema.update_ema_if_needed();            
+                    stream_load_ema.update_ema_if_needed();
                     break 'conn;
                 }
             }
