@@ -379,9 +379,28 @@ fn producer(
 
     let identity_keypair = Keypair::new(); // Replace with loaded keypair
 
+    // Create a vote instruction
+    let vote = Vote {
+        slots: vec![current_slot], // Voting for the current slot
+        hash: Hash::new_unique(),
+        timestamp: None, // Optional timestamp
+    };
+
+    let vote_instruction = vote_instruction::vote(
+        &identity_keypair.pubkey(),
+        &identity_keypair.pubkey(),
+        vote,
+    );
+                
+    let message = Message::new(&[vote_instruction], Some(&identity_keypair.pubkey()));
+    let recent_blockhash = Hash::new_unique();
+    let transaction = Transaction::new(&[&identity_keypair], message, recent_blockhash);
+    let serialized_transaction = bincode::serialize(&transaction).unwrap();
+
     for _i in 0..num_producers {
+        let value = serialized_transaction.clone();
+
         let transporter = transporter.clone();
-        let identity_keypair = identity_keypair.insecure_clone();
         handles.push(thread::spawn(move || {
             let local_socket = if matches!(transporter, Transporter::DirectSocket) {
                 Some(bind_to_unspecified().unwrap())
@@ -392,32 +411,12 @@ fn producer(
 
             // Generate and send transactions
             for _j in 0..TRANSACTIONS_PER_THREAD {
-                // Create a vote instruction
-                let vote = Vote {
-                    slots: vec![current_slot], // Voting for the current slot
-                    hash: Hash::new_unique(),
-                    timestamp: None, // Optional timestamp
-                };
-
-                let vote_instruction = vote_instruction::vote(
-                    &identity_keypair.pubkey(),
-                    &identity_keypair.pubkey(),
-                    vote,
-                );
-
-                // Build the transaction
-                let message = Message::new(&[vote_instruction], Some(&identity_keypair.pubkey()));
-
-                let recent_blockhash = Hash::new_unique();
-                let transaction = Transaction::new(&[&identity_keypair], message, recent_blockhash);
-
-                let serialized_transaction = bincode::serialize(&transaction).unwrap();
 
                 match &transporter {
                     Transporter::Cache(cache) => {
                         let connection = cache.get_connection(&sock);
 
-                        match connection.send_data_async(serialized_transaction) {
+                        match connection.send_data_async(value.clone()) {
                             Ok(_) => {
                                 if verbose {
                                     println!("Sent transaction successfully");
@@ -432,7 +431,7 @@ fn producer(
                         match local_socket
                             .as_ref()
                             .unwrap()
-                            .send_to(&serialized_transaction, sock)
+                            .send_to(&value, sock)
                         {
                             Ok(_) => {
                                 if verbose {
