@@ -160,7 +160,7 @@ impl ClientConnection for QuicClientConnection {
     }
 
     fn send_data_batch(&self, buffers: &[Vec<u8>]) -> TransportResult<()> {
-        RUNTIME[(buffers[0][0] % 2) as usize].block_on(self.inner.send_data_batch(buffers))?;
+        RUNTIME[0].block_on(self.inner.send_data_batch(buffers))?;
         Ok(())
     }
 
@@ -168,7 +168,7 @@ impl ClientConnection for QuicClientConnection {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
 
-        let _handle = RUNTIME[(data[0] % 2) as usize].spawn(send_data_async(inner, data));
+        let _handle = RUNTIME[0].spawn(send_data_async(inner, data));
         Ok(())
     }
 
@@ -176,12 +176,12 @@ impl ClientConnection for QuicClientConnection {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
         let _handle =
-            RUNTIME[(buffers[0][0] % 2) as usize].spawn(send_data_batch_async(inner, buffers));
+            RUNTIME[0].spawn(send_data_batch_async(inner, buffers));
         Ok(())
     }
 
     fn send_data(&self, buffer: &[u8]) -> TransportResult<()> {
-        RUNTIME[(buffer[0] % 2) as usize].block_on(self.inner.send_data(buffer))?;
+        RUNTIME[0].block_on(self.inner.send_data(buffer))?;
         Ok(())
     }
 }
