@@ -160,28 +160,38 @@ impl ClientConnection for QuicClientConnection {
     }
 
     fn send_data_batch(&self, buffers: &[Vec<u8>]) -> TransportResult<()> {
-        RUNTIME[1].block_on(self.inner.send_data_batch(buffers))?;
+        let random_bool = rand::random::<bool>(); // Randomly generates true or false
+        let random_number = if random_bool { 1 } else { 0 }; // Map true to 1 and false to 0
+
+        RUNTIME[random_number].block_on(self.inner.send_data_batch(buffers))?;
         Ok(())
     }
 
     fn send_data_async(&self, data: Vec<u8>) -> TransportResult<()> {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
+        let random_bool = rand::random::<bool>(); // Randomly generates true or false
+        let random_number = if random_bool { 1 } else { 0 }; // Map true to 1 and false to 0
 
-        let _handle = RUNTIME[1].spawn(send_data_async(inner, data));
+        let _handle = RUNTIME[random_number].spawn(send_data_async(inner, data));
         Ok(())
     }
 
     fn send_data_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
-        let _handle =
-            RUNTIME[1].spawn(send_data_batch_async(inner, buffers));
+        let random_bool = rand::random::<bool>(); // Randomly generates true or false
+        let random_number = if random_bool { 1 } else { 0 }; // Map true to 1 and false to 0
+
+        let _handle = RUNTIME[random_number].spawn(send_data_batch_async(inner, buffers));
         Ok(())
     }
 
     fn send_data(&self, buffer: &[u8]) -> TransportResult<()> {
-        RUNTIME[1].block_on(self.inner.send_data(buffer))?;
+        let random_bool = rand::random::<bool>(); // Randomly generates true or false
+        let random_number = if random_bool { 1 } else { 0 }; // Map true to 1 and false to 0
+
+        RUNTIME[random_number].block_on(self.inner.send_data(buffer))?;
         Ok(())
     }
 }

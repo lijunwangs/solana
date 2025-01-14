@@ -8462,6 +8462,7 @@ dependencies = [
  "log",
  "quinn",
  "quinn-proto",
+ "rand 0.8.5",
  "rustls 0.23.20",
  "solana-connection-cache",
  "solana-keypair",

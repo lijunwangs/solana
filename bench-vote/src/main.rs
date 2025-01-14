@@ -211,7 +211,7 @@ fn main() -> Result<()> {
             num_sockets / 2,
         )
         .unwrap();
-        
+
         read_sockets.append(&mut read_sockets_2);
         let mut rng = rand::thread_rng();
         read_sockets.shuffle(&mut rng);
@@ -391,12 +391,9 @@ fn producer(
         timestamp: None, // Optional timestamp
     };
 
-    let vote_instruction = vote_instruction::vote(
-        &identity_keypair.pubkey(),
-        &identity_keypair.pubkey(),
-        vote,
-    );
-                
+    let vote_instruction =
+        vote_instruction::vote(&identity_keypair.pubkey(), &identity_keypair.pubkey(), vote);
+
     let message = Message::new(&[vote_instruction], Some(&identity_keypair.pubkey()));
     let recent_blockhash = Hash::new_unique();
     let transaction = Transaction::new(&[&identity_keypair], message, recent_blockhash);
@@ -416,7 +413,6 @@ fn producer(
 
             // Generate and send transactions
             for _j in 0..TRANSACTIONS_PER_THREAD {
-
                 match &transporter {
                     Transporter::Cache(cache) => {
                         let connection = cache.get_connection(&sock);
@@ -433,11 +429,7 @@ fn producer(
                         }
                     }
                     Transporter::DirectSocket => {
-                        match local_socket
-                            .as_ref()
-                            .unwrap()
-                            .send_to(&value, sock)
-                        {
+                        match local_socket.as_ref().unwrap().send_to(&value, sock) {
                             Ok(_) => {
                                 if verbose {
                                     println!(
