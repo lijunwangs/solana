@@ -70,12 +70,12 @@ lazy_static! {
         AsyncTaskSemaphore::new(MAX_OUTSTANDING_TASK);
     static ref RUNTIME: [Runtime; 2] = [
         tokio::runtime::Builder::new_multi_thread()
-            .thread_name("solQuicClientRt")
+            .thread_name("solQuicClientRt1")
             .enable_all()
             .build()
             .unwrap(),
         tokio::runtime::Builder::new_multi_thread()
-            .thread_name("solQuicClientRt")
+            .thread_name("solQuicClientRt2")
             .enable_all()
             .build()
             .unwrap(),
