@@ -68,11 +68,18 @@ impl AsyncTaskSemaphore {
 lazy_static! {
     static ref ASYNC_TASK_SEMAPHORE: AsyncTaskSemaphore =
         AsyncTaskSemaphore::new(MAX_OUTSTANDING_TASK);
-    static ref RUNTIME: Runtime = tokio::runtime::Builder::new_multi_thread()
-        .thread_name("solQuicClientRt")
-        .enable_all()
-        .build()
-        .unwrap();
+    static ref RUNTIME: [Runtime; 2] = [
+        tokio::runtime::Builder::new_multi_thread()
+            .thread_name("solQuicClientRt")
+            .enable_all()
+            .build()
+            .unwrap(),
+        tokio::runtime::Builder::new_multi_thread()
+            .thread_name("solQuicClientRt")
+            .enable_all()
+            .build()
+            .unwrap(),
+    ];
 }
 
 async fn send_data_async(
@@ -153,7 +160,7 @@ impl ClientConnection for QuicClientConnection {
     }
 
     fn send_data_batch(&self, buffers: &[Vec<u8>]) -> TransportResult<()> {
-        RUNTIME.block_on(self.inner.send_data_batch(buffers))?;
+        RUNTIME[(buffers[0][0] % 2) as usize].block_on(self.inner.send_data_batch(buffers))?;
         Ok(())
     }
 
@@ -161,19 +168,20 @@ impl ClientConnection for QuicClientConnection {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
 
-        let _handle = RUNTIME.spawn(send_data_async(inner, data));
+        let _handle = RUNTIME[(data[0] % 2) as usize].spawn(send_data_async(inner, data));
         Ok(())
     }
 
     fn send_data_batch_async(&self, buffers: Vec<Vec<u8>>) -> TransportResult<()> {
         let _lock = ASYNC_TASK_SEMAPHORE.acquire();
         let inner = self.inner.clone();
-        let _handle = RUNTIME.spawn(send_data_batch_async(inner, buffers));
+        let _handle =
+            RUNTIME[(buffers[0][0] % 2) as usize].spawn(send_data_batch_async(inner, buffers));
         Ok(())
     }
 
     fn send_data(&self, buffer: &[u8]) -> TransportResult<()> {
-        RUNTIME.block_on(self.inner.send_data(buffer))?;
+        RUNTIME[(buffer[0] % 2) as usize].block_on(self.inner.send_data(buffer))?;
         Ok(())
     }
 }
