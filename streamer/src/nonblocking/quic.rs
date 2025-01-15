@@ -10,9 +10,7 @@ use {
         quic::{configure_server, QuicServerError, QuicServerParams, StreamerStats},
         streamer::StakedNodes,
     },
-    async_channel::{
-        bounded as async_bounded, Receiver as AsyncReceiver, Sender as AsyncSender,
-    },
+    async_channel::{bounded as async_bounded, Receiver as AsyncReceiver, Sender as AsyncSender},
     bytes::Bytes,
     crossbeam_channel::Sender,
     futures::{stream::FuturesUnordered, Future, StreamExt as _},
@@ -111,6 +109,8 @@ const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
 /// the map size is above this, we will trigger a cleanup of older
 /// entries used by past requests.
 const CONNECTION_RATE_LIMITER_CLEANUP_SIZE_THRESHOLD: usize = 100_000;
+
+const MAX_COALESCE_CHANNEL_SIZE: usize = 10_000_000;
 
 // A struct to accumulate the bytes making up
 // a packet, along with their offsets, and the
@@ -314,7 +314,7 @@ async fn run_server(
         .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
-    let (sender, receiver) = async_bounded(10_000_000);
+    let (sender, receiver) = async_bounded(MAX_COALESCE_CHANNEL_SIZE);
     tokio::spawn(packet_batch_sender(
         packet_sender,
         receiver,
