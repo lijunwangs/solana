@@ -460,6 +460,8 @@ async fn test_staked_connection() {
 // delivered and there are no errors on the client side.
 #[tokio::test]
 async fn test_connection_throttling() {
+    solana_logger::setup();
+
     let SpawnTestServerResult {
         join_handle: server_handle,
         exit,
