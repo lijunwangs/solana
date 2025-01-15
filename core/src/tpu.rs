@@ -2,6 +2,12 @@
 //! multi-stage transaction processing pipeline in software.
 
 pub use solana_sdk::net::DEFAULT_TPU_COALESCE;
+// allow multiple connections for NAT and any open/close overlap
+#[deprecated(
+    since = "2.2.0",
+    note = "Use solana_streamer::quic::DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER instead"
+)]
+pub use solana_streamer::quic::DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER as MAX_QUIC_CONNECTIONS_PER_PEER;
 use {
     crate::{
         banking_stage::BankingStage,
@@ -50,13 +56,6 @@ use {
     },
     tokio::sync::mpsc::Sender as AsyncSender,
 };
-
-// allow multiple connections for NAT and any open/close overlap
-#[deprecated(
-    since = "2.2.0",
-    note = "Use solana_streamer::quic::DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER instead"
-)]
-pub const MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
 
 pub struct TpuSockets {
     pub transactions: Vec<UdpSocket>,
