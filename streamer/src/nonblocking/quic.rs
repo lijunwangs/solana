@@ -938,7 +938,7 @@ async fn packet_batch_sender(
                 break;
             }
 
-            info!("zzzzzzz receiving packet frm channel {}", packet_batch.len());
+            info!("wwwwww receiving packet frm channel {}", packet_batch.len());
             let timeout_res = if !packet_batch.is_empty() {
                 // If we get here, elapsed < coalesce (see above if condition)
                 timeout(coalesce - elapsed, packet_receiver.recv()).await
@@ -953,7 +953,7 @@ async fn packet_batch_sender(
                 Ok(packet_receiver.recv().await)
             };
 
-            info!("zzzzzzz got packet frm channel ok? {:?}", timeout_res.is_ok());
+            info!("vvvvvv got packet frm channel ok? {:?}", timeout_res.is_ok());
 
             if let Ok(Ok(packet_accumulator)) = timeout_res {
                 // Start the timeout from when the packet batch first becomes non-empty
