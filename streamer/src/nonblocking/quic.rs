@@ -1215,6 +1215,7 @@ async fn handle_chunks(
     stats: &StreamerStats,
     peer_type: ConnectionPeerType,
 ) -> Result<StreamState, ()> {
+    debug!("yyyyy handle chuncks");
     let n_chunks = chunks.len();
     for chunk in chunks {
         accum.meta.size += chunk.len();
