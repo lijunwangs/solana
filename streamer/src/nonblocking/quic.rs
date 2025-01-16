@@ -110,8 +110,6 @@ const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
 /// entries used by past requests.
 const CONNECTION_RATE_LIMITER_CLEANUP_SIZE_THRESHOLD: usize = 100_000;
 
-const MAX_COALESCE_CHANNEL_SIZE: usize = 10_000_000;
-
 // A struct to accumulate the bytes making up
 // a packet, along with their offsets, and the
 // packet metadata. We use this accumulator to avoid
@@ -191,6 +189,7 @@ pub fn spawn_server_multi(
         max_connections_per_ipaddr_per_min,
         wait_for_chunk_timeout,
         coalesce,
+        coalesce_channel_size,
     } = quic_server_params;
     let concurrent_connections = max_staked_connections + max_unstaked_connections;
     let max_concurrent_connections = concurrent_connections + concurrent_connections / 4;
@@ -223,6 +222,7 @@ pub fn spawn_server_multi(
         stats.clone(),
         wait_for_chunk_timeout,
         coalesce,
+        coalesce_channel_size,
         max_concurrent_connections,
     ));
     Ok(SpawnNonBlockingServerResult {
@@ -293,6 +293,7 @@ async fn run_server(
     stats: Arc<StreamerStats>,
     wait_for_chunk_timeout: Duration,
     coalesce: Duration,
+    coalesce_channel_size: usize,
     max_concurrent_connections: usize,
 ) {
     let rate_limiter = ConnectionRateLimiter::new(max_connections_per_ipaddr_per_min);
@@ -314,7 +315,9 @@ async fn run_server(
         .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
-    let (sender, receiver) = async_bounded(MAX_COALESCE_CHANNEL_SIZE);
+    info!("Creating the packet_batch_sender, and async channel");
+    let (sender, receiver) = async_bounded(coalesce_channel_size);
+    info!("Created async channel");
     tokio::spawn(packet_batch_sender(
         packet_sender,
         receiver,
