@@ -887,7 +887,7 @@ async fn packet_batch_sender(
     stats: Arc<StreamerStats>,
     coalesce: Duration,
 ) {
-    trace!("enter packet_batch_sender");
+    info!("enter packet_batch_sender");
     let recycler = PacketBatchRecycler::default();
     let mut batch_start_time = Instant::now();
     loop {
