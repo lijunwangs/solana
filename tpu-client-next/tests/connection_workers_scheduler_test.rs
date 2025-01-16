@@ -485,7 +485,7 @@ async fn test_connection_throttling() {
 
     // Check results
     let actual_num_packets =
-        count_received_packets_for(receiver, tx_size, Duration::from_secs(10)).await;
+        count_received_packets_for(receiver, tx_size, Duration::from_secs(2)).await;
     assert_eq!(actual_num_packets, expected_num_txs);
 
     // Stop sending
