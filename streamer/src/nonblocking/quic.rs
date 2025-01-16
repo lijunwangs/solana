@@ -103,7 +103,7 @@ const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
 /// entries used by past requests.
 const CONNECTION_RATE_LIMITER_CLEANUP_SIZE_THRESHOLD: usize = 100_000;
 
-const MAX_COALESCE_CHANNEL_SIZE: usize = 10_000_000;
+const MAX_COALESCE_CHANNEL_SIZE: usize = 1_000_000;
 
 // A struct to accumulate the bytes making up
 // a packet, along with their offsets, and the
