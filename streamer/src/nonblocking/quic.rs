@@ -307,6 +307,7 @@ async fn run_server(
         .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
+    info!("Creating the packet_batch_sender, and async channel");
     let (sender, receiver) = async_bounded(MAX_COALESCE_CHANNEL_SIZE);
     tokio::spawn(packet_batch_sender(
         packet_sender,
@@ -315,6 +316,7 @@ async fn run_server(
         stats.clone(),
         coalesce,
     ));
+    info!("Created the packet_batch_sender, and async channel");
 
     let mut accepts = endpoints
         .iter()
