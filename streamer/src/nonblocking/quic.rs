@@ -10,7 +10,7 @@ use {
         quic::{configure_server, QuicServerError, QuicServerParams, StreamerStats},
         streamer::StakedNodes,
     },
-    async_channel::{unbounded as async_unbounded, Receiver as AsyncReceiver, Sender as AsyncSender},
+    async_channel::{bounded as async_bounded, Receiver as AsyncReceiver, Sender as AsyncSender},
     bytes::Bytes,
     crossbeam_channel::Sender,
     futures::{stream::FuturesUnordered, Future, StreamExt as _},
@@ -307,7 +307,7 @@ async fn run_server(
         .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
-    let (sender, receiver) = async_unbounded(/*MAX_COALESCE_CHANNEL_SIZE*/);
+    let (sender, receiver) = async_bounded(MAX_COALESCE_CHANNEL_SIZE);
     tokio::spawn(packet_batch_sender(
         packet_sender,
         receiver,
