@@ -938,6 +938,7 @@ async fn packet_batch_sender(
                 break;
             }
 
+            info!("zzzzzzz receiving packet frm channel {}", packet_batch.len());
             let timeout_res = if !packet_batch.is_empty() {
                 // If we get here, elapsed < coalesce (see above if condition)
                 timeout(coalesce - elapsed, packet_receiver.recv()).await
@@ -951,6 +952,8 @@ async fn packet_batch_sender(
                 // to exit here
                 Ok(packet_receiver.recv().await)
             };
+
+            info!("zzzzzzz got packet frm channel ok? {:?}", timeout_res.is_ok());
 
             if let Ok(Ok(packet_accumulator)) = timeout_res {
                 // Start the timeout from when the packet batch first becomes non-empty
@@ -1215,7 +1218,7 @@ async fn handle_chunks(
     stats: &StreamerStats,
     peer_type: ConnectionPeerType,
 ) -> Result<StreamState, ()> {
-    debug!("yyyyy handle chuncks");
+    info!("yyyyy handle chuncks");
     let n_chunks = chunks.len();
     for chunk in chunks {
         accum.meta.size += chunk.len();
@@ -1256,7 +1259,7 @@ async fn handle_chunks(
     let bytes_sent = accum.meta.size;
     let chunks_sent = accum.chunks.len();
 
-    debug!("xxxxx sending a packet...");
+    info!("xxxxx sending a packet...");
     if let Err(err) = packet_sender.send(accum.clone()).await {
         stats
             .total_handle_chunk_to_packet_batcher_send_err
