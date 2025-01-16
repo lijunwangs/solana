@@ -478,7 +478,7 @@ async fn test_connection_throttling() {
         tx_receiver,
         tx_sender_shutdown,
         ..
-    } = spawn_tx_sender(tx_size, expected_num_txs, Duration::from_millis(100));
+    } = spawn_tx_sender(tx_size, expected_num_txs, Duration::from_millis(1));
 
     let (scheduler_handle, _scheduler_cancel) =
         setup_connection_worker_scheduler(server_address, tx_receiver, None).await;
