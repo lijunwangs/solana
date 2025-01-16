@@ -315,9 +315,7 @@ async fn run_server(
         .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
-    info!("Creating the packet_batch_sender, and async channel");
     let (sender, receiver) = async_bounded(coalesce_channel_size);
-    info!("Created async channel");
     tokio::spawn(packet_batch_sender(
         packet_sender,
         receiver,
