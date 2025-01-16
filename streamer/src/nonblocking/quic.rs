@@ -914,7 +914,7 @@ async fn packet_batch_sender(
                 let len = packet_batch.len();
                 track_streamer_fetch_packet_performance(&packet_perf_measure, &stats);
 
-                debug!("zzzzzzz sending packet {}", packet_batch.len());
+                info!("zzzzzzz sending packet {}", packet_batch.len());
                 if let Err(e) = packet_sender.send(packet_batch) {
                     stats
                         .total_packet_batch_send_err
