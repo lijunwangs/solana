@@ -914,7 +914,7 @@ async fn packet_batch_sender(
                 let len = packet_batch.len();
                 track_streamer_fetch_packet_performance(&packet_perf_measure, &stats);
 
-                debug!("zzzzzzz sending packet");
+                debug!("zzzzzzz sending packet {}", packet_batch.len());
                 if let Err(e) = packet_sender.send(packet_batch) {
                     stats
                         .total_packet_batch_send_err
@@ -1255,6 +1255,7 @@ async fn handle_chunks(
     let bytes_sent = accum.meta.size;
     let chunks_sent = accum.chunks.len();
 
+    debug!("xxxxx sending a packet...");
     if let Err(err) = packet_sender.send(accum.clone()).await {
         stats
             .total_handle_chunk_to_packet_batcher_send_err
