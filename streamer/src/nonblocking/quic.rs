@@ -309,6 +309,7 @@ async fn run_server(
         Arc::new(Mutex::new(ConnectionTable::new()));
     info!("Creating the packet_batch_sender, and async channel");
     let (sender, receiver) = async_bounded(MAX_COALESCE_CHANNEL_SIZE);
+    info!("Created async channel");
     tokio::spawn(packet_batch_sender(
         packet_sender,
         receiver,
