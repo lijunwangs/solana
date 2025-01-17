@@ -690,7 +690,10 @@ mod test {
             sender,
             exit.clone(),
             staked_nodes,
-            QuicServerParams::default(),
+            QuicServerParams {
+                coalesce_channel_size: 100_000, // smaller channel size for faster test
+                ..Default::default()
+            },
         )
         .unwrap();
         (t, exit, receiver, server_address)
@@ -747,6 +750,7 @@ mod test {
             staked_nodes,
             QuicServerParams {
                 max_connections_per_peer: 2,
+                coalesce_channel_size: 100_000, // smaller channel size for faster test
                 ..QuicServerParams::default()
             },
         )
@@ -792,6 +796,7 @@ mod test {
             staked_nodes,
             QuicServerParams {
                 max_unstaked_connections: 0,
+                coalesce_channel_size: 100_000, // smaller channel size for faster test
                 ..QuicServerParams::default()
             },
         )

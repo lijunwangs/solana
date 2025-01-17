@@ -1980,6 +1980,7 @@ pub mod test {
             staked_nodes,
             QuicServerParams {
                 max_unstaked_connections: 0, // Do not allow any connection from unstaked clients/nodes
+                coalesce_channel_size: 100_000, // smaller channel size for faster test
                 ..QuicServerParams::default()
             },
         )
@@ -2013,6 +2014,7 @@ pub mod test {
             staked_nodes,
             QuicServerParams {
                 max_connections_per_peer: 2,
+                coalesce_channel_size: 100_000, // smaller channel size for faster test
                 ..QuicServerParams::default()
             },
         )
