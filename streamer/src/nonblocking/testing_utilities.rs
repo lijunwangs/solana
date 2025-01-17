@@ -69,7 +69,7 @@ impl Default for TestServerConfig {
             max_unstaked_connections: DEFAULT_MAX_UNSTAKED_CONNECTIONS,
             max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS,
             max_connections_per_ipaddr_per_min: DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
-            coalesce_channel_size: 500_000, // use a smaller value for test as create a huge bounded channel can take time
+            coalesce_channel_size: 100_000, // use a smaller value for test as create a huge bounded channel can take time
         }
     }
 }
