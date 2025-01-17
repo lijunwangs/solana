@@ -99,7 +99,12 @@ impl Vortexor {
         // Not interesed of banking tracing
 
         let verifier = TransactionSigVerifier::new(non_vote_sender);
-        SigVerifyStage::new(tpu_receiver, verifier, "solSigVerTpu", "tpu-verifier")
+        SigVerifyStage::new(
+            tpu_receiver,
+            verifier,
+            "solSigVtxTpu",
+            "tpu-vortexor-verifier",
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
