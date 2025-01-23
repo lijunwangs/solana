@@ -96,8 +96,6 @@ impl Vortexor {
         tpu_receiver: Receiver<solana_perf::packet::PacketBatch>,
         non_vote_sender: TracedSender,
     ) -> SigVerifyStage {
-        // Not interesed of banking tracing
-
         let verifier = TransactionSigVerifier::new(non_vote_sender);
         SigVerifyStage::new(
             tpu_receiver,
