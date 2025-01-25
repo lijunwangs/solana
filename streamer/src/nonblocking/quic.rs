@@ -306,7 +306,7 @@ async fn run_server(
         .store(endpoints.len(), Ordering::Relaxed);
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
-    let (sender, receiver) = bounded(500_000);
+    let (sender, receiver) = bounded(250_000);
     let exit_clone = exit.clone();
     let stats_clone = stats.clone();
     let coalescer_thread = Builder::new()
