@@ -441,7 +441,7 @@ async fn run_server(
             debug!("accept(): Timed out waiting for connection");
         }
     }
-    info!("zzzzz quic server {:?}", endpoints[0].local_addr());
+    info!("zzzzz quic server {:?} {}", endpoints[0].local_addr(), name);
 }
 
 fn prune_unstaked_connection_table(
