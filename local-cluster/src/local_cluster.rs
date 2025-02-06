@@ -709,7 +709,10 @@ impl LocalCluster {
 
             while now.elapsed().as_secs() < wait_time as u64 {
                 if num_confirmed == 0 {
-                    info!("zzzzz sending transaction {:?}, {}", transaction, attempt);
+                    info!(
+                        "zzzzz sending transaction {:?}, {} over {attempts}",
+                        transaction, attempt
+                    );
                     client.send_transaction_to_upcoming_leaders(transaction)?;
                 }
 
@@ -719,7 +722,7 @@ impl LocalCluster {
                 ) {
                     num_confirmed = confirmed_blocks;
                     info!(
-                        "zzzzz confirmed blocks: {} pending: {}",
+                        "zzzzz confirmed blocks: {} pending: {} for {transaction:?}",
                         confirmed_blocks, pending_confirmations
                     );
                     if confirmed_blocks >= pending_confirmations {
@@ -732,10 +735,10 @@ impl LocalCluster {
                         MAX_PROCESSING_AGE * pending_confirmations.saturating_sub(num_confirmed),
                     );
                 } else {
-                    info!("zzzzz failed to poll_for_signature_confirmation  num_confirmed: {} pending: {}", num_confirmed, pending_confirmations);
+                    info!("zzzzz failed to poll_for_signature_confirmation  num_confirmed: {} pending: {} for {transaction:?}", num_confirmed, pending_confirmations);
                 }
             }
-            info!("{attempt} tries failed transfer");
+            info!("{attempt}/{attempts} tries failed transfer");
             let blockhash = client.rpc_client().get_latest_blockhash()?;
             transaction.sign(keypairs, blockhash);
         }
