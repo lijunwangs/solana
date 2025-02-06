@@ -709,6 +709,7 @@ impl LocalCluster {
 
             while now.elapsed().as_secs() < wait_time as u64 {
                 if num_confirmed == 0 {
+                    info!("zzzzz sending transaction {:?}, {}", transaction, attempt);
                     client.send_transaction_to_upcoming_leaders(transaction)?;
                 }
 
@@ -717,6 +718,10 @@ impl LocalCluster {
                     pending_confirmations,
                 ) {
                     num_confirmed = confirmed_blocks;
+                    info!(
+                        "zzzzz confirmed blocks: {} pending: {}",
+                        confirmed_blocks, pending_confirmations
+                    );
                     if confirmed_blocks >= pending_confirmations {
                         return Ok(transaction.signatures[0]);
                     }
@@ -726,6 +731,8 @@ impl LocalCluster {
                     wait_time = wait_time.max(
                         MAX_PROCESSING_AGE * pending_confirmations.saturating_sub(num_confirmed),
                     );
+                } else {
+                    info!("zzzzz failed to poll_for_signature_confirmation  num_confirmed: {} pending: {}", num_confirmed, pending_confirmations);
                 }
             }
             info!("{attempt} tries failed transfer");
