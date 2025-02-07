@@ -199,7 +199,7 @@ impl LocalCluster {
         assert_eq!(config.validator_configs.len(), config.node_stakes.len());
 
         let quic_connection_cache_config = config.tpu_use_quic.then(|| {
-            let client_keypair: Keypair = Keypair::new();
+            let client_keypair = Keypair::new();
             let stake = DEFAULT_NODE_STAKE;
 
             for validator_config in config.validator_configs.iter_mut() {
