@@ -201,6 +201,13 @@ impl LocalCluster {
         let quic_connection_cache_config = config.tpu_use_quic.then(|| {
             let client_keypair: Keypair = Keypair::new();
             let stake = DEFAULT_NODE_STAKE;
+
+            for validator_config in config.validator_configs.iter_mut() {
+                let mut overrides = HashMap::new();
+                overrides.insert(client_keypair.pubkey(), stake);
+                validator_config.staked_nodes_overrides = Arc::new(RwLock::new(overrides));
+            }
+
             let total_stake = config.node_stakes.iter().sum::<u64>();
             let stakes = HashMap::from([
                 (client_keypair.pubkey(), stake),
@@ -211,11 +218,6 @@ impl LocalCluster {
                 HashMap::<Pubkey, u64>::default(), // overrides
             )));
 
-            for validator_config in config.validator_configs.iter_mut() {
-                let mut overrides = HashMap::new();
-                overrides.insert(client_keypair.pubkey(), stake);
-                validator_config.staked_nodes_overrides = Arc::new(RwLock::new(overrides));
-            }
             QuicConnectionCacheConfig {
                 client_keypair,
                 staked_nodes,
