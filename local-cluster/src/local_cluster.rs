@@ -978,7 +978,7 @@ fn create_connection_cache(
     quic_connection_cache_config: &Option<QuicConnectionCacheConfig>,
     tpu_connection_pool_size: usize,
 ) -> Arc<ConnectionCache> {
-    let connection_cache = if let Some(config) = quic_connection_cache_config {
+    if let Some(config) = quic_connection_cache_config {
         Arc::new(ConnectionCache::new_with_client_options(
             "connection_cache_local_cluster_quic_staked",
             tpu_connection_pool_size,
@@ -994,8 +994,7 @@ fn create_connection_cache(
             "connection_cache_local_cluster_udp",
             tpu_connection_pool_size,
         ))
-    };
-    connection_cache
+    }
 }
 
 impl Cluster for LocalCluster {
