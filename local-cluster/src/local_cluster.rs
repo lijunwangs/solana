@@ -145,8 +145,6 @@ impl Default for ClusterConfig {
 }
 
 struct QuicConnectionCacheConfig {
-    stake: u64,
-    total_stake: u64,
     client_keypair: Keypair,
     staked_nodes: Arc<RwLock<StakedNodes>>,
 }
@@ -200,7 +198,7 @@ impl LocalCluster {
     pub fn new(config: &mut ClusterConfig, socket_addr_space: SocketAddrSpace) -> Self {
         assert_eq!(config.validator_configs.len(), config.node_stakes.len());
 
-        let quic_connection_cache_config = if config.tpu_use_quic {
+        let quic_connection_cache_config = config.tpu_use_quic.then(|| {
             let client_keypair: Keypair = Keypair::new();
             let stake = DEFAULT_NODE_STAKE;
             let total_stake = config.node_stakes.iter().sum::<u64>();
@@ -218,15 +216,11 @@ impl LocalCluster {
                 overrides.insert(client_keypair.pubkey(), stake);
                 validator_config.staked_nodes_overrides = Arc::new(RwLock::new(overrides));
             }
-            Some(QuicConnectionCacheConfig {
-                stake,
-                total_stake,
+            QuicConnectionCacheConfig {
                 client_keypair,
                 staked_nodes,
-            })
-        } else {
-            None
-        };
+            }
+        });
 
         let connection_cache = create_connection_cache(
             &quic_connection_cache_config,
