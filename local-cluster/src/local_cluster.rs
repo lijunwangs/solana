@@ -1084,7 +1084,9 @@ impl Cluster for LocalCluster {
         );
         self.add_node(pubkey, cluster_validator_info);
 
-        // reset the connection cache as we are connecting to the new nodes
+        // Recreate the connection cache as we are connecting to the nodes
+        // after restart. It can make connections faster without waiting for
+        // the existing connections to time out.
         self.connection_cache = create_connection_cache(
             &self.quic_connection_cache_config,
             self.tpu_connection_pool_size,
