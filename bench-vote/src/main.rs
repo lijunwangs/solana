@@ -378,7 +378,7 @@ fn producer(
                 let transaction = Transaction::new(&[&identity_keypair], message, recent_blockhash);
 
                 let serialized_transaction = bincode::serialize(&transaction).unwrap();
-
+                println!("Vote Txn Size: {}", serialized_transaction.len());
                 match &transporter {
                     Transporter::Cache(cache) => {
                         let connection = cache.get_connection(&sock);
