@@ -35,7 +35,7 @@ use {
         blockstore_processor::TransactionStatusSender, entry_notifier_service::EntryNotifierSender,
         leader_schedule_cache::LeaderScheduleCache,
     },
-    solana_poh::poh_recorder::PohRecorder,
+    solana_poh::{poh_recorder::PohRecorder, transaction_recorder::TransactionRecorder},
     solana_pubkey::Pubkey,
     solana_rpc::{
         max_slots::MaxSlots, optimistically_confirmed_bank_tracker::BankNotificationSenderConfig,
@@ -136,6 +136,7 @@ impl Tvu {
         ledger_signal_receiver: Receiver<bool>,
         rpc_subscriptions: Option<Arc<RpcSubscriptions>>,
         poh_recorder: &Arc<RwLock<PohRecorder>>,
+        transaction_recorder: TransactionRecorder,
         tower: Tower,
         tower_storage: Arc<dyn TowerStorage>,
         leader_schedule_cache: &Arc<LeaderScheduleCache>,
@@ -335,6 +336,7 @@ impl Tvu {
             bank_forks: bank_forks.clone(),
             cluster_info: cluster_info.clone(),
             poh_recorder: poh_recorder.clone(),
+            transaction_recorder,
             tower,
             vote_tracker,
             cluster_slots,
@@ -511,7 +513,7 @@ pub mod tests {
             .expect("Expected to successfully open ledger");
         let blockstore = Arc::new(blockstore);
         let bank = bank_forks.read().unwrap().working_bank();
-        let (exit, poh_recorder, _transaction_recorder, poh_service, _entry_receiver) =
+        let (exit, poh_recorder, transaction_recorder, poh_service, _entry_receiver) =
             create_test_recorder(bank.clone(), blockstore.clone(), None, None);
         let vote_keypair = Keypair::new();
         let leader_schedule_cache = Arc::new(LeaderScheduleCache::new_from_bank(&bank));
@@ -565,6 +567,7 @@ pub mod tests {
                 OptimisticallyConfirmedBank::locked_from_bank_forks_root(&bank_forks),
             ))),
             &poh_recorder,
+            transaction_recorder,
             Tower::default(),
             Arc::new(FileTowerStorage::default()),
             &leader_schedule_cache,
