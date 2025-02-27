@@ -741,6 +741,7 @@ impl BankingSimulator {
             &leader_schedule_cache,
             &genesis_config.poh_config,
             exit.clone(),
+            false,
         );
         let poh_recorder = Arc::new(RwLock::new(poh_recorder));
         let (record_sender, record_receiver) = unbounded();

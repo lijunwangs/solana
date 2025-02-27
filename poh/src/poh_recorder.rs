@@ -12,6 +12,7 @@
 //!
 #[cfg(feature = "dev-context-only-utils")]
 use qualifier_attr::qualifiers;
+use std::sync::RwLock;
 use {
     crate::{
         leader_bank_notifier::LeaderBankNotifier, poh_service::PohService,
@@ -33,8 +34,8 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     std::{
         cmp,
-        sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
-        time::Instant,
+        sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock},
+        time::{Duration, Instant},
     },
     thiserror::Error,
 };
@@ -207,12 +208,15 @@ pub struct PohRecorder {
     // Allocation to hold PohEntrys recorded into PoHStream.
     entries: Vec<PohEntry>,
     track_transaction_indexes: bool,
+    pub is_alpenglow_enabled: bool,
+    pub use_alpenglow_tick_producer: bool,
 }
 
 impl PohRecorder {
     /// A recorder to synchronize PoH with the following data structures
     /// * bank - the LastId's queue is updated on `tick` and `record` events
     #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "dev-context-only-utils")]
     pub fn new(
         tick_height: u64,
         last_entry_hash: Hash,
@@ -237,6 +241,7 @@ impl PohRecorder {
             leader_schedule_cache,
             poh_config,
             is_exited,
+            false,
         )
     }
 
@@ -253,6 +258,7 @@ impl PohRecorder {
         leader_schedule_cache: &Arc<LeaderScheduleCache>,
         poh_config: &PohConfig,
         is_exited: Arc<AtomicBool>,
+        is_alpenglow_enabled: bool,
     ) -> (Self, Receiver<WorkingBankEntry>) {
         let tick_number = 0;
         let poh = Arc::new(Mutex::new(Poh::new_with_slot_info(
@@ -293,6 +299,8 @@ impl PohRecorder {
                 is_exited,
                 entries: Vec::with_capacity(64),
                 track_transaction_indexes: false,
+                is_alpenglow_enabled,
+                use_alpenglow_tick_producer: is_alpenglow_enabled,
             },
             working_bank_receiver,
         )
@@ -518,9 +526,14 @@ impl PohRecorder {
 
     fn reset_poh(&mut self, reset_bank: Arc<Bank>, reset_start_bank: bool) {
         let blockhash = reset_bank.last_blockhash();
+        let hashes_per_tick = if self.use_alpenglow_tick_producer {
+            None
+        } else {
+            *reset_bank.hashes_per_tick()
+        };
         let poh_hash = {
             let mut poh = self.poh.lock().unwrap();
-            poh.reset(blockhash, *reset_bank.hashes_per_tick());
+            poh.reset(blockhash, hashes_per_tick);
             poh.hash
         };
         info!(
@@ -893,8 +906,104 @@ impl PohRecorder {
     pub fn clear_bank_for_test(&mut self) {
         self.clear_bank();
     }
+
+    fn report_poh_timing_point_by_tick(&self) {
+        match self.tick_height % self.ticks_per_slot {
+            // reaching the end of the slot
+            0 => {
+                if let Some(ref sender) = self.poh_timing_point_sender {
+                    send_poh_timing_point(
+                        sender,
+                        SlotPohTimingInfo::new_slot_end_poh_time_point(
+                            self.slot_for_tick_height(self.tick_height),
+                            None,
+                            solana_time_utils::timestamp(),
+                        ),
+                    );
+                }
+            }
+            // beginning of a slot
+            1 => {
+                if let Some(ref sender) = self.poh_timing_point_sender {
+                    send_poh_timing_point(
+                        sender,
+                        SlotPohTimingInfo::new_slot_start_poh_time_point(
+                            self.slot_for_tick_height(self.tick_height),
+                            None,
+                            solana_time_utils::timestamp(),
+                        ),
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn report_poh_timing_point_by_working_bank(&self, slot: Slot) {
+        if let Some(ref sender) = self.poh_timing_point_sender {
+            send_poh_timing_point(
+                sender,
+                SlotPohTimingInfo::new_slot_end_poh_time_point(
+                    slot,
+                    None,
+                    solana_time_utils::timestamp(),
+                ),
+            );
+        }
+    }
+
+    fn report_poh_timing_point(&self) {
+        // send poh slot end timing point
+        if let Some(slot) = self.working_bank_end_slot() {
+            //  bank producer
+            self.report_poh_timing_point_by_working_bank(slot)
+        } else {
+            // validator
+            self.report_poh_timing_point_by_tick()
+        }
+    }
+
+    pub fn tick_alpenglow(&mut self, slot_max_tick_height: u64) {
+        let (poh_entry, tick_lock_contention_us) = measure_us!({
+            let mut poh_l = self.poh.lock().unwrap();
+            poh_l.tick()
+        });
+        self.metrics.tick_lock_contention_us += tick_lock_contention_us;
+
+        if let Some(poh_entry) = poh_entry {
+            self.tick_height = slot_max_tick_height;
+            self.report_poh_timing_point();
+
+            // Should be empty in most cases, but reset just to be safe
+            self.tick_cache = vec![];
+            self.tick_cache.push((
+                Entry {
+                    num_hashes: poh_entry.num_hashes,
+                    hash: poh_entry.hash,
+                    transactions: vec![],
+                },
+                self.tick_height,
+            ));
+
+            let (_flush_res, flush_cache_and_tick_us) = measure_us!(self.flush_cache(true));
+            self.metrics.flush_cache_tick_us += flush_cache_and_tick_us;
+        }
+    }
+
+    pub fn migrate_to_alpenglow_poh(&mut self) {
+        self.tick_cache = vec![];
+        {
+            let mut poh = self.poh.lock().unwrap();
+            // sets PoH to low power mode
+            let hashes_per_tick = None;
+            let current_hash = poh.hash;
+            info!("migrating poh to low power mode");
+            poh.reset(current_hash, hashes_per_tick);
+        }
+    }
 }
 
+#[cfg(feature = "dev-context-only-utils")]
 fn do_create_test_recorder(
     bank: Arc<Bank>,
     blockstore: Arc<Blockstore>,
@@ -954,6 +1063,7 @@ fn do_create_test_recorder(
     )
 }
 
+#[cfg(feature = "dev-context-only-utils")]
 pub fn create_test_recorder(
     bank: Arc<Bank>,
     blockstore: Arc<Blockstore>,
@@ -969,6 +1079,7 @@ pub fn create_test_recorder(
     do_create_test_recorder(bank, blockstore, poh_config, leader_schedule_cache, false)
 }
 
+#[cfg(feature = "dev-context-only-utils")]
 pub fn create_test_recorder_with_index_tracking(
     bank: Arc<Bank>,
     blockstore: Arc<Blockstore>,
@@ -1620,6 +1731,7 @@ mod tests {
             &Arc::new(LeaderScheduleCache::default()),
             &PohConfig::default(),
             Arc::new(AtomicBool::default()),
+            false,
         );
         poh_recorder.set_bank_for_test(bank);
         poh_recorder.clear_bank();
