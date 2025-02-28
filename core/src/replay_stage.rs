@@ -4458,6 +4458,9 @@ pub(crate) mod tests {
     use {
         super::*,
         crate::{
+            alpenglow_consensus::vote_history_storage::{
+                NullVoteHistoryStorage, VoteHistoryStorage,
+            },
             consensus::{
                 progress_map::{ValidatorStakeInfo, RETRANSMIT_BASE_DELAY_MS},
                 tower_storage::{FileTowerStorage, NullTowerStorage},
@@ -7707,6 +7710,7 @@ pub(crate) mod tests {
             ..
         } = replay_blockstore_components(None, 10, None::<GenerateVotes>);
         let tower_storage = NullTowerStorage::default();
+        let vote_history_storage: NullVoteHistoryStorage = NullVoteHistoryStorage::default();
 
         let VoteSimulator {
             mut validator_keypairs,
@@ -7797,6 +7801,7 @@ pub(crate) mod tests {
             &cluster_info,
             &poh_recorder,
             &tower_storage,
+            &vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
         );
@@ -7902,6 +7907,7 @@ pub(crate) mod tests {
             &cluster_info,
             &poh_recorder,
             &tower_storage,
+            &vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
         );
@@ -8030,6 +8036,7 @@ pub(crate) mod tests {
             &cluster_info,
             &poh_recorder,
             &tower_storage,
+            &vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
         );
@@ -8133,6 +8140,7 @@ pub(crate) mod tests {
         cluster_info: &ClusterInfo,
         poh_recorder: &RwLock<PohRecorder>,
         tower_storage: &dyn TowerStorage,
+        vote_history_storage: &dyn VoteHistoryStorage,
         make_it_landing: bool,
         cursor: &mut Cursor,
         bank_forks: &RwLock<BankForks>,
@@ -8172,6 +8180,7 @@ pub(crate) mod tests {
             cluster_info,
             poh_recorder,
             tower_storage,
+            vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
         );
@@ -8224,6 +8233,7 @@ pub(crate) mod tests {
             ..
         } = replay_blockstore_components(None, 10, None::<GenerateVotes>);
         let tower_storage = NullTowerStorage::default();
+        let vote_history_storage = NullVoteHistoryStorage::default();
 
         let VoteSimulator {
             mut validator_keypairs,
@@ -8284,6 +8294,7 @@ pub(crate) mod tests {
             &cluster_info,
             &poh_recorder,
             &tower_storage,
+            &vote_history_storage,
             true,
             &mut cursor,
             &bank_forks,
@@ -8302,6 +8313,7 @@ pub(crate) mod tests {
             &cluster_info,
             &poh_recorder,
             &tower_storage,
+            &vote_history_storage,
             false,
             &mut cursor,
             &bank_forks,
