@@ -906,7 +906,7 @@ impl Validator {
             startup_verification_complete = Arc::clone(bank.get_startup_verification_complete());
             let first_alpenglow_slot = highest_frozen_bank
                 .feature_set
-                .activated_slot(&solana_feature_set::secp256k1_program_enabled::id());
+                .activated_slot(&agave_feature_set::secp256k1_program_enabled::id());
             PohRecorder::new_with_clear_signal(
                 bank.tick_height(),
                 bank.last_blockhash(),

@@ -12,7 +12,6 @@
 //!
 #[cfg(feature = "dev-context-only-utils")]
 use qualifier_attr::qualifiers;
-use std::sync::RwLock;
 use {
     crate::{
         leader_bank_notifier::LeaderBankNotifier, poh_service::PohService,
@@ -34,8 +33,8 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     std::{
         cmp,
-        sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock},
-        time::{Duration, Instant},
+        sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
+        time::Instant,
     },
     thiserror::Error,
 };
@@ -907,62 +906,6 @@ impl PohRecorder {
         self.clear_bank();
     }
 
-    fn report_poh_timing_point_by_tick(&self) {
-        match self.tick_height % self.ticks_per_slot {
-            // reaching the end of the slot
-            0 => {
-                if let Some(ref sender) = self.poh_timing_point_sender {
-                    send_poh_timing_point(
-                        sender,
-                        SlotPohTimingInfo::new_slot_end_poh_time_point(
-                            self.slot_for_tick_height(self.tick_height),
-                            None,
-                            solana_time_utils::timestamp(),
-                        ),
-                    );
-                }
-            }
-            // beginning of a slot
-            1 => {
-                if let Some(ref sender) = self.poh_timing_point_sender {
-                    send_poh_timing_point(
-                        sender,
-                        SlotPohTimingInfo::new_slot_start_poh_time_point(
-                            self.slot_for_tick_height(self.tick_height),
-                            None,
-                            solana_time_utils::timestamp(),
-                        ),
-                    );
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn report_poh_timing_point_by_working_bank(&self, slot: Slot) {
-        if let Some(ref sender) = self.poh_timing_point_sender {
-            send_poh_timing_point(
-                sender,
-                SlotPohTimingInfo::new_slot_end_poh_time_point(
-                    slot,
-                    None,
-                    solana_time_utils::timestamp(),
-                ),
-            );
-        }
-    }
-
-    fn report_poh_timing_point(&self) {
-        // send poh slot end timing point
-        if let Some(slot) = self.working_bank_end_slot() {
-            //  bank producer
-            self.report_poh_timing_point_by_working_bank(slot)
-        } else {
-            // validator
-            self.report_poh_timing_point_by_tick()
-        }
-    }
-
     pub fn tick_alpenglow(&mut self, slot_max_tick_height: u64) {
         let (poh_entry, tick_lock_contention_us) = measure_us!({
             let mut poh_l = self.poh.lock().unwrap();
@@ -972,7 +915,6 @@ impl PohRecorder {
 
         if let Some(poh_entry) = poh_entry {
             self.tick_height = slot_max_tick_height;
-            self.report_poh_timing_point();
 
             // Should be empty in most cases, but reset just to be safe
             self.tick_cache = vec![];

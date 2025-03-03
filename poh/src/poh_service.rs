@@ -4,12 +4,11 @@ use {
     crate::poh_recorder::{PohRecorder, Record},
     crossbeam_channel::Receiver,
     log::*,
-    solana_clock::DEFAULT_HASHES_PER_SECOND,
+    solana_clock::{DEFAULT_HASHES_PER_SECOND, DEFAULT_MS_PER_SLOT},
     solana_entry::poh::Poh,
     solana_measure::{measure::Measure, measure_us},
     solana_poh_config::PohConfig,
     solana_runtime::bank::Bank,
-    solana_sdk::clock::DEFAULT_MS_PER_SLOT,
     std::{
         sync::{
             atomic::{AtomicBool, Ordering},
