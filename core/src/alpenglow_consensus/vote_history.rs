@@ -1,6 +1,9 @@
 use {
-    crate::alpenglow_consensus::certificate_pool::Vote, solana_clock::Slot, solana_hash::Hash,
-    solana_pubkey::Pubkey, thiserror::Error,
+    alpenglow_vote::vote::{FinalizationVote, NotarizationVote, Vote},
+    solana_clock::Slot,
+    solana_hash::Hash,
+    solana_pubkey::Pubkey,
+    thiserror::Error,
 };
 
 pub const VOTE_THRESHOLD_SIZE: f64 = 2f64 / 3f64;
@@ -38,7 +41,7 @@ impl VoteHistoryVersions {
 #[cfg_attr(
     feature = "frozen-abi",
     derive(AbiExample),
-    frozen_abi(digest = "B22qs7ro2VKH9tXzimwhhgC3rPTLmrJaKMycQTfEB3e5")
+    frozen_abi(digest = "39yKx75e8AkYF6S2MWepw2d26XfnyMtpz9B4xS3SpK7W")
 )]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct VoteHistory {
@@ -62,9 +65,9 @@ impl VoteHistory {
     pub fn new(node_pubkey: Pubkey, root: Slot) -> Self {
         Self {
             node_pubkey,
-            latest_notarize_vote: Vote::Notarize(0),
+            latest_notarize_vote: Vote::from(NotarizationVote::default()),
             skip_votes: vec![],
-            latest_finalize_vote: Vote::Finalize(0),
+            latest_finalize_vote: Vote::from(FinalizationVote::default()),
             root,
         }
     }

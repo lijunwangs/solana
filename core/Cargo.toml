@@ -22,6 +22,7 @@ dev-context-only-utils = [
 frozen-abi = [
     "dep:solana-frozen-abi",
     "dep:solana-frozen-abi-macro",
+    "alpenglow-vote/frozen-abi",
     "solana-accounts-db/frozen-abi",
     "solana-bloom/frozen-abi",
     "solana-compute-budget/frozen-abi",
@@ -46,6 +47,7 @@ agave-feature-set = { workspace = true }
 agave-transaction-view = { workspace = true }
 agave-verified-packet-receiver = { workspace = true }
 ahash = { workspace = true }
+alpenglow-vote = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
 arrayvec = { workspace = true }
 assert_matches = { workspace = true }
