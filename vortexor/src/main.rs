@@ -4,7 +4,7 @@ use {
     log::*,
     solana_clap_utils::input_parsers::keypair_of,
     solana_core::banking_trace::BankingTracer,
-    solana_log_utils::redirect_stderr_to_file,
+    solana_logger::redirect_stderr_to_file,
     solana_net_utils::{bind_in_range_with_config, SocketConfig},
     solana_sdk::{net::DEFAULT_TPU_COALESCE, signer::Signer},
     solana_streamer::streamer::StakedNodes,

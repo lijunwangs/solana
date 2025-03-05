@@ -14,7 +14,7 @@ use {
     },
     solana_core::consensus::tower_storage::FileTowerStorage,
     solana_faucet::faucet::run_local_faucet_with_port,
-    solana_log_utils::redirect_stderr_to_file,
+    solana_logger::redirect_stderr_to_file,
     solana_rpc::{
         rpc::{JsonRpcConfig, RpcBigtableConfig},
         rpc_pubsub_service::PubSubConfig,
