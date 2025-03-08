@@ -126,7 +126,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-connections-per-peer")
                 .num_args(1)
                 .default_value(max_connections_per_peer_static)
-                .value_parser(clap::value_parser!(u32))
+                .value_parser(clap::value_parser!(u64))
                 .help("Controls the max concurrent connections per IpAddr."),
         )
         .arg(
@@ -134,7 +134,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-tpu-staked-connections")
                 .num_args(1)
                 .default_value(max_tpu_staked_connections_static)
-                .value_parser(clap::value_parser!(u32))
+                .value_parser(clap::value_parser!(u64))
                 .help("Controls the max concurrent connections for TPU from staked nodes."),
         )
         .arg(
@@ -142,7 +142,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-tpu-unstaked-connections")
                 .num_args(1)
                 .default_value(max_tpu_unstaked_connections_static)
-                .value_parser(clap::value_parser!(u32))
+                .value_parser(clap::value_parser!(u64))
                 .help("Controls the max concurrent connections fort TPU from unstaked nodes."),
         )
         .arg(
@@ -150,7 +150,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-fwd-staked-connections")
                 .num_args(1)
                 .default_value(max_fwd_staked_connections_static)
-                .value_parser(clap::value_parser!(u32))
+                .value_parser(clap::value_parser!(u64))
                 .help("Controls the max concurrent connections for TPU-forward from staked nodes."),
         )
         .arg(
@@ -158,7 +158,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-fwd-unstaked-connections")
                 .num_args(1)
                 .default_value(max_fwd_unstaked_connections_static)
-                .value_parser(clap::value_parser!(u32))
+                .value_parser(clap::value_parser!(u64))
                 .help("Controls the max concurrent connections for TPU-forward from unstaked nodes."),
         )
         .arg(
@@ -166,7 +166,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-connections-per-ipaddr-per-minute")
                 .num_args(1)
                 .default_value(max_connections_per_ipaddr_per_min_static)
-                .value_parser(clap::value_parser!(u32))
+                .value_parser(clap::value_parser!(u64))
                 .help("Controls the rate of the clients connections per IpAddr per minute."),
         )
         .arg(
