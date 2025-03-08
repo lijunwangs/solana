@@ -18,6 +18,7 @@ use {
     std::{
         collections::HashSet,
         env,
+        path::PathBuf,
         sync::{atomic::AtomicBool, Arc, RwLock},
         time::Duration,
     },
@@ -32,15 +33,15 @@ pub fn main() {
     let solana_version = solana_version::version!();
     let cli_app = command(solana_version, default_args);
     let matches = cli_app.get_matches();
+    let identity: &PathBuf = matches.get_one("identity").unwrap();
 
-    let identity_keypair = read_keypair_file(matches.get_one::<String>("identity").unwrap())
-        .unwrap_or_else(|error| {
-            clap::Error::raw(
-                clap::error::ErrorKind::InvalidValue,
-                format!("The --identity <KEYPAIR> argument is required, error: {error}"),
-            )
-            .exit();
-        });
+    let identity_keypair = read_keypair_file(identity).unwrap_or_else(|error| {
+        clap::Error::raw(
+            clap::error::ErrorKind::InvalidValue,
+            format!("The --identity <KEYPAIR> argument is required, error: {error}"),
+        )
+        .exit();
+    });
 
     let logfile = {
         let logfile = matches
