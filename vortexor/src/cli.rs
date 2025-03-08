@@ -1,12 +1,12 @@
 use {
     clap::{crate_description, crate_name, Arg, ArgAction, ColorChoice, Command},
-    solana_clap_utils::input_validators::is_keypair,
     solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE},
     solana_sdk::quic::QUIC_PORT_OFFSET,
     solana_streamer::quic::{
         DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE, DEFAULT_MAX_STAKED_CONNECTIONS,
         DEFAULT_MAX_STREAMS_PER_MS, DEFAULT_MAX_UNSTAKED_CONNECTIONS,
     },
+    std::path::PathBuf,
 };
 
 pub const DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
@@ -96,12 +96,11 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
         .color(ColorChoice::Auto)
         .arg(
             Arg::new("identity")
-                .short('i')
                 .long("identity")
                 .value_name("KEYPAIR")
                 .num_args(1)
                 .required(true)
-                .value_parser(|s: &str| is_keypair(s.to_string()))
+                .value_parser(clap::value_parser!(PathBuf))
                 .help("Vortexor identity keypair"),
         )
         .arg(
