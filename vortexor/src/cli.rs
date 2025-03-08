@@ -174,7 +174,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("num-quic-endpoints")
                 .num_args(1)
                 .default_value(num_quic_endpoints_static)
-                .value_parser(clap::value_parser!(usize))
+                .value_parser(clap::value_parser!(u64))
                 .help("The number of QUIC endpoints used for TPU and TPU-Forward. It can be increased to \
                        increase network ingest throughput, at the expense of higher CPU and general \
                        validator load."),
@@ -184,7 +184,7 @@ pub fn command(version: &str, default_args: DefaultArgs) -> Command {
                 .long("max-streams-per-ms")
                 .num_args(1)
                 .default_value(max_streams_per_ms_static)
-                .value_parser(clap::value_parser!(usize))
+                .value_parser(clap::value_parser!(u64))
                 .help("Max streams per second for a streamer."),
         )
         .arg(

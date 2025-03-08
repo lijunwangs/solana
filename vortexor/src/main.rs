@@ -87,7 +87,7 @@ pub fn main() {
     let max_connections_per_ipaddr_per_min = matches
         .get_one::<u64>("max_connections_per_ipaddr_per_minute")
         .unwrap();
-    let num_quic_endpoints = matches.get_one::<usize>("num_quic_endpoints").unwrap();
+    let num_quic_endpoints = matches.get_one::<u64>("num_quic_endpoints").unwrap();
     let tpu_coalesce = matches
         .get_one::<u64>("tpu_coalesce_ms")
         .map(|tpu_coalesce| Duration::from_millis(*tpu_coalesce))
