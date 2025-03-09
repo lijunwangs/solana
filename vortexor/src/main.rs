@@ -18,7 +18,7 @@ use {
     std::{
         collections::HashSet,
         env,
-        net::IpAddr,
+        net::{IpAddr, SocketAddr},
         path::PathBuf,
         sync::{atomic::AtomicBool, Arc, RwLock},
         time::Duration,
@@ -120,13 +120,9 @@ pub fn main() {
     let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
     let destinations = matches
-        .get_many::<String>("destination")
+        .get_many::<SocketAddr>("destination")
         .unwrap_or_default()
-        .map(|destination| {
-            solana_net_utils::parse_host_port(destination).unwrap_or_else(|e| {
-                panic!("Failed to parse destination address: {e}");
-            })
-        })
+        .map(|addr| addr.clone())
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
