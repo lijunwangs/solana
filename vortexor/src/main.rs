@@ -122,7 +122,7 @@ pub fn main() {
     let destinations = matches
         .get_many::<SocketAddr>("destination")
         .unwrap_or_default()
-        .map(|addr| addr.clone())
+        .copied()
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
