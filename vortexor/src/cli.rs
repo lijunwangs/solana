@@ -45,7 +45,7 @@ impl Default for DefaultArgs {
     }
 }
 
-fn port_range_validator(port_range: &str) -> Result<(), String> {
+fn port_range_validator(port_range: &str) -> Result<(u16, u16), String> {
     if let Some((start, end)) = solana_net_utils::parse_port_range(port_range) {
         if end.saturating_sub(start) < MINIMUM_VALIDATOR_PORT_RANGE_WIDTH {
             Err(format!(
@@ -56,7 +56,7 @@ fn port_range_validator(port_range: &str) -> Result<(), String> {
         } else if end.checked_add(QUIC_PORT_OFFSET).is_none() {
             Err("Invalid dynamic_port_range.".to_string())
         } else {
-            Ok(())
+            Ok((start, end))
         }
     } else {
         Err("Invalid port range".to_string())
