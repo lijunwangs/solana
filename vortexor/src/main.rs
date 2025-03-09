@@ -94,7 +94,7 @@ pub fn main() {
         .unwrap_or(DEFAULT_TPU_COALESCE);
 
     let dynamic_port_range = solana_net_utils::parse_port_range(
-        matches.get_one::<String>("dynamic_port_range").unwrap(),
+        matches.get_one::<(u16, u16)>("dynamic_port_range").unwrap(),
     )
     .expect("invalid dynamic_port_range");
 
