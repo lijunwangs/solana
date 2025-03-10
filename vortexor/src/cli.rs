@@ -6,7 +6,10 @@ use {
         DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE, DEFAULT_MAX_STAKED_CONNECTIONS,
         DEFAULT_MAX_STREAMS_PER_MS, DEFAULT_MAX_UNSTAKED_CONNECTIONS,
     },
-    std::path::PathBuf,
+    std::{
+        net::{IpAddr, SocketAddr},
+        path::PathBuf,
+    },
 };
 
 pub const DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
@@ -73,9 +76,17 @@ fn get_version() -> &'static str {
 #[command(name=crate_name!(),version=get_version(), about=crate_description!(),
     long_about = None, color=ColorChoice::Auto)]
 pub struct Cli {
-    ///Vortexor identity keypair
+    /// Vortexor identity keypair
     #[arg(long, num_args=1, value_parser=clap::value_parser!(PathBuf), required=true, value_name="KEYPAIR")]
     pub identity: PathBuf,
+
+    /// IP address to bind the vortexor ports
+    #[arg(long, num_args=1, value_parser=solana_net_utils::parse_host, default_value="0.0.0.0", value_name="HOST")]
+    pub bind_address: IpAddr,
+
+    /// The destination validator address to which the vortexor will forward transactions.
+    #[arg(long, num_args=1, value_parser=solana_net_utils::parse_host_port, value_name="HOST:PORT", action=ArgAction::Append)]
+    pub destinations: Vec<SocketAddr>,
 }
 
 pub fn command(version: &str, default_args: DefaultArgs) -> Command {

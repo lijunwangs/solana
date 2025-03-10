@@ -122,13 +122,15 @@ pub fn main() {
     // The non_vote_receiver will forward the verified transactions to its configured validator
     let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
 
-    let destinations = matches
-        .get_many::<SocketAddr>("destination")
-        .unwrap_or_default()
-        .copied()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    // let destinations = matches
+    //     .get_many::<SocketAddr>("destination")
+    //     .unwrap_or_default()
+    //     .copied()
+    //     .collect::<HashSet<_>>()
+    //     .into_iter()
+    //     .collect::<Vec<_>>();
+
+    let destinations = args.destinations;
 
     info!("Creating the PacketBatchSender: at address: {:?} for the following initial destinations: {destinations:?}",
         sender_socket.1.local_addr());
