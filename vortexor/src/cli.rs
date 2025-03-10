@@ -1,5 +1,5 @@
 use {
-    clap::{crate_description, crate_name, Arg, ArgAction, ColorChoice, Command},
+    clap::{crate_description, crate_name, Arg, ArgAction, ColorChoice, Command, Parser},
     solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE},
     solana_sdk::quic::QUIC_PORT_OFFSET,
     solana_streamer::quic::{
@@ -61,6 +61,21 @@ fn port_range_validator(port_range: &str) -> Result<(u16, u16), String> {
     } else {
         Err("Invalid port range".to_string())
     }
+}
+
+fn get_version() -> &'static str {
+    let version = solana_version::version!();
+    let version_static: &'static str = Box::leak(version.to_string().into_boxed_str());
+    version_static
+}
+
+#[derive(Parser)]
+#[command(name=crate_name!(),version=get_version(), about=crate_description!(),
+    long_about = None, color=ColorChoice::Auto)]
+pub struct Cli {
+    ///Vortexor identity keypair
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(PathBuf), required=true, value_name="KEYPAIR")]
+    pub identity: PathBuf,
 }
 
 pub fn command(version: &str, default_args: DefaultArgs) -> Command {
