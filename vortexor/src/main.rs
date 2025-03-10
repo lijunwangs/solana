@@ -1,5 +1,5 @@
 use {
-    clap::crate_name,
+    clap::{crate_name, Parser},
     crossbeam_channel::bounded,
     log::*,
     solana_core::banking_trace::BankingTracer,
@@ -8,7 +8,7 @@ use {
     solana_sdk::{net::DEFAULT_TPU_COALESCE, signature::read_keypair_file, signer::Signer},
     solana_streamer::streamer::StakedNodes,
     solana_vortexor::{
-        cli::{command, DefaultArgs},
+        cli::{command, Cli, DefaultArgs},
         sender::{
             PacketBatchSender, DEFAULT_BATCH_SIZE, DEFAULT_RECV_TIMEOUT,
             DEFAULT_SENDER_THREADS_COUNT,
@@ -19,7 +19,7 @@ use {
         collections::HashSet,
         env,
         net::{IpAddr, SocketAddr},
-        path::PathBuf,
+        //path::PathBuf,
         sync::{atomic::AtomicBool, Arc, RwLock},
         time::Duration,
     },
@@ -30,11 +30,14 @@ const DEFAULT_CHANNEL_SIZE: usize = 100_000;
 pub fn main() {
     solana_logger::setup();
 
+    let args = Cli::parse();
+
     let default_args = DefaultArgs::default();
     let solana_version = solana_version::version!();
     let cli_app = command(solana_version, default_args);
     let matches = cli_app.get_matches();
-    let identity: &PathBuf = matches.get_one("identity").unwrap();
+    // let identity: &PathBuf = matches.get_one("identity").unwrap();
+    let identity = args.identity;
 
     let identity_keypair = read_keypair_file(identity).unwrap_or_else(|error| {
         clap::Error::raw(
