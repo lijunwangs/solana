@@ -96,9 +96,11 @@ pub fn main() {
         .map(|tpu_coalesce| Duration::from_millis(*tpu_coalesce))
         .unwrap_or(DEFAULT_TPU_COALESCE);
 
-    let dynamic_port_range = matches
-        .get_one::<(u16, u16)>("dynamic_port_range")
-        .expect("invalid dynamic_port_range");
+    // let dynamic_port_range = matches
+    //     .get_one::<(u16, u16)>("dynamic_port_range")
+    //     .expect("invalid dynamic_port_range");
+
+    let dynamic_port_range = args.dynamic_port_range;
 
     let max_streams_per_ms = matches.get_one::<u64>("max_streams_per_ms").unwrap();
     let exit = Arc::new(AtomicBool::new(false));
@@ -107,7 +109,7 @@ pub fn main() {
     let (tpu_fwd_sender, _tpu_fwd_receiver) = bounded(DEFAULT_CHANNEL_SIZE);
 
     let tpu_sockets =
-        Vortexor::create_tpu_sockets(*bind_address, *dynamic_port_range, *num_quic_endpoints);
+        Vortexor::create_tpu_sockets(*bind_address, dynamic_port_range, *num_quic_endpoints);
 
     let (banking_tracer, _) = BankingTracer::new(
         None, // Not interesed in banking tracing
@@ -117,7 +119,7 @@ pub fn main() {
     let config = SocketConfig::default().reuseport(false);
 
     let sender_socket =
-        bind_in_range_with_config(*bind_address, *dynamic_port_range, config).unwrap();
+        bind_in_range_with_config(*bind_address, dynamic_port_range, config).unwrap();
 
     // The non_vote_receiver will forward the verified transactions to its configured validator
     let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
