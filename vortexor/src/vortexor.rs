@@ -111,7 +111,7 @@ impl Vortexor {
         staked_nodes: Arc<RwLock<StakedNodes>>,
         tpu_sender: Sender<PacketBatch>,
         tpu_fwd_sender: Sender<PacketBatch>,
-        max_connections_per_peer: u64,
+        max_connections_per_peer: usize,
         max_tpu_staked_connections: u64,
         max_tpu_unstaked_connections: u64,
         max_fwd_staked_connections: u64,
@@ -123,7 +123,7 @@ impl Vortexor {
         exit: Arc<AtomicBool>,
     ) -> Self {
         let mut quic_server_params = QuicServerParams {
-            max_connections_per_peer: max_connections_per_peer.try_into().unwrap(),
+            max_connections_per_peer,
             max_staked_connections: max_tpu_staked_connections.try_into().unwrap(),
             max_unstaked_connections: max_tpu_unstaked_connections.try_into().unwrap(),
             max_streams_per_ms,

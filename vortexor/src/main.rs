@@ -72,7 +72,7 @@ pub fn main() {
     let bind_address: &IpAddr = matches
         .get_one("bind_address")
         .expect("invalid bind_address");
-    let max_connections_per_peer = matches.get_one::<u64>("max_connections_per_peer").unwrap();
+    let max_connections_per_peer = args.max_connections_per_peer;
     let max_tpu_staked_connections = matches
         .get_one::<u64>("max_tpu_staked_connections")
         .unwrap();
@@ -164,7 +164,7 @@ pub fn main() {
         staked_nodes,
         tpu_sender,
         tpu_fwd_sender,
-        *max_connections_per_peer,
+        max_connections_per_peer,
         *max_tpu_staked_connections,
         *max_tpu_unstaked_connections,
         *max_fwd_staked_connections,
