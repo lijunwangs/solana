@@ -86,7 +86,7 @@ pub struct Cli {
 
     /// The destination validator address to which the vortexor will forward transactions.
     #[arg(long, num_args=1, value_parser=solana_net_utils::parse_host_port, value_name="HOST:PORT", action=ArgAction::Append)]
-    pub destinations: Vec<SocketAddr>,
+    pub destination: Vec<SocketAddr>,
 }
 
 pub fn command(version: &str, default_args: DefaultArgs) -> Command {
