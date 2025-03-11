@@ -145,7 +145,7 @@ pub struct Cli {
 
     /// Redirect logging to the specified file, '-' for standard error. Sending the
     /// SIGUSR1 signal to the vortexor process will cause it to re-open the log file.
-    #[arg(long="log", num_args=1, value_name="FILE", value_parser=clap::value_parser!(String), required=true)]
+    #[arg(long="log", num_args=1, value_name="FILE", value_parser=clap::value_parser!(String))]
     pub logfile: String,
 }
 
