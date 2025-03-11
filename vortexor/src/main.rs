@@ -130,7 +130,7 @@ pub fn main() {
     //     .into_iter()
     //     .collect::<Vec<_>>();
 
-    let destinations = args.destinations;
+    let destinations = args.destination;
 
     info!("Creating the PacketBatchSender: at address: {:?} for the following initial destinations: {destinations:?}",
         sender_socket.1.local_addr());
