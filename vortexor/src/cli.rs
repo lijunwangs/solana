@@ -72,6 +72,12 @@ fn get_version() -> &'static str {
     version_static
 }
 
+fn get_default_port_range() -> &'static str {
+    let range = format!("{}-{}", VALIDATOR_PORT_RANGE.0, VALIDATOR_PORT_RANGE.1);
+    let range: &'static str = Box::leak(range.into_boxed_str());
+    range
+}
+
 #[derive(Parser)]
 #[command(name=crate_name!(),version=get_version(), about=crate_description!(),
     long_about = None, color=ColorChoice::Auto)]
@@ -87,6 +93,9 @@ pub struct Cli {
     /// The destination validator address to which the vortexor will forward transactions.
     #[arg(long, num_args=1, value_parser=solana_net_utils::parse_host_port, value_name="HOST:PORT", action=ArgAction::Append)]
     pub destination: Vec<SocketAddr>,
+
+    #[arg(long, num_args=1, value_parser=port_range_validator, value_name="MIN_PORT-MAX_PORT", default_value=get_default_port_range())]
+    pub dynamic_port_range: (u16, u16),
 }
 
 pub fn command(version: &str, default_args: DefaultArgs) -> Command {
