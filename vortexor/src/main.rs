@@ -5,10 +5,10 @@ use {
     solana_core::banking_trace::BankingTracer,
     solana_logger::redirect_stderr_to_file,
     solana_net_utils::{bind_in_range_with_config, SocketConfig},
-    solana_sdk::{net::DEFAULT_TPU_COALESCE, signature::read_keypair_file, signer::Signer},
+    solana_sdk::{signature::read_keypair_file, signer::Signer},
     solana_streamer::streamer::StakedNodes,
     solana_vortexor::{
-        cli::{command, Cli, DefaultArgs},
+        cli::Cli,
         sender::{
             PacketBatchSender, DEFAULT_BATCH_SIZE, DEFAULT_RECV_TIMEOUT,
             DEFAULT_SENDER_THREADS_COUNT,
@@ -16,10 +16,8 @@ use {
         vortexor::Vortexor,
     },
     std::{
-        collections::HashSet,
         env,
-        net::{IpAddr, SocketAddr},
-        //path::PathBuf,
+        net::IpAddr,
         sync::{atomic::AtomicBool, Arc, RwLock},
         time::Duration,
     },
@@ -31,11 +29,7 @@ pub fn main() {
     solana_logger::setup();
 
     let args = Cli::parse();
-
-    let default_args = DefaultArgs::default();
     let solana_version = solana_version::version!();
-    let cli_app = command(solana_version, default_args);
-    let matches = cli_app.get_matches();
     // let identity: &PathBuf = matches.get_one("identity").unwrap();
     let identity = args.identity;
 
@@ -48,9 +42,8 @@ pub fn main() {
     });
 
     let logfile = {
-        let logfile = matches
-            .get_one::<String>("logfile")
-            .map(|s| s.into())
+        let logfile = args
+            .logfile
             .unwrap_or_else(|| format!("solana-vortexor-{}.log", identity_keypair.pubkey()));
 
         if logfile == "-" {
@@ -69,47 +62,27 @@ pub fn main() {
         std::env::args_os()
     );
 
-    let bind_address: &IpAddr = matches
-        .get_one("bind_address")
-        .expect("invalid bind_address");
+    let bind_address: &IpAddr = &args.bind_address;
     let max_connections_per_peer = args.max_connections_per_peer;
-    let max_tpu_staked_connections = matches
-        .get_one::<u64>("max_tpu_staked_connections")
-        .unwrap();
-    let max_fwd_staked_connections = matches
-        .get_one::<u64>("max_fwd_staked_connections")
-        .unwrap();
-    let max_fwd_unstaked_connections = matches
-        .get_one::<u64>("max_fwd_unstaked_connections")
-        .unwrap();
+    let max_tpu_staked_connections = args.max_tpu_staked_connections;
+    let max_fwd_staked_connections = args.max_fwd_staked_connections;
+    let max_fwd_unstaked_connections = args.max_fwd_unstaked_connections;
 
-    let max_tpu_unstaked_connections = matches
-        .get_one::<u64>("max_tpu_unstaked_connections")
-        .unwrap();
+    let max_tpu_unstaked_connections = args.max_tpu_unstaked_connections;
 
-    let max_connections_per_ipaddr_per_min = matches
-        .get_one::<u64>("max_connections_per_ipaddr_per_minute")
-        .unwrap();
-    let num_quic_endpoints = matches.get_one::<u64>("num_quic_endpoints").unwrap();
-    let tpu_coalesce = matches
-        .get_one::<u64>("tpu_coalesce_ms")
-        .map(|tpu_coalesce| Duration::from_millis(*tpu_coalesce))
-        .unwrap_or(DEFAULT_TPU_COALESCE);
-
-    // let dynamic_port_range = matches
-    //     .get_one::<(u16, u16)>("dynamic_port_range")
-    //     .expect("invalid dynamic_port_range");
-
+    let max_connections_per_ipaddr_per_min = args.max_connections_per_ipaddr_per_minute;
+    let num_quic_endpoints = args.num_quic_endpoints;
+    let tpu_coalesce = Duration::from_millis(args.tpu_coalesce_ms);
     let dynamic_port_range = args.dynamic_port_range;
 
-    let max_streams_per_ms = matches.get_one::<u64>("max_streams_per_ms").unwrap();
+    let max_streams_per_ms = args.max_streams_per_ms;
     let exit = Arc::new(AtomicBool::new(false));
     // To be linked with the Tpu sigverify and forwarder service
     let (tpu_sender, tpu_receiver) = bounded(DEFAULT_CHANNEL_SIZE);
     let (tpu_fwd_sender, _tpu_fwd_receiver) = bounded(DEFAULT_CHANNEL_SIZE);
 
     let tpu_sockets =
-        Vortexor::create_tpu_sockets(*bind_address, dynamic_port_range, *num_quic_endpoints);
+        Vortexor::create_tpu_sockets(*bind_address, dynamic_port_range, num_quic_endpoints);
 
     let (banking_tracer, _) = BankingTracer::new(
         None, // Not interesed in banking tracing
@@ -123,14 +96,6 @@ pub fn main() {
 
     // The non_vote_receiver will forward the verified transactions to its configured validator
     let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
-
-    // let destinations = matches
-    //     .get_many::<SocketAddr>("destination")
-    //     .unwrap_or_default()
-    //     .copied()
-    //     .collect::<HashSet<_>>()
-    //     .into_iter()
-    //     .collect::<Vec<_>>();
 
     let destinations = args.destination;
 
@@ -165,12 +130,12 @@ pub fn main() {
         tpu_sender,
         tpu_fwd_sender,
         max_connections_per_peer,
-        *max_tpu_staked_connections,
-        *max_tpu_unstaked_connections,
-        *max_fwd_staked_connections,
-        *max_fwd_unstaked_connections,
-        *max_streams_per_ms,
-        *max_connections_per_ipaddr_per_min,
+        max_tpu_staked_connections,
+        max_tpu_unstaked_connections,
+        max_fwd_staked_connections,
+        max_fwd_unstaked_connections,
+        max_streams_per_ms,
+        max_connections_per_ipaddr_per_min,
         tpu_coalesce,
         &identity_keypair,
         exit,
