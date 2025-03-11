@@ -1,7 +1,7 @@
 use {
     clap::{crate_description, crate_name, Arg, ArgAction, ColorChoice, Command, Parser},
     solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE},
-    solana_sdk::quic::QUIC_PORT_OFFSET,
+    solana_sdk::{net::DEFAULT_TPU_COALESCE, quic::QUIC_PORT_OFFSET},
     solana_streamer::quic::{
         DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE, DEFAULT_MAX_STAKED_CONNECTIONS,
         DEFAULT_MAX_STREAMS_PER_MS, DEFAULT_MAX_UNSTAKED_CONNECTIONS,
@@ -78,6 +78,12 @@ fn get_default_port_range() -> &'static str {
     range
 }
 
+fn get_default_tpu_coalesce_ms() -> &'static str {
+    let coalesce = DEFAULT_TPU_COALESCE.as_millis().to_string();
+    let coalesce: &'static str = Box::leak(coalesce.into_boxed_str());
+    coalesce
+}
+
 #[derive(Parser)]
 #[command(name=crate_name!(),version=get_version(), about=crate_description!(),
     long_about = None, color=ColorChoice::Auto)]
@@ -94,8 +100,53 @@ pub struct Cli {
     #[arg(long, num_args=1, value_parser=solana_net_utils::parse_host_port, value_name="HOST:PORT", action=ArgAction::Append)]
     pub destination: Vec<SocketAddr>,
 
+    /// Range to use for dynamically assigned ports
     #[arg(long, num_args=1, value_parser=port_range_validator, value_name="MIN_PORT-MAX_PORT", default_value=get_default_port_range())]
     pub dynamic_port_range: (u16, u16),
+
+    /// Controls the max concurrent connections per IpAddr.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(usize),  default_value_t=DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER)]
+    pub max_connections_per_peer: usize,
+
+    /// Controls the max concurrent connections for TPU from staked nodes.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(usize),  default_value_t=DEFAULT_MAX_STAKED_CONNECTIONS)]
+    pub max_tpu_staked_connections: usize,
+
+    /// Controls the max concurrent connections fort TPU from unstaked nodes.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(usize),  default_value_t=DEFAULT_MAX_UNSTAKED_CONNECTIONS)]
+    pub max_tpu_unstaked_connections: usize,
+
+    /// Controls the max concurrent connections for TPU-forward from staked nodes.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(usize),  default_value_t=DEFAULT_MAX_STAKED_CONNECTIONS)]
+    pub max_fwd_staked_connections: usize,
+
+    /// Controls the max concurrent connections for TPU-forward from unstaked nodes.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(usize),  default_value_t=0)]
+    pub max_fwd_unstaked_connections: usize,
+
+    /// Controls the rate of the clients connections per IpAddr per minute.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(u64),  default_value_t=DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE)]
+    pub max_connections_per_ipaddr_per_minute: u64,
+
+    /// The number of QUIC endpoints used for TPU and TPU-Forward. It can be increased to
+    /// increase network ingest throughput, at the expense of higher CPU and general
+    /// validator load.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(usize),  default_value_t=DEFAULT_NUM_QUIC_ENDPOINTS)]
+    pub num_quic_endpoints: usize,
+
+
+    /// Max streams per second for a streamer.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(u64),  default_value_t=DEFAULT_MAX_STREAMS_PER_MS)]
+    pub max_streams_per_ms: u64,
+
+    /// Milliseconds to wait in the TPU receiver for packet coalescing.
+    #[arg(long, num_args=1, value_parser=clap::value_parser!(u64),  default_value=get_default_tpu_coalesce_ms())]
+    pub tpu_coalesce_ms: u64,
+
+    /// Redirect logging to the specified file, '-' for standard error. Sending the
+    /// SIGUSR1 signal to the vortexor process will cause it to re-open the log file.
+    #[arg(long="log", num_args=1, value_name="FILE", value_parser=clap::value_parser!(String), required=true)]
+    pub logfile: String,
 }
 
 pub fn command(version: &str, default_args: DefaultArgs) -> Command {
