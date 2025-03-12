@@ -56,8 +56,7 @@ async fn test_vortexor() {
         DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER,
         DEFAULT_MAX_STAKED_CONNECTIONS,
         DEFAULT_MAX_UNSTAKED_CONNECTIONS,
-        DEFAULT_MAX_STAKED_CONNECTIONS
-            .saturating_add(DEFAULT_MAX_UNSTAKED_CONNECTIONS), // max_fwd_staked_connections
+        DEFAULT_MAX_STAKED_CONNECTIONS.saturating_add(DEFAULT_MAX_UNSTAKED_CONNECTIONS), // max_fwd_staked_connections
         0, // max_fwd_unstaked_connections
         DEFAULT_MAX_STREAMS_PER_MS,
         DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
