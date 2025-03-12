@@ -56,61 +56,61 @@ fn get_default_tpu_coalesce_ms() -> &'static str {
     long_about = None, color=ColorChoice::Auto)]
 pub struct Cli {
     /// Vortexor identity keypair
-    #[arg(long, num_args = 1, value_name = "KEYPAIR")]
+    #[arg(long, value_name = "KEYPAIR")]
     pub identity: PathBuf,
 
     /// IP address to bind the vortexor ports
-    #[arg(long, num_args = 1, value_parser = solana_net_utils::parse_host, default_value = "0.0.0.0", value_name = "HOST")]
+    #[arg(long, value_parser = solana_net_utils::parse_host, default_value = "0.0.0.0", value_name = "HOST")]
     pub bind_address: IpAddr,
 
     /// The destination validator address to which the vortexor will forward transactions.
-    #[arg(long, num_args = 1, value_parser = solana_net_utils::parse_host_port, value_name = "HOST:PORT", action = ArgAction::Append)]
+    #[arg(long, value_parser = solana_net_utils::parse_host_port, value_name = "HOST:PORT", action = ArgAction::Append)]
     pub destination: Vec<SocketAddr>,
 
     /// Range to use for dynamically assigned ports
-    #[arg(long, num_args = 1, value_parser = parse_port_range, value_name = "MIN_PORT-MAX_PORT", default_value = get_default_port_range())]
+    #[arg(long, value_parser = parse_port_range, value_name = "MIN_PORT-MAX_PORT", default_value = get_default_port_range())]
     pub dynamic_port_range: (u16, u16),
 
     /// Controls the max concurrent connections per IpAddr.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER)]
+    #[arg(long, default_value_t = DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER)]
     pub max_connections_per_peer: usize,
 
     /// Controls the max concurrent connections for TPU from staked nodes.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_MAX_STAKED_CONNECTIONS)]
+    #[arg(long, default_value_t = DEFAULT_MAX_STAKED_CONNECTIONS)]
     pub max_tpu_staked_connections: usize,
 
     /// Controls the max concurrent connections fort TPU from unstaked nodes.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_MAX_UNSTAKED_CONNECTIONS)]
+    #[arg(long, default_value_t = DEFAULT_MAX_UNSTAKED_CONNECTIONS)]
     pub max_tpu_unstaked_connections: usize,
 
     /// Controls the max concurrent connections for TPU-forward from staked nodes.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_MAX_STAKED_CONNECTIONS)]
+    #[arg(long, default_value_t = DEFAULT_MAX_STAKED_CONNECTIONS)]
     pub max_fwd_staked_connections: usize,
 
     /// Controls the max concurrent connections for TPU-forward from unstaked nodes.
-    #[arg(long, num_args = 1, default_value_t = 0)]
+    #[arg(long, default_value_t = 0)]
     pub max_fwd_unstaked_connections: usize,
 
     /// Controls the rate of the clients connections per IpAddr per minute.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE)]
+    #[arg(long, default_value_t = DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE)]
     pub max_connections_per_ipaddr_per_minute: u64,
 
     /// The number of QUIC endpoints used for TPU and TPU-Forward. It can be increased to
     /// increase network ingest throughput, at the expense of higher CPU and general
     /// validator load.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_NUM_QUIC_ENDPOINTS)]
+    #[arg(long, default_value_t = DEFAULT_NUM_QUIC_ENDPOINTS)]
     pub num_quic_endpoints: usize,
 
     /// Max streams per second for a streamer.
-    #[arg(long, num_args = 1, default_value_t = DEFAULT_MAX_STREAMS_PER_MS)]
+    #[arg(long, default_value_t = DEFAULT_MAX_STREAMS_PER_MS)]
     pub max_streams_per_ms: u64,
 
     /// Milliseconds to wait in the TPU receiver for packet coalescing.
-    #[arg(long, num_args = 1, default_value = get_default_tpu_coalesce_ms())]
+    #[arg(long, default_value = get_default_tpu_coalesce_ms())]
     pub tpu_coalesce_ms: u64,
 
     /// Redirect logging to the specified file, '-' for standard error. Sending the
     /// SIGUSR1 signal to the vortexor process will cause it to re-open the log file.
-    #[arg(long="log", num_args = 1, value_name = "FILE", value_parser = clap::value_parser!(String))]
+    #[arg(long="log", value_name = "FILE", value_parser = clap::value_parser!(String))]
     pub logfile: Option<String>,
 }
