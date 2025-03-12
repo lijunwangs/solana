@@ -15,7 +15,7 @@ use {
 pub const DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER: usize = 8;
 pub const DEFAULT_NUM_QUIC_ENDPOINTS: usize = 8;
 
-fn port_range_validator(port_range: &str) -> Result<(u16, u16), String> {
+fn parse_port_range(port_range: &str) -> Result<(u16, u16), String> {
     if let Some((start, end)) = solana_net_utils::parse_port_range(port_range) {
         if end.saturating_sub(start) < MINIMUM_VALIDATOR_PORT_RANGE_WIDTH {
             Err(format!(
@@ -56,7 +56,7 @@ fn get_default_tpu_coalesce_ms() -> &'static str {
     long_about = None, color=ColorChoice::Auto)]
 pub struct Cli {
     /// Vortexor identity keypair
-    #[arg(long, num_args = 1, required = true, value_name = "KEYPAIR")]
+    #[arg(long, num_args = 1, value_name = "KEYPAIR")]
     pub identity: PathBuf,
 
     /// IP address to bind the vortexor ports
@@ -68,7 +68,7 @@ pub struct Cli {
     pub destination: Vec<SocketAddr>,
 
     /// Range to use for dynamically assigned ports
-    #[arg(long, num_args = 1, value_parser = port_range_validator, value_name = "MIN_PORT-MAX_PORT", default_value = get_default_port_range())]
+    #[arg(long, num_args = 1, value_parser = parse_port_range, value_name = "MIN_PORT-MAX_PORT", default_value = get_default_port_range())]
     pub dynamic_port_range: (u16, u16),
 
     /// Controls the max concurrent connections per IpAddr.
