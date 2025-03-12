@@ -30,7 +30,6 @@ pub fn main() {
 
     let args = Cli::parse();
     let solana_version = solana_version::version!();
-    // let identity: &PathBuf = matches.get_one("identity").unwrap();
     let identity = args.identity;
 
     let identity_keypair = read_keypair_file(identity).unwrap_or_else(|error| {
