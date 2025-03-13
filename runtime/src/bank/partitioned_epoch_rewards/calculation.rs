@@ -380,7 +380,7 @@ impl Bank {
                         }
                     }
                     let vote_account = vote_account_from_cache?;
-                    let vote_state_view = vote_account.vote_state_view();
+                    let vote_state_view = vote_account.vote_state_view()?;
                     let mut stake_state = *stake_account.stake_state();
 
                     let redeemed = redeem_rewards(
@@ -474,10 +474,11 @@ impl Bank {
                     if vote_account.owner() != &solana_vote_program {
                         return 0;
                     }
-
+                    // vote_state_view should be Some because we just checked owner.
+                    let vote_state_view = vote_account.vote_state_view().unwrap();
                     calculate_points(
                         stake_account.stake_state(),
-                        vote_account.vote_state_view(),
+                        vote_state_view,
                         stake_history,
                         new_warmup_cooldown_rate_epoch,
                     )

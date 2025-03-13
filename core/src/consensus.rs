@@ -407,8 +407,11 @@ impl Tower {
             if voted_stake == 0 {
                 continue;
             }
-            trace!("{vote_account_pubkey} {key} with stake {voted_stake}");
-            let mut vote_state = TowerVoteState::from(account.vote_state_view());
+            trace!("{} {} with stake {}", vote_account_pubkey, key, voted_stake);
+            let Some(vote_state_view) = account.vote_state_view() else {
+                continue; // not relevant to Alpenglow.
+            };
+            let mut vote_state = TowerVoteState::from(vote_state_view);
             for vote in &vote_state.votes {
                 lockout_intervals
                     .entry(vote.last_locked_out_slot())
@@ -610,7 +613,9 @@ impl Tower {
 
     pub fn last_voted_slot_in_bank(bank: &Bank, vote_account_pubkey: &Pubkey) -> Option<Slot> {
         let vote_account = bank.get_vote_account(vote_account_pubkey)?;
-        vote_account.vote_state_view().last_voted_slot()
+        // TODO(wen): make this work for Alpenglow.
+        let vote_state_view = vote_account.vote_state_view()?;
+        vote_state_view.last_voted_slot()
     }
 
     pub fn record_bank_vote(&mut self, bank: &Bank) -> Option<Slot> {
@@ -1615,7 +1620,11 @@ impl Tower {
         bank: &Bank,
     ) {
         if let Some(vote_account) = bank.get_vote_account(vote_account_pubkey) {
-            self.vote_state = TowerVoteState::from(vote_account.vote_state_view());
+            self.vote_state = TowerVoteState::from(
+                vote_account
+                    .vote_state_view()
+                    .expect("must be TowerBFT account"),
+            );
             self.initialize_root(root);
             self.initialize_lockouts(|v| v.slot() > root);
         } else {
@@ -2439,7 +2448,7 @@ pub mod test {
             .unwrap()
             .get_vote_account(&vote_pubkey)
             .unwrap();
-        let state = observed.vote_state_view();
+        let state = observed.vote_state_view().unwrap();
         info!("observed tower: {:#?}", state.votes_iter().collect_vec());
 
         let num_slots_to_try = 200;

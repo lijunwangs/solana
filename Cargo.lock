@@ -11783,6 +11783,7 @@ dependencies = [
 name = "solana-vote"
 version = "3.0.0"
 dependencies = [
+ "alpenglow-vote",
  "arbitrary",
  "bencher",
  "bincode",
@@ -11801,6 +11802,7 @@ dependencies = [
  "solana-keypair",
  "solana-logger",
  "solana-packet",
+ "solana-program",
  "solana-pubkey",
  "solana-sdk-ids",
  "solana-serialize-utils",
