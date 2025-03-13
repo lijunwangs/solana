@@ -28,6 +28,7 @@ use {
     },
     solana_clock::{Slot, DEFAULT_SLOTS_PER_EPOCH},
     solana_core::{
+        alpenglow_consensus::vote_history_storage,
         banking_trace::DISABLED_BAKING_TRACE_DIR,
         consensus::tower_storage,
         repair::repair_handler::RepairHandlerType,
@@ -298,6 +299,16 @@ pub fn execute(
     let tower_storage: Arc<dyn tower_storage::TowerStorage> =
         Arc::new(tower_storage::FileTowerStorage::new(tower_path));
 
+    let vote_history_storage: Arc<dyn vote_history_storage::VoteHistoryStorage> = {
+        let vote_history_path = value_t!(matches, "vote_history_path", PathBuf)
+            .ok()
+            .unwrap_or_else(|| ledger_path.clone());
+
+        Arc::new(vote_history_storage::FileVoteHistoryStorage::new(
+            vote_history_path,
+        ))
+    };
+
     let mut accounts_index_config = AccountsIndexConfig {
         num_flush_threads: Some(accounts_index_flush_threads),
         ..AccountsIndexConfig::default()
@@ -548,6 +559,7 @@ pub fn execute(
     let mut validator_config = ValidatorConfig {
         require_tower: matches.is_present("require_tower"),
         tower_storage,
+        vote_history_storage,
         halt_at_slot: value_t!(matches, "dev_halt_at_slot", Slot).ok(),
         max_genesis_archive_unpacked_size: MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         expected_genesis_hash: matches

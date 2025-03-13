@@ -4,6 +4,7 @@ pub use solana_perf::report_target_features;
 use {
     crate::{
         admin_rpc_post_init::{AdminRpcRequestMetadataPostInit, KeyUpdaterType, KeyUpdaters},
+        alpenglow_consensus::vote_history_storage::{FileVoteHistoryStorage, VoteHistoryStorage},
         banking_trace::{self, BankingTracer, TraceError},
         cluster_info_vote_listener::VoteTracker,
         completed_data_sets_service::CompletedDataSetsService,
@@ -255,6 +256,7 @@ pub struct ValidatorConfig {
     pub run_verification: bool,
     pub require_tower: bool,
     pub tower_storage: Arc<dyn TowerStorage>,
+    pub vote_history_storage: Arc<dyn VoteHistoryStorage>,
     pub debug_keys: Option<Arc<HashSet<Pubkey>>>,
     pub contact_debug_interval: u64,
     pub contact_save_interval: u64,
@@ -333,6 +335,7 @@ impl ValidatorConfig {
             run_verification: true,
             require_tower: false,
             tower_storage: Arc::new(NullTowerStorage::default()),
+            vote_history_storage: Arc::new(FileVoteHistoryStorage::default()),
             debug_keys: None,
             contact_debug_interval: DEFAULT_CONTACT_DEBUG_INTERVAL_MILLIS,
             contact_save_interval: DEFAULT_CONTACT_SAVE_INTERVAL_MILLIS,
@@ -1499,6 +1502,7 @@ impl Validator {
             transaction_recorder.clone(),
             tower,
             config.tower_storage.clone(),
+            config.vote_history_storage.clone(),
             &leader_schedule_cache,
             exit.clone(),
             block_commitment_cache,
