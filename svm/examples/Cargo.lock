@@ -5780,6 +5780,7 @@ dependencies = [
  "solana-turbine",
  "solana-unified-scheduler-pool",
  "solana-version",
+ "solana-vortexor-receiver",
  "solana-vote",
  "solana-vote-program",
  "solana-wen-restart",
@@ -8512,6 +8513,14 @@ dependencies = [
  "serde_derive",
  "solana-sanitize",
  "solana-serde-varint",
+]
+
+[[package]]
+name = "solana-vortexor-receiver"
+version = "2.3.0"
+dependencies = [
+ "solana-perf",
+ "solana-streamer",
 ]
 
 [[package]]
