@@ -196,7 +196,7 @@ impl VotingService {
                 tx,
                 last_voted_slot,
             } => {
-                cluster_info.refresh_vote(tx, last_voted_slot);
+                cluster_info.refresh_vote(tx, last_voted_slot, false);
             }
         }
     }
