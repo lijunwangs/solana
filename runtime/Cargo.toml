@@ -52,6 +52,7 @@ agave-precompiles = { workspace = true }
 agave-reserved-account-keys = { workspace = true }
 agave-syscalls = { workspace = true }
 ahash = { workspace = true }
+alpenglow-vote = { workspace = true }
 aquamarine = { workspace = true }
 arrayref = { workspace = true }
 assert_matches = { workspace = true }
