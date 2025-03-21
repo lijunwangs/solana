@@ -1088,7 +1088,7 @@ fn verify_ticks(
 
     if let Some(first_alpenglow_slot) = bank
         .feature_set
-        .activated_slot(&solana_feature_set::secp256k1_program_enabled::id())
+        .activated_slot(&agave_feature_set::secp256k1_program_enabled::id())
     {
         if bank.parent_slot() >= first_alpenglow_slot {
             return Ok(());
