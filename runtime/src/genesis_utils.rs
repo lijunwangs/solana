@@ -1,5 +1,6 @@
 use {
     agave_feature_set::{FeatureSet, FEATURE_NAMES},
+    alpenglow_vote::state::VoteState as AlpenglowVoteState,
     log::*,
     solana_account::{Account, AccountSharedData},
     solana_feature_gate_interface::{self as feature, Feature},
@@ -98,6 +99,21 @@ pub fn create_genesis_config_with_vote_accounts(
         voting_keypairs,
         stakes,
         ClusterType::Development,
+        false,
+    )
+}
+
+pub fn create_genesis_config_with_alpenglow_vote_accounts(
+    mint_lamports: u64,
+    voting_keypairs: &[impl Borrow<ValidatorVoteKeypairs>],
+    stakes: Vec<u64>,
+) -> GenesisConfigInfo {
+    create_genesis_config_with_vote_accounts_and_cluster_type(
+        mint_lamports,
+        voting_keypairs,
+        stakes,
+        ClusterType::Development,
+        true,
     )
 }
 
@@ -106,6 +122,7 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
     voting_keypairs: &[impl Borrow<ValidatorVoteKeypairs>],
     stakes: Vec<u64>,
     cluster_type: ClusterType,
+    is_alpenglow: bool,
 ) -> GenesisConfigInfo {
     assert!(!voting_keypairs.is_empty());
     assert_eq!(voting_keypairs.len(), stakes.len());
@@ -142,7 +159,17 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
 
         // Create accounts
         let node_account = Account::new(VALIDATOR_LAMPORTS, 0, &system_program::id());
-        let vote_account = vote_state::create_account(&vote_pubkey, &node_pubkey, 0, *stake);
+        let vote_account = if is_alpenglow {
+            AlpenglowVoteState::create_account_with_authorized(
+                &node_pubkey,
+                &vote_pubkey,
+                &vote_pubkey,
+                0,
+                *stake,
+            )
+        } else {
+            vote_state::create_account(&vote_pubkey, &node_pubkey, 0, *stake)
+        };
         let stake_account = Account::from(stake_state::create_account(
             &stake_pubkey,
             &vote_pubkey,

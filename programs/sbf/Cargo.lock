@@ -9027,6 +9027,7 @@ name = "solana-stake-program"
 version = "3.0.0"
 dependencies = [
  "agave-feature-set",
+ "alpenglow-vote",
  "bincode",
  "log",
  "solana-account",
