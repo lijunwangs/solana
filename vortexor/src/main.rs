@@ -9,7 +9,7 @@ use {
     solana_streamer::streamer::StakedNodes,
     solana_vortexor::{
         cli::Cli,
-        load_balancer::RpcLoadBalancer,
+        rpc_load_balancer::RpcLoadBalancer,
         sender::{
             PacketBatchSender, DEFAULT_BATCH_SIZE, DEFAULT_RECV_TIMEOUT,
             DEFAULT_SENDER_THREADS_COUNT,
@@ -100,8 +100,16 @@ pub fn main() {
     let (non_vote_sender, non_vote_receiver) = banking_tracer.create_channel_non_vote();
     let destinations = args.destination;
 
-    let rpc_servers = args.rpc_server;
-    let websocket_servers = args.websocket_server;
+    let rpc_servers = args.rpc_servers;
+    let websocket_servers = args.websocket_servers;
+
+    if rpc_servers.len() != websocket_servers.len() {
+        clap::Error::raw(
+            clap::error::ErrorKind::InvalidValue,
+            "There must be equal number of rpc-server(s) and websocket-server(s).",
+        )
+        .exit();
+    }
     let servers = rpc_servers
         .iter()
         .zip(websocket_servers.iter())
@@ -126,7 +134,7 @@ pub fn main() {
 
     // To be linked with StakedNodes service.
     let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-    let staked_nodes_overrides: HashMap<Pubkey, u64> = HashMap::new();
+    let staked_nodes_overrides: Arc<HashMap<Pubkey, u64>> = Arc::new(HashMap::new());
 
     let (rpc_load_balancer, _slot_receiver) = RpcLoadBalancer::new(&servers, &exit);
     let rpc_load_balancer = Arc::new(rpc_load_balancer);

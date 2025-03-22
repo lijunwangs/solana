@@ -2,7 +2,7 @@
 //! Adapted from jito-replayer code.
 
 use {
-    crate::load_balancer::RpcLoadBalancer,
+    crate::rpc_load_balancer::RpcLoadBalancer,
     log::warn,
     solana_client::client_error,
     solana_sdk::pubkey::Pubkey,
@@ -19,8 +19,11 @@ use {
     },
 };
 
-const PK_TO_STAKE_REFRESH_DURATION: Duration = Duration::from_secs(5);
+// The interval to refresh the stake information.
+const STAKE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 
+/// This service is responsible for periodically refresh the stake information
+/// from the network with the assistance of the RpcLoaderBalancer.
 pub struct StakeUpdater {
     thread_hdl: JoinHandle<()>,
 }
@@ -30,7 +33,7 @@ impl StakeUpdater {
         exit: Arc<AtomicBool>,
         rpc_load_balancer: Arc<RpcLoadBalancer>,
         shared_staked_nodes: Arc<RwLock<StakedNodes>>,
-        staked_nodes_overrides: HashMap<Pubkey, u64>,
+        staked_nodes_overrides: Arc<HashMap<Pubkey, u64>>,
     ) -> Self {
         let thread_hdl = Builder::new()
             .name("stkUpdtr".to_string())
@@ -38,7 +41,7 @@ impl StakeUpdater {
                 let mut last_stakes = Instant::now();
                 while !exit.load(Ordering::Relaxed) {
                     let mut stake_map = Arc::new(HashMap::new());
-                    match Self::try_refresh_pk_to_stake(
+                    match Self::try_refresh_stake_info(
                         &mut last_stakes,
                         &mut stake_map,
                         &rpc_load_balancer,
@@ -48,11 +51,11 @@ impl StakeUpdater {
                                 StakedNodes::new(stake_map, staked_nodes_overrides.clone());
                             *shared_staked_nodes.write().unwrap() = shared;
                         }
+                        Ok(false) => {}
                         Err(err) => {
-                            warn!("Failed to refresh pk to stake map! Error: {:?}", err);
-                            sleep(PK_TO_STAKE_REFRESH_DURATION);
+                            warn!("Failed to refresh pubkey to stake map! Error: {:?}", err);
+                            sleep(STAKE_REFRESH_INTERVAL);
                         }
-                        _ => {}
                     }
                 }
             })
@@ -61,12 +64,14 @@ impl StakeUpdater {
         Self { thread_hdl }
     }
 
-    fn try_refresh_pk_to_stake(
+    /// Update the stake info when it has elapsed more than the
+    /// STAKE_REFRESH_INTERVAL since the last time it was refreshed.
+    fn try_refresh_stake_info(
         last_stakes: &mut Instant,
         pubkey_stake_map: &mut Arc<HashMap<Pubkey, u64>>,
         rpc_load_balancer: &Arc<RpcLoadBalancer>,
     ) -> client_error::Result<bool> {
-        if last_stakes.elapsed() > PK_TO_STAKE_REFRESH_DURATION {
+        if last_stakes.elapsed() > STAKE_REFRESH_INTERVAL {
             let client = rpc_load_balancer.rpc_client();
             let vote_accounts = client.get_vote_accounts()?;
 

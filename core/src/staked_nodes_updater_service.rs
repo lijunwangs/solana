@@ -35,7 +35,7 @@ impl StakedNodesUpdaterService {
                         root_bank.current_epoch_staked_nodes()
                     };
                     let overrides = staked_nodes_overrides.read().unwrap().clone();
-                    *staked_nodes.write().unwrap() = StakedNodes::new(stakes, overrides);
+                    *staked_nodes.write().unwrap() = StakedNodes::new(stakes, Arc::new(overrides));
                     std::thread::sleep(STAKE_REFRESH_CYCLE);
                 }
             })

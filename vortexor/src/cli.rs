@@ -138,12 +138,12 @@ pub struct Cli {
     pub logfile: Option<String>,
 
     /// The address(es) of RPC server that the vortexor will forward transaction to
-    #[arg(long, value_parser = parse_http_url, value_name = "URL")]
-    pub rpc_server: Vec<Url>,
+    #[arg(long="rpc-server", value_parser = parse_http_url, value_name = "URL")]
+    pub rpc_servers: Vec<Url>,
 
     /// The address of websocket server to which the vortexor will forward transaction.
     /// If multiple rpc servers are set, the count of websocket servers must
     /// match that of the rpc servers.
-    #[arg(long, value_parser = parse_websocket_url, value_name = "URL")]
-    pub websocket_server: Vec<Url>,
+    #[arg(long="websocket-server", value_parser = parse_websocket_url, value_name = "URL")]
+    pub websocket_servers: Vec<Url>,
 }

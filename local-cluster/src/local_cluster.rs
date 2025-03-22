@@ -215,7 +215,7 @@ impl LocalCluster {
             ]);
             let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
                 Arc::new(stakes),
-                HashMap::<Pubkey, u64>::default(), // overrides
+                Arc::new(HashMap::<Pubkey, u64>::default()), // overrides
             )));
 
             QuicConnectionCacheConfig {

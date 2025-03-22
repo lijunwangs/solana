@@ -66,7 +66,7 @@ where
 #[derive(Default)]
 pub struct StakedNodes {
     stakes: Arc<HashMap<Pubkey, u64>>,
-    overrides: HashMap<Pubkey, u64>,
+    overrides: Arc<HashMap<Pubkey, u64>>,
     total_stake: u64,
     max_stake: u64,
     min_stake: u64,
@@ -348,7 +348,7 @@ impl StreamerSendStats {
 }
 
 impl StakedNodes {
-    pub fn new(stakes: Arc<HashMap<Pubkey, u64>>, overrides: HashMap<Pubkey, u64>) -> Self {
+    pub fn new(stakes: Arc<HashMap<Pubkey, u64>>, overrides: Arc<HashMap<Pubkey, u64>>) -> Self {
         let values = stakes
             .iter()
             .filter(|(pubkey, _)| !overrides.contains_key(pubkey))
