@@ -33,7 +33,7 @@ use {
         commitment::VOTE_THRESHOLD_SIZE,
         epoch_stakes::VersionedEpochStakes,
         root_bank_cache::RootBankCache,
-        vote_sender_types::ReplayVoteReceiver,
+        vote_sender_types::{AlpenglowVoteSender, ReplayVoteReceiver},
     },
     solana_signature::Signature,
     solana_time_utils::AtomicInterval,
@@ -65,8 +65,6 @@ pub type GossipVerifiedVoteHashSender = Sender<(Pubkey, Slot, Hash)>;
 pub type GossipVerifiedVoteHashReceiver = Receiver<(Pubkey, Slot, Hash)>;
 pub type DuplicateConfirmedSlotsSender = Sender<ThresholdConfirmedSlots>;
 pub type DuplicateConfirmedSlotsReceiver = Receiver<ThresholdConfirmedSlots>;
-pub type AlpenglowVoteSender = Sender<(AlpenglowVote, Pubkey, Transaction)>;
-pub type AlpenglowVoteReceiver = Receiver<(AlpenglowVote, Pubkey, Transaction)>;
 
 const THRESHOLDS_TO_CHECK: [f64; 2] = [DUPLICATE_THRESHOLD, VOTE_THRESHOLD_SIZE];
 
