@@ -10347,6 +10347,7 @@ dependencies = [
  "agave-feature-set",
  "agave-reserved-account-keys",
  "agave-transaction-view",
+ "alpenglow-vote",
  "bincode",
  "criterion",
  "log",

@@ -660,6 +660,7 @@ pub(crate) fn find_bankhash_of_heaviest_fork(
                 None,
                 None,
                 None,
+                None,
                 &mut timing,
             ) {
                 return Err(
@@ -2039,6 +2040,7 @@ mod tests {
             &opts,
             &recyclers,
             &mut progress,
+            None,
             None,
             None,
             None,

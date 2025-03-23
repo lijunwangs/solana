@@ -149,6 +149,7 @@ fn bench_execute_batch(bencher: &mut Bencher, batch_size: usize) {
                 &bank,
                 None,
                 None,
+                None,
                 &mut timing,
                 None,
                 &prioritization_fee_cache,

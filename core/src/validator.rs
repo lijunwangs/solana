@@ -896,6 +896,7 @@ impl Validator {
         );
 
         let (replay_vote_sender, replay_vote_receiver) = unbounded();
+        let (alpenglow_vote_sender, alpenglow_vote_receiver) = unbounded();
 
         // block min prioritization fee cache should be readable by RPC, and writable by validator
         // (by both replay stage and banking stage)
@@ -965,6 +966,7 @@ impl Validator {
                     config.runtime_config.log_messages_bytes_limit,
                     transaction_status_sender.clone(),
                     Some(replay_vote_sender.clone()),
+                    Some(alpenglow_vote_sender.clone()),
                     prioritization_fee_cache.clone(),
                 );
                 bank_forks
@@ -1352,7 +1354,6 @@ impl Validator {
         let (verified_vote_sender, verified_vote_receiver) = unbounded();
         let (gossip_verified_vote_hash_sender, gossip_verified_vote_hash_receiver) = unbounded();
         let (duplicate_confirmed_slot_sender, duplicate_confirmed_slots_receiver) = unbounded();
-        let (alpenglow_vote_sender, alpenglow_vote_receiver) = unbounded();
         let entry_notification_sender = entry_notifier_service
             .as_ref()
             .map(|service| service.sender_cloned());
@@ -1517,6 +1518,7 @@ impl Validator {
             completed_data_sets_sender,
             bank_notification_sender.clone(),
             duplicate_confirmed_slots_receiver,
+            alpenglow_vote_sender.clone(),
             alpenglow_vote_receiver,
             TvuConfig {
                 max_ledger_shreds: config.max_ledger_shreds,
