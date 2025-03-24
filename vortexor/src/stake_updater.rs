@@ -40,22 +40,14 @@ impl StakeUpdater {
             .spawn(move || {
                 let mut last_stakes = Instant::now();
                 while !exit.load(Ordering::Relaxed) {
-                    let mut stake_map = Arc::new(HashMap::new());
-                    match Self::try_refresh_stake_info(
+                    if let Err(err) = Self::try_refresh_stake_info(
                         &mut last_stakes,
-                        &mut stake_map,
+                        &shared_staked_nodes,
+                        staked_nodes_overrides.clone(),
                         &rpc_load_balancer,
                     ) {
-                        Ok(true) => {
-                            let shared =
-                                StakedNodes::new(stake_map, staked_nodes_overrides.clone());
-                            *shared_staked_nodes.write().unwrap() = shared;
-                        }
-                        Ok(false) => {}
-                        Err(err) => {
-                            warn!("Failed to refresh pubkey to stake map! Error: {:?}", err);
-                            sleep(STAKE_REFRESH_INTERVAL);
-                        }
+                        warn!("Failed to refresh pubkey to stake map! Error: {:?}", err);
+                        sleep(STAKE_REFRESH_INTERVAL);
                     }
                 }
             })
@@ -67,15 +59,16 @@ impl StakeUpdater {
     /// Update the stake info when it has elapsed more than the
     /// STAKE_REFRESH_INTERVAL since the last time it was refreshed.
     fn try_refresh_stake_info(
-        last_stakes: &mut Instant,
-        pubkey_stake_map: &mut Arc<HashMap<Pubkey, u64>>,
+        last_refresh: &mut Instant,
+        shared_staked_nodes: &Arc<RwLock<StakedNodes>>,
+        staked_nodes_overrides: Arc<HashMap<Pubkey, u64>>,
         rpc_load_balancer: &Arc<RpcLoadBalancer>,
-    ) -> client_error::Result<bool> {
-        if last_stakes.elapsed() > STAKE_REFRESH_INTERVAL {
+    ) -> client_error::Result<()> {
+        if last_refresh.elapsed() > STAKE_REFRESH_INTERVAL {
             let client = rpc_load_balancer.rpc_client();
             let vote_accounts = client.get_vote_accounts()?;
 
-            *pubkey_stake_map = Arc::new(
+            let stake_map = Arc::new(
                 vote_accounts
                     .current
                     .iter()
@@ -86,15 +79,16 @@ impl StakeUpdater {
                             vote_account.activated_stake,
                         ))
                     })
-                    .collect(),
+                    .collect::<HashMap<Pubkey, u64>>(),
             );
 
-            *last_stakes = Instant::now();
-            Ok(true)
+            *last_refresh = Instant::now();
+            let shared: StakedNodes = StakedNodes::new(stake_map, staked_nodes_overrides.clone());
+            *shared_staked_nodes.write().unwrap() = shared;
         } else {
             sleep(Duration::from_secs(1));
-            Ok(false)
         }
+        Ok(())
     }
 
     pub fn join(self) -> thread::Result<()> {
