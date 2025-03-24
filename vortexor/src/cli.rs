@@ -1,5 +1,5 @@
 use {
-    clap::{crate_description, crate_name, ArgAction, ColorChoice, Parser},
+    clap::{builder::ValueParser, crate_description, crate_name, ArgAction, ColorChoice, Parser},
     solana_net_utils::{MINIMUM_VALIDATOR_PORT_RANGE_WIDTH, VALIDATOR_PORT_RANGE},
     solana_sdk::{net::DEFAULT_TPU_COALESCE, quic::QUIC_PORT_OFFSET},
     solana_streamer::quic::{
@@ -52,26 +52,24 @@ fn get_default_tpu_coalesce_ms() -> &'static str {
     coalesce
 }
 
-fn parse_http_url(input: &str) -> Result<Url, String> {
-    // Attempt to parse the input as a URL
-    let parsed_url = Url::parse(input).map_err(|e| format!("Invalid URL: {}", e))?;
+/// returns a parser which can validate input URL based on specified schemes.
+fn parse_url_with_scheme(expected_schemes: &'static [&'static str]) -> ValueParser {
+    ValueParser::from(move |input: &str| {
+        // Attempt to parse the input as a URL
+        let parsed_url =
+            Url::parse(input).map_err(|e| format!("Invalid URL '{}': {}", input, e))?;
 
-    // Check the scheme of the URL
-    match parsed_url.scheme() {
-        "http" | "https" => Ok(parsed_url),
-        scheme => Err(format!("Invalid scheme: {}. Must be http, https.", scheme)),
-    }
-}
-
-fn parse_websocket_url(input: &str) -> Result<Url, String> {
-    // Attempt to parse the input as a URL
-    let parsed_url = Url::parse(input).map_err(|e| format!("Invalid URL: {}", e))?;
-
-    // Check the scheme of the URL
-    match parsed_url.scheme() {
-        "ws" | "wss" => Ok(parsed_url),
-        scheme => Err(format!("Invalid scheme: {}. Must be ws, or wss.", scheme)),
-    }
+        // Check the scheme of the URL
+        if expected_schemes.contains(&parsed_url.scheme()) {
+            Ok(parsed_url)
+        } else {
+            Err(format!(
+                "Invalid scheme: {}. Must be one of: {}.",
+                parsed_url.scheme(),
+                expected_schemes.join(", ")
+            ))
+        }
+    })
 }
 
 #[derive(Parser)]
@@ -138,12 +136,12 @@ pub struct Cli {
     pub logfile: Option<String>,
 
     /// The address(es) of RPC server that the vortexor will forward transaction to
-    #[arg(long="rpc-server", value_parser = parse_http_url, value_name = "URL")]
+    #[arg(long="rpc-server", value_parser = parse_url_with_scheme(&["http", "https"]), value_name = "URL")]
     pub rpc_servers: Vec<Url>,
 
     /// The address of websocket server to which the vortexor will forward transaction.
     /// If multiple rpc servers are set, the count of websocket servers must
     /// match that of the rpc servers.
-    #[arg(long="websocket-server", value_parser = parse_websocket_url, value_name = "URL")]
+    #[arg(long="websocket-server", value_parser = parse_url_with_scheme(&["ws", "wss"]), value_name = "URL")]
     pub websocket_servers: Vec<Url>,
 }

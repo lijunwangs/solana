@@ -19,12 +19,13 @@ use {
         thread::{self, sleep, Builder, JoinHandle},
         time::{Duration, Instant},
     },
+    url::Url,
 };
 
 type AtomicSlot = AtomicU64;
 
 /// Tuple of server and its current slot information.
-type ServerSlotInfo = Arc<(String, AtomicSlot)>;
+type ServerSlotInfo = Arc<(Url, AtomicSlot)>;
 
 const SLOT_REFRESH_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -37,7 +38,7 @@ pub struct RpcLoadBalancer {
     /// (ws_url, slot)
     server_to_slot: Arc<Vec<ServerSlotInfo>>,
     /// (rpc_url, client)
-    server_to_rpc_client: HashMap<String, Arc<RpcClient>>,
+    server_to_rpc_client: HashMap<Url, Arc<RpcClient>>,
     subscription_threads: Vec<JoinHandle<()>>,
 }
 
@@ -51,7 +52,7 @@ impl RpcLoadBalancer {
     /// This create the RpcClients and create web socket connections to the corresponding
     /// RPC server and watch for the slot events.
     pub fn new(
-        servers: &[(String, String)], /* http rpc url, ws url */
+        servers: &[(Url, Url)], /* http rpc url, ws url */
         exit: &Arc<AtomicBool>,
     ) -> (RpcLoadBalancer, Receiver<Slot>) {
         let server_to_slot = Arc::new(Vec::from_iter(
@@ -93,7 +94,7 @@ impl RpcLoadBalancer {
     /// Start threads to watch for slot events on the RPC servers and update
     /// the server_to_slot map.
     fn start_subscription_threads(
-        servers: &[(String, String)],
+        servers: &[(Url, Url)],
         slot_sender: Sender<Slot>,
         server_to_slot: Arc<Vec<ServerSlotInfo>>,
         exit: &Arc<AtomicBool>,
@@ -105,7 +106,7 @@ impl RpcLoadBalancer {
             .iter()
             .enumerate()
             .map(|(i, (_, websocket_url))| {
-                let ws_url_no_token = websocket_url
+                let ws_url_no_token = websocket_url.as_str()
                     .split('/')
                     .nth(2)
                     .unwrap_or_default()
@@ -123,7 +124,7 @@ impl RpcLoadBalancer {
                             info!("running slot_subscribe() with url: {websocket_url}");
                             let mut last_slot_update = Instant::now();
 
-                            match PubsubClient::slot_subscribe(&websocket_url) {
+                            match PubsubClient::slot_subscribe(websocket_url.as_str()) {
                                 Ok((_subscription, receiver)) => {
                                     while !exit.load(Ordering::Relaxed) {
                                         match receiver.recv_timeout(Duration::from_millis(100))
@@ -189,13 +190,13 @@ impl RpcLoadBalancer {
         let (highest_server, _) = self.get_highest_slot();
 
         self.server_to_rpc_client
-            .get(&highest_server)
+            .get(highest_server)
             .unwrap()
             .to_owned()
     }
 
     /// Return the server's WebSocket URL which as the most update slot
-    fn get_highest_slot(&self) -> (String, Slot) {
+    fn get_highest_slot(&self) -> (&Url, Slot) {
         let highest = self
             .server_to_slot
             .iter()
@@ -205,7 +206,7 @@ impl RpcLoadBalancer {
                     .cmp(&rhs.1.load(Ordering::Relaxed))
             })
             .unwrap();
-        (highest.0.to_string(), highest.1.load(Ordering::Relaxed))
+        (&highest.0, highest.1.load(Ordering::Relaxed))
     }
 
     pub fn join(self) -> thread::Result<()> {
