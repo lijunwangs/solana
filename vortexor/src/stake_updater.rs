@@ -83,7 +83,7 @@ impl StakeUpdater {
             );
 
             *last_refresh = Instant::now();
-            let shared: StakedNodes = StakedNodes::new(stake_map, staked_nodes_overrides.clone());
+            let shared: StakedNodes = StakedNodes::new(stake_map, staked_nodes_overrides);
             *shared_staked_nodes.write().unwrap() = shared;
         } else {
             sleep(Duration::from_secs(1));
