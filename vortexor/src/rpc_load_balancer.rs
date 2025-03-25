@@ -1,9 +1,9 @@
 //! Module responsible for interacting with RPC services.
-//! Adapted from jito-replayer code.
+//! Adapted from jito-relayer code.
 
 use {
     crossbeam_channel::{Receiver, RecvTimeoutError, Sender},
-    log::{error, info},
+    log::{error, info, warn},
     solana_client::{pubsub_client::PubsubClient, rpc_client::RpcClient},
     solana_metrics::{datapoint_error, datapoint_info},
     solana_sdk::{
@@ -164,7 +164,7 @@ impl RpcLoadBalancer {
                                                 }
                                             }
                                             Err(RecvTimeoutError::Disconnected) => {
-                                                info!("slot subscribe disconnected. url: {ws_url_no_token}");
+                                                warn!("slot subscribe disconnected. url: {ws_url_no_token}");
                                                 break;
                                             }
                                         }

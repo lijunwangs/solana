@@ -1,5 +1,5 @@
 //! Module responsible for updating the staked key map.
-//! Adapted from jito-replayer code.
+//! Adapted from jito-relayer code.
 
 use {
     crate::rpc_load_balancer::RpcLoadBalancer,
