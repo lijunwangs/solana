@@ -20,7 +20,12 @@ use {
 };
 
 // The interval to refresh the stake information.
-const STAKE_REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+// The stakes are updated at the validator every epoch, there is no need to
+// refresh it via RPC too frequently.
+const STAKE_REFRESH_INTERVAL: Duration = Duration::from_secs(1800);
+
+// The interval to to sleep to check for exit condition and/or refresh condition.
+const STAKE_REFRESH_SLEEP_DURATION: Duration = Duration::from_secs(5);
 
 /// This service is responsible for periodically refresh the stake information
 /// from the network with the assistance of the RpcLoaderBalancer.
@@ -85,7 +90,7 @@ impl StakeUpdater {
                 .unwrap()
                 .update_stake_map(stake_map);
         } else {
-            sleep(Duration::from_secs(1));
+            sleep(STAKE_REFRESH_SLEEP_DURATION);
         }
         Ok(())
     }
