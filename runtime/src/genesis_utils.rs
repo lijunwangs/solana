@@ -7,6 +7,7 @@ use {
     solana_fee_calculator::FeeRateGovernor,
     solana_genesis_config::{ClusterType, GenesisConfig},
     solana_keypair::Keypair,
+    solana_loader_v3_interface::state::UpgradeableLoaderState,
     solana_native_token::sol_to_lamports,
     solana_pubkey::Pubkey,
     solana_rent::Rent,
@@ -16,7 +17,7 @@ use {
     solana_stake_program::stake_state,
     solana_system_interface::program as system_program,
     solana_vote_program::vote_state,
-    std::borrow::Borrow,
+    std::{borrow::Borrow, fs::File, io::Read},
 };
 
 // Default amount received by the validator
@@ -295,6 +296,62 @@ pub fn activate_feature(genesis_config: &mut GenesisConfig, feature_id: Pubkey) 
     );
 }
 
+pub fn include_alpenglow_bpf_program(genesis_config: &mut GenesisConfig, alpenglow_so_path: &str) {
+    // Parse out the elf
+    let mut program_data_elf: Vec<u8> = vec![];
+    File::open(alpenglow_so_path)
+        .and_then(|mut file| file.read_to_end(&mut program_data_elf))
+        .unwrap_or_else(|err| panic!("Error: failed to read alpenglow-vote program: {}", err));
+
+    // Derive the address for the program data account
+    let address = alpenglow_vote::id();
+    let loader = solana_sdk_ids::bpf_loader_upgradeable::id();
+    let programdata_address = solana_loader_v3_interface::get_program_data_address(&address);
+
+    // Generate the data for the program data account
+    let upgrade_authority_address = system_program::id();
+    let mut program_data = bincode::serialize(&UpgradeableLoaderState::ProgramData {
+        slot: 0,
+        upgrade_authority_address: Some(upgrade_authority_address),
+    })
+    .unwrap();
+    program_data.extend_from_slice(&program_data_elf);
+
+    // Store the program data account into genesis
+    genesis_config.add_account(
+        programdata_address,
+        AccountSharedData::from(Account {
+            lamports: genesis_config
+                .rent
+                .minimum_balance(program_data.len())
+                .max(1u64),
+            data: program_data,
+            owner: loader,
+            executable: false,
+            rent_epoch: 0,
+        }),
+    );
+
+    // Add the program acccount to genesis
+    let program_data = bincode::serialize(&UpgradeableLoaderState::Program {
+        programdata_address,
+    })
+    .unwrap();
+    genesis_config.add_account(
+        address,
+        AccountSharedData::from(Account {
+            lamports: genesis_config
+                .rent
+                .minimum_balance(program_data.len())
+                .max(1u64),
+            data: program_data,
+            owner: loader,
+            executable: true,
+            rent_epoch: 0,
+        }),
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn create_genesis_config_with_leader_ex_no_features(
     mint_lamports: u64,
@@ -371,6 +428,11 @@ pub fn create_genesis_config_with_leader_ex_no_features(
     };
 
     solana_stake_program::add_genesis_accounts(&mut genesis_config);
+
+    if is_alpenglow {
+        // TODO: enable this
+        //include_alpenglow_bpf_program(&mut genesis_config, "");
+    }
 
     genesis_config
 }
