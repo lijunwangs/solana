@@ -135,11 +135,11 @@ pub struct Cli {
     #[arg(long="log", value_name = "FILE", value_parser = clap::value_parser!(String))]
     pub logfile: Option<String>,
 
-    /// The address(es) of RPC server that the vortexor will forward transaction to
+    /// The address(es) of RPC server that the vortexor will connect to obtain stake and slot info.
     #[arg(long="rpc-server", value_parser = parse_url_with_scheme(&["http", "https"]), value_name = "URL")]
     pub rpc_servers: Vec<Url>,
 
-    /// The address of websocket server to which the vortexor will forward transaction.
+    /// The address (es) of websocket server to which the vortexor will connect to obtain stake and slot info.
     /// If multiple rpc servers are set, the count of websocket servers must
     /// match that of the rpc servers.
     #[arg(long="websocket-server", value_parser = parse_url_with_scheme(&["ws", "wss"]), value_name = "URL")]
