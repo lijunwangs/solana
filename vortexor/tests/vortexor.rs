@@ -45,7 +45,7 @@ async fn test_vortexor() {
     let stakes = HashMap::from([(keypair.pubkey(), 10000)]);
     let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
         Arc::new(stakes),
-        Arc::new(HashMap::<Pubkey, u64>::default()), // overrides
+        HashMap::<Pubkey, u64>::default(), // overrides
     )));
 
     let vortexor = Vortexor::create_vortexor(

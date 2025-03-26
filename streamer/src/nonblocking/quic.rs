@@ -1880,7 +1880,7 @@ pub mod test {
         let stakes = HashMap::from([(client_keypair.pubkey(), 100_000)]);
         let staked_nodes = StakedNodes::new(
             Arc::new(stakes),
-            Arc::new(HashMap::<Pubkey, u64>::default()), // overrides
+            HashMap::<Pubkey, u64>::default(), // overrides
         );
         let SpawnTestServerResult {
             join_handle,
@@ -1912,7 +1912,7 @@ pub mod test {
         let stakes = HashMap::from([(client_keypair.pubkey(), 0)]);
         let staked_nodes = StakedNodes::new(
             Arc::new(stakes),
-            Arc::new(HashMap::<Pubkey, u64>::default()), // overrides
+            HashMap::<Pubkey, u64>::default(), // overrides
         );
         let SpawnTestServerResult {
             join_handle,

@@ -5,7 +5,7 @@ use {
     solana_core::banking_trace::BankingTracer,
     solana_logger::redirect_stderr_to_file,
     solana_net_utils::{bind_in_range_with_config, SocketConfig},
-    solana_sdk::{pubkey::Pubkey, signature::read_keypair_file, signer::Signer},
+    solana_sdk::{signature::read_keypair_file, signer::Signer},
     solana_streamer::streamer::StakedNodes,
     solana_vortexor::{
         cli::Cli,
@@ -133,8 +133,13 @@ pub fn main() {
     let sigverify_stage = Vortexor::create_sigverify_stage(tpu_receiver, non_vote_sender);
 
     // To be linked with StakedNodes service.
-    let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
-    let staked_nodes_overrides: Arc<HashMap<Pubkey, u64>> = Arc::new(HashMap::new());
+    let stake_map = Arc::new(HashMap::new());
+    let staked_nodes_overrides = HashMap::new();
+
+    let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
+        stake_map,
+        staked_nodes_overrides,
+    )));
 
     let (rpc_load_balancer, _slot_receiver) = RpcLoadBalancer::new(&servers, &exit);
     let rpc_load_balancer = Arc::new(rpc_load_balancer);
@@ -143,7 +148,6 @@ pub fn main() {
         exit.clone(),
         rpc_load_balancer.clone(),
         staked_nodes.clone(),
-        staked_nodes_overrides,
     );
 
     info!(

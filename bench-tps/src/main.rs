@@ -106,7 +106,7 @@ fn create_connection_cache(
     ]);
     let staked_nodes = Arc::new(RwLock::new(StakedNodes::new(
         Arc::new(stakes),
-        Arc::new(HashMap::<Pubkey, u64>::default()), // overrides
+        HashMap::<Pubkey, u64>::default(), // overrides
     )));
     ConnectionCache::new_with_client_options(
         "bench-tps-connection_cache_quic",

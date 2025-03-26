@@ -33,7 +33,6 @@ impl StakeUpdater {
         exit: Arc<AtomicBool>,
         rpc_load_balancer: Arc<RpcLoadBalancer>,
         shared_staked_nodes: Arc<RwLock<StakedNodes>>,
-        staked_nodes_overrides: Arc<HashMap<Pubkey, u64>>,
     ) -> Self {
         let thread_hdl = Builder::new()
             .name("stkUpdtr".to_string())
@@ -43,7 +42,6 @@ impl StakeUpdater {
                     if let Err(err) = Self::try_refresh_stake_info(
                         &mut last_stakes,
                         &shared_staked_nodes,
-                        staked_nodes_overrides.clone(),
                         &rpc_load_balancer,
                     ) {
                         warn!("Failed to refresh pubkey to stake map! Error: {:?}", err);
@@ -61,7 +59,6 @@ impl StakeUpdater {
     fn try_refresh_stake_info(
         last_refresh: &mut Instant,
         shared_staked_nodes: &Arc<RwLock<StakedNodes>>,
-        staked_nodes_overrides: Arc<HashMap<Pubkey, u64>>,
         rpc_load_balancer: &Arc<RpcLoadBalancer>,
     ) -> client_error::Result<()> {
         if last_refresh.elapsed() > STAKE_REFRESH_INTERVAL {
@@ -83,8 +80,10 @@ impl StakeUpdater {
             );
 
             *last_refresh = Instant::now();
-            let shared: StakedNodes = StakedNodes::new(stake_map, staked_nodes_overrides);
-            *shared_staked_nodes.write().unwrap() = shared;
+            shared_staked_nodes
+                .write()
+                .unwrap()
+                .update_stake_map(stake_map);
         } else {
             sleep(Duration::from_secs(1));
         }
