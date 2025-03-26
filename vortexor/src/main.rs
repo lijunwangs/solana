@@ -113,7 +113,6 @@ pub fn main() {
     let servers = rpc_servers
         .into_iter()
         .zip(websocket_servers)
-        //.map(|(rpc, ws)| (rpc.to_string(), ws.to_string()))
         .collect::<Vec<_>>();
 
     info!("Creating the PacketBatchSender: at address: {:?} for the following initial destinations: {destinations:?}",
