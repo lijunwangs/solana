@@ -2,12 +2,12 @@ use {
     alpenglow_vote::vote::Vote as AlpenglowVote,
     crossbeam_channel::{Receiver, Sender},
     solana_pubkey::Pubkey,
-    solana_transaction::Transaction,
+    solana_transaction::versioned::VersionedTransaction,
     solana_vote::vote_parser::ParsedVote,
 };
 
 pub type ReplayVoteSender = Sender<ParsedVote>;
 pub type ReplayVoteReceiver = Receiver<ParsedVote>;
 
-pub type AlpenglowVoteSender = Sender<(AlpenglowVote, Pubkey, Transaction)>;
-pub type AlpenglowVoteReceiver = Receiver<(AlpenglowVote, Pubkey, Transaction)>;
+pub type AlpenglowVoteSender = Sender<(AlpenglowVote, Pubkey, VersionedTransaction)>;
+pub type AlpenglowVoteReceiver = Receiver<(AlpenglowVote, Pubkey, VersionedTransaction)>;
