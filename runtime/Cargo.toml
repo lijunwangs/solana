@@ -92,6 +92,7 @@ solana-accounts-db = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 solana-bpf-loader-program = { workspace = true }
 solana-bucket-map = { workspace = true }
+solana-build-alpenglow-vote = { workspace = true }
 solana-builtins = { workspace = true }
 solana-client-traits = { workspace = true }
 solana-clock = { workspace = true }
