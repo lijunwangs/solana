@@ -276,18 +276,18 @@ pub fn create_genesis_config_with_leader_with_mint_keypair(
 }
 
 pub fn activate_all_features_alpenglow(genesis_config: &mut GenesisConfig) {
-    do_activate_all_features::<true>(genesis_config);
+    do_activate_all_features(genesis_config, true);
 }
 
 pub fn activate_all_features(genesis_config: &mut GenesisConfig) {
-    do_activate_all_features::<false>(genesis_config);
+    do_activate_all_features(genesis_config, false);
 }
 
-fn do_activate_all_features<const IS_ALPENGLOW: bool>(genesis_config: &mut GenesisConfig) {
+pub fn do_activate_all_features(genesis_config: &mut GenesisConfig, is_alpenglow: bool) {
     // Activate all features at genesis in development mode
     for feature_id in FeatureSet::default().inactive() {
         // TODO remove this
-        if *feature_id != agave_feature_set::secp256k1_program_enabled::id() {
+        if *feature_id != agave_feature_set::secp256k1_program_enabled::id() || is_alpenglow {
             activate_feature(genesis_config, *feature_id);
         }
     }
@@ -493,7 +493,11 @@ pub fn create_genesis_config_with_leader_ex(
     );
 
     if genesis_config.cluster_type == ClusterType::Development {
-        activate_all_features(&mut genesis_config);
+        if is_alpenglow {
+            activate_all_features_alpenglow(&mut genesis_config);
+        } else {
+            activate_all_features(&mut genesis_config);
+        }
     }
 
     genesis_config
