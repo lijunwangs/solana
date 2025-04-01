@@ -13,6 +13,7 @@ use {
         perf_libs,
         recycler::Recycler,
     },
+    alpenglow_vote::id as alpenglow_vote_id,
     rayon::{prelude::*, ThreadPool},
     solana_hash::Hash,
     solana_message::{MESSAGE_HEADER_LENGTH, MESSAGE_VERSION_PREFIX},
@@ -379,10 +380,12 @@ fn check_for_simple_vote_transaction(
         .checked_add(size_of::<Pubkey>())
         .ok_or(PacketError::InvalidLen)?;
 
-    if packet
+    let program_id = packet
         .data(instruction_program_id_start..instruction_program_id_end)
-        .ok_or(PacketError::InvalidLen)?
-        == solana_sdk_ids::vote::id().as_ref()
+        .ok_or(PacketError::InvalidLen)?;
+
+    if program_id == solana_sdk_ids::vote::id().as_ref()
+        || program_id == alpenglow_vote_id().as_ref()
     {
         packet.meta_mut().flags |= PacketFlags::SIMPLE_VOTE_TX;
     }
@@ -681,7 +684,7 @@ mod tests {
                 PACKETS_PER_BATCH,
             },
             sigverify::{self, PacketOffsets},
-            test_tx::{new_test_vote_tx, test_multisig_tx, test_tx},
+            test_tx::{new_test_alpenglow_vote_tx, new_test_vote_tx, test_multisig_tx, test_tx},
         },
         bincode::{deserialize, serialize},
         bytes::{BufMut, Bytes, BytesMut},
@@ -696,6 +699,7 @@ mod tests {
             iter::repeat_with,
             sync::atomic::{AtomicU64, Ordering},
         },
+        test_case::test_case,
     };
 
     const SIG_OFFSET: usize = 1;
@@ -1465,8 +1469,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_is_simple_vote_transaction_with_offsets() {
+    #[test_case(true; "alpenglow")]
+    #[test_case(false; "towerbft")]
+    fn test_is_simple_vote_transaction_with_offsets(is_alpenglow: bool) {
         solana_logger::setup();
         let mut rng = rand::thread_rng();
 
@@ -1475,7 +1480,11 @@ mod tests {
             let mut current_offset = 0usize;
             let mut batch = BytesPacketBatch::default();
             batch.push(BytesPacket::from_data(None, test_tx()).unwrap());
-            let tx = new_test_vote_tx(&mut rng);
+            let tx = if is_alpenglow {
+                new_test_alpenglow_vote_tx(&mut rng)
+            } else {
+                new_test_vote_tx(&mut rng)
+            };
             batch.push(BytesPacket::from_data(None, tx).unwrap());
             batch.iter_mut().enumerate().for_each(|(index, packet)| {
                 let packet_offsets =
