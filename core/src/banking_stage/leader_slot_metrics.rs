@@ -460,7 +460,11 @@ impl VotePacketCountMetrics {
             ("dropped_gossip_votes", self.dropped_gossip_votes, i64),
             ("dropped_tpu_votes", self.dropped_tpu_votes, i64),
             ("alpenglow_all_to_all_votes", self.alpenglow_votes, i64),
-            ("alpenglow_all_to_all_votes_sent", self.alpenglow_votes_sent, i64),
+            (
+                "alpenglow_all_to_all_votes_sent",
+                self.alpenglow_votes_sent,
+                i64
+            ),
         );
     }
 }
@@ -808,18 +812,18 @@ impl LeaderSlotMetricsTracker {
 
     pub(crate) fn increment_alpenglow_vote_count(&mut self, count: u64, sent: u64) {
         if let Some(leader_slot_metrics) = &mut self.leader_slot_metrics {
-            saturating_add_assign!(
-                leader_slot_metrics
-                    .vote_packet_count_metrics
-                    .alpenglow_votes,
-                count
-            );
-            saturating_add_assign!(
-                leader_slot_metrics
-                    .vote_packet_count_metrics
-                    .alpenglow_votes_sent,
-                sent
-            );
+            leader_slot_metrics
+                .vote_packet_count_metrics
+                .alpenglow_votes = leader_slot_metrics
+                .vote_packet_count_metrics
+                .alpenglow_votes
+                .saturating_add(count);
+            leader_slot_metrics
+                .vote_packet_count_metrics
+                .alpenglow_votes_sent = leader_slot_metrics
+                .vote_packet_count_metrics
+                .alpenglow_votes_sent
+                .saturating_add(sent);
         }
     }
 }

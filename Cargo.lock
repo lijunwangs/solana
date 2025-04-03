@@ -7528,6 +7528,7 @@ version = "3.0.0"
 dependencies = [
  "agave-feature-set",
  "agave-syscalls",
+ "alpenglow-vote",
  "assert_matches",
  "bincode",
  "bs58",
@@ -9106,6 +9107,7 @@ dependencies = [
  "serial_test",
  "solana-account",
  "solana-accounts-db",
+ "solana-build-alpenglow-vote",
  "solana-client",
  "solana-client-traits",
  "solana-clock",
