@@ -782,7 +782,7 @@ impl VotingLoop {
             snapshot_controller,
             ctx.rpc_subscriptions.as_deref(),
             // TODO: figure out a sufficient range for rpcs
-            Some(old_root),
+            Some(new_root),
             // TODO(ashwin): AG doesn't need most of these
             // we should stop populating them after the migration
             // and remove them here
