@@ -50,6 +50,7 @@ use {
         vote_sender_types::AlpenglowVoteReceiver as VoteReceiver,
     },
     solana_signer::Signer,
+    solana_time_utils::timestamp,
     solana_transaction::Transaction,
     std::{
         collections::{BTreeMap, BTreeSet},
@@ -798,6 +799,18 @@ impl VotingLoop {
         ) {
             error!("Unable to set root: {e:?}");
             return None;
+        }
+
+        // Distinguish between duplicate versions of same slot
+        let hash = ctx.bank_forks.read().unwrap().bank_hash(new_root).unwrap();
+        if let Err(e) =
+            ctx.blockstore
+                .insert_optimistic_slot(new_root, &hash, timestamp().try_into().unwrap())
+        {
+            error!(
+                "failed to record optimistic slot in blockstore: slot={}: {:?}",
+                new_root, &e
+            );
         }
 
         Some(new_root)
