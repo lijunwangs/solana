@@ -13,14 +13,8 @@ use {
         commitment_service::{
             AlpenglowCommitmentAggregationData, AlpenglowCommitmentType, CommitmentAggregationData,
         },
-        consensus::{
-            heaviest_subtree_fork_choice::HeaviestSubtreeForkChoice, progress_map::ProgressMap,
-        },
-        repair::cluster_slot_state_verifier::{
-            DuplicateConfirmedSlots, DuplicateSlotsTracker, EpochSlotsFrozenSlots,
-        },
+        consensus::progress_map::ProgressMap,
         replay_stage::{Finalizer, ReplayStage, TrackedVoteTransaction, MAX_VOTE_SIGNATURES},
-        unfrozen_gossip_verified_vote_hashes::UnfrozenGossipVerifiedVoteHashes,
         voting_service::VoteOp,
     },
     agave_feature_set::FeatureSet,
@@ -28,7 +22,6 @@ use {
     crossbeam_channel::Sender,
     solana_clock::{Slot, NUM_CONSECUTIVE_LEADER_SLOTS},
     solana_gossip::cluster_info::ClusterInfo,
-    solana_hash::Hash,
     solana_keypair::Keypair,
     solana_ledger::{
         blockstore::Blockstore, leader_schedule_cache::LeaderScheduleCache,
@@ -770,11 +763,9 @@ impl VotingLoop {
         vctx.vote_history.set_root(new_root);
         cert_pool.purge(new_root);
         ctx.cert_tracker.write().unwrap().set_root(new_root);
-        // TODO(ashwin): AG doesn't need this bank
-        let bank = ctx.bank_forks.read().unwrap().working_bank();
         if let Err(e) = ReplayStage::check_and_handle_new_root(
             &ctx.my_pubkey,
-            bank.as_ref(),
+            slot,
             new_root,
             ctx.bank_forks.as_ref(),
             &mut ctx.progress,
@@ -784,18 +775,11 @@ impl VotingLoop {
             ctx.rpc_subscriptions.as_deref(),
             // TODO: figure out a sufficient range for rpcs
             Some(new_root),
-            // TODO(ashwin): AG doesn't need most of these
-            // we should stop populating them after the migration
-            // and remove them here
-            &mut HeaviestSubtreeForkChoice::new((0, Hash::default())),
             bank_notification_sender,
-            &mut DuplicateSlotsTracker::default(),
-            &mut DuplicateConfirmedSlots::default(),
-            &mut UnfrozenGossipVerifiedVoteHashes::default(),
             &mut vctx.has_new_vote_been_rooted,
             &mut vctx.tracked_vote_transactions,
-            &mut EpochSlotsFrozenSlots::default(),
             drop_bank_sender,
+            None,
         ) {
             error!("Unable to set root: {e:?}");
             return None;
