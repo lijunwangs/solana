@@ -131,7 +131,7 @@ async fn test_stake_update() {
     while i < 2 {
         let slot = slot_receiver
             .recv_timeout(slot_receive_timeout)
-            .expect(format!("Expected a slot within {slot_receive_timeout:?}").as_str());
+            .unwrap_or_else(|_| panic!("Expected a slot within {slot_receive_timeout:?}"));
         i += 1;
         info!("Received a slot update: {}", slot);
     }
