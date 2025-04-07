@@ -127,8 +127,11 @@ async fn test_stake_update() {
 
     // receive 2 slot updates
     let mut i = 0;
+    let slot_receive_timeout = Duration::from_secs(5); // conservative timeout to ensure stable test
     while i < 2 {
-        let slot = slot_receiver.recv().unwrap();
+        let slot = slot_receiver
+            .recv_timeout(slot_receive_timeout)
+            .expect(format!("Expected a slot within {slot_receive_timeout:?}").as_str());
         i += 1;
         info!("Received a slot update: {}", slot);
     }
@@ -144,6 +147,8 @@ async fn test_stake_update() {
     );
 
     // Waiting for the stake map to be populated by the stake updater service
+    let start_of_stake_updater = std::time::Instant::now();
+    let stake_updater_timeout = Duration::from_secs(10); // conservative timeout to ensure stable test
     loop {
         let stakes = shared_staked_nodes.read().unwrap();
         if let Some(stake) = stakes.get_node_stake(pubkey) {
@@ -157,6 +162,9 @@ async fn test_stake_update() {
         info!("Waiting for stake map to be populated for {pubkey:?}...");
         drop(stakes); // Drop the read lock before sleeping so the writer side can proceed
         std::thread::sleep(std::time::Duration::from_millis(100));
+        if start_of_stake_updater.elapsed() > stake_updater_timeout {
+            panic!("Timeout waiting for stake map to be populated");
+        }
     }
     info!("Test done, exiting stake updater service");
     exit.store(true, Ordering::Relaxed);
