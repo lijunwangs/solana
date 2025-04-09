@@ -75,6 +75,7 @@ pub struct TpuSockets {
     pub vortexor_receivers: Option<Vec<UdpSocket>>,
 }
 
+/// The `SigVerifier` enum is used to determine whether to use a local or remote signature verifier.
 enum SigVerifier {
     Local(SigVerifyStage),
     Remote(VortexorReceiverAdapter),

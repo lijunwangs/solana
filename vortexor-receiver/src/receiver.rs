@@ -41,7 +41,7 @@ impl VerifiedPacketReceiver {
                     Some(coalesce),
                     true,
                     in_vote_only_mode.clone(),
-                    false, // unstaked connections
+                    false, // is_staked_service
                 )
             })
             .collect();

@@ -1,4 +1,6 @@
-//! Tempory solution to receive from the receiver and forward the packets to banking stage
+//! Vortexor receiver adapter which wraps the VerifiedPacketReceiver
+//! to receive packet batches from the remote and sends the packets to the
+//! banking stage.
 
 use {
     crate::banking_trace::TracedSender,
@@ -83,7 +85,7 @@ impl VortexorReceiverAdapter {
         }
     }
 
-    /// Receives packet batches from sigverify stage with a timeout
+    /// Receives packet batches from VerifiedPacketReceiver with a timeout
     fn receive_until(
         packet_batch_receiver: Receiver<PacketBatch>,
         recv_timeout: Duration,
