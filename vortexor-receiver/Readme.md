@@ -58,4 +58,3 @@ relationship with the validator.
                     +-------------------------------------------------------+
 
                                        Figure 1.
-
