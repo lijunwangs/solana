@@ -64,11 +64,11 @@ impl VortexorReceiverAdapter {
                     // Send out packet batches
                     match traced_sender.send(packet_batch) {
                         Ok(_) => {
-                            info!("Sent vortexor batch {count} successfully");
+                            trace!("Sent batch: {count} received from vortexor successfully");
                             continue;
                         }
-                        Err(_err) => {
-                            info!("Failed to send batch {count}");
+                        Err(err) => {
+                            debug!("Failed to send batch {count} {err:?}");
                             break;
                         }
                     }
