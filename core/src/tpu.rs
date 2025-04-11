@@ -267,6 +267,7 @@ impl Tpu {
                 Duration::from_millis(5),
                 tpu_coalesce,
                 non_vote_sender,
+                enable_block_production_forwarding.then(|| forward_stage_sender.clone()),
                 exit.clone(),
             );
             SigVerifier::Remote(adapter)

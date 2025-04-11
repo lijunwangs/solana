@@ -5,7 +5,7 @@
 use {
     crate::banking_trace::TracedSender,
     agave_banking_stage_ingress_types::BankingPacketBatch,
-    crossbeam_channel::{unbounded, Receiver, RecvTimeoutError},
+    crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender},
     solana_perf::packet::PacketBatch,
     solana_vortexor_receiver::receiver::VerifiedPacketReceiver,
     std::{
@@ -15,6 +15,21 @@ use {
         time::{Duration, Instant},
     },
 };
+
+// Macro to send the packet batch to the sender
+macro_rules! send {
+    ($sender:expr, $batch:expr, $count:expr) => {
+        match $sender.send($batch) {
+            Ok(_) => {
+                trace!("Sent batch: {} received from vortexor successfully", $count);
+            }
+            Err(err) => {
+                debug!("Failed to send batch {} error: {:?}", $count, err);
+                break;
+            }
+        }
+    };
+}
 
 pub struct VortexorReceiverAdapter {
     thread_hdl: JoinHandle<()>,
@@ -27,6 +42,7 @@ impl VortexorReceiverAdapter {
         recv_timeout: Duration,
         tpu_coalesce: Duration,
         packets_sender: TracedSender,
+        forward_stage_sender: Option<Sender<(BankingPacketBatch, bool)>>,
         exit: Arc<AtomicBool>,
     ) -> Self {
         let (batch_sender, batch_receiver) = unbounded();
@@ -37,7 +53,13 @@ impl VortexorReceiverAdapter {
         let thread_hdl = Builder::new()
             .name("vtxRcvAdptr".to_string())
             .spawn(move || {
-                Self::recv_send(batch_receiver, recv_timeout, 8, packets_sender);
+                Self::recv_send(
+                    batch_receiver,
+                    recv_timeout,
+                    8,
+                    packets_sender,
+                    forward_stage_sender,
+                );
             })
             .unwrap();
         Self {
@@ -56,21 +78,20 @@ impl VortexorReceiverAdapter {
         recv_timeout: Duration,
         batch_size: usize,
         traced_sender: TracedSender,
+        forward_stage_sender: Option<Sender<(BankingPacketBatch, bool)>>,
     ) {
         loop {
             match Self::receive_until(packet_batch_receiver.clone(), recv_timeout, batch_size) {
                 Ok(packet_batch) => {
                     let count = packet_batch.len();
                     // Send out packet batches
-                    match traced_sender.send(packet_batch) {
-                        Ok(_) => {
-                            trace!("Sent batch: {count} received from vortexor successfully");
-                            continue;
-                        }
-                        Err(err) => {
-                            debug!("Failed to send batch {count} {err:?}");
-                            break;
-                        }
+                    if let Some(forward_stage_sender) = &forward_stage_sender {
+                        send!(traced_sender, packet_batch.clone(), count);
+                        // Send out packet batches to forward stage
+                        let _ = forward_stage_sender
+                            .try_send((packet_batch, false /* reject non-vote */));
+                    } else {
+                        send!(traced_sender, packet_batch, count);
                     }
                 }
                 Err(err) => match err {
