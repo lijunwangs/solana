@@ -303,7 +303,7 @@ pub(crate) mod tests {
             token_balances::TransactionTokenBalancesSet, TransactionStatusMeta,
             TransactionTokenBalance,
         },
-        std::sync::{atomic::AtomicBool, Arc},
+        std::sync::{atomic::AtomicBool, Arc, RwLock},
     };
 
     #[derive(Eq, Hash, PartialEq)]
@@ -318,14 +318,91 @@ pub(crate) mod tests {
         transaction: SanitizedTransaction,
     }
 
+    #[derive(PartialEq, Debug)]
+    enum TestNotificationType {
+        BankEvent(Slot),
+        TransactionEvent(Signature),
+    }
+
+    /// TestNotificationRecorder is a test implementation to record
+    /// the notifications received including transaction events and
+    /// bank events.
+    #[derive(Default)]
+    struct TestNotificationRecorder {
+        notifications: Vec<TestNotificationType>,
+    }
+
+    impl TestNotificationRecorder {
+        fn notify_transaction(&mut self, transaction: Signature) {
+            self.notifications
+                .push(TestNotificationType::TransactionEvent(transaction));
+        }
+
+        fn notify_bank_event(&mut self, bank_notification: BankNotification) {
+            let slot = match bank_notification {
+                BankNotification::Frozen(bank) => bank.slot(),
+                BankNotification::NewRootBank(bank) => bank.slot(),
+                BankNotification::NewRootedChain(chain) => chain[0],
+                BankNotification::OptimisticallyConfirmed(slot) => slot,
+            };
+            self.notifications
+                .push(TestNotificationType::BankEvent(slot));
+        }
+    }
+
+    /// TestBankNotificationTracker is a test implementation to receive
+    /// the BankNotification messages and record them.
+    struct TestBankNotificationTracker {
+        /// The thread handle for the notification tracker thread.
+        thread_hdl: JoinHandle<()>,
+    }
+
+    impl TestBankNotificationTracker {
+        /// Create a new TestBankNotificationTracker which will spawn a thread
+        /// to receive BankNotification messages and record them using the passed-in
+        /// notification_recorder.
+        /// The thread will run until the channel is closed.
+        pub fn new(
+            bank_notification_receiver: Receiver<BankNotification>,
+            notification_recorder: Arc<RwLock<TestNotificationRecorder>>,
+        ) -> Self {
+            let thread_hdl = Builder::new()
+                .name("testTracker".to_string())
+                .spawn(move || {
+                    info!("TestBankNotificationTracker has started");
+                    loop {
+                        let message = match bank_notification_receiver.recv() {
+                            Ok(message) => message,
+                            Err(_error) => {
+                                break;
+                            }
+                        };
+                        notification_recorder
+                            .write()
+                            .unwrap()
+                            .notify_bank_event(message);
+                    }
+                    info!("TestBankNotificationTracker has stopped");
+                })
+                .unwrap();
+            Self { thread_hdl }
+        }
+
+        pub fn join(self) -> thread::Result<()> {
+            self.thread_hdl.join()
+        }
+    }
+
     struct TestTransactionNotifier {
         notifications: DashMap<TestNotifierKey, TestNotification>,
+        notification_recorder: Option<Arc<RwLock<TestNotificationRecorder>>>,
     }
 
     impl TestTransactionNotifier {
-        pub fn new() -> Self {
+        pub fn new(notification_recorder: Option<Arc<RwLock<TestNotificationRecorder>>>) -> Self {
             Self {
                 notifications: DashMap::default(),
+                notification_recorder,
             }
         }
     }
@@ -350,6 +427,12 @@ pub(crate) mod tests {
                     transaction: transaction.clone(),
                 },
             );
+            if let Some(notification_recorder) = self.notification_recorder.as_ref() {
+                notification_recorder
+                    .write()
+                    .unwrap()
+                    .notify_transaction(*signature);
+            }
         }
     }
 
@@ -455,7 +538,7 @@ pub(crate) mod tests {
             transaction_indexes: vec![transaction_index],
         };
 
-        let test_notifier = Arc::new(TestTransactionNotifier::new());
+        let test_notifier = Arc::new(TestTransactionNotifier::new(None));
 
         let exit = Arc::new(AtomicBool::new(false));
         let transaction_status_service = TransactionStatusService::new(
@@ -560,7 +643,17 @@ pub(crate) mod tests {
             transaction_indexes: vec![transaction_index1, transaction_index2],
         };
 
-        let test_notifier = Arc::new(TestTransactionNotifier::new());
+        let notification_recorder = Arc::new(RwLock::new(TestNotificationRecorder::default()));
+
+        let (bank_notification_sender, bank_notification_receiver) = unbounded();
+        let notitfication_tracker = TestBankNotificationTracker::new(
+            bank_notification_receiver,
+            notification_recorder.clone(),
+        );
+
+        let test_notifier = Arc::new(TestTransactionNotifier::new(Some(
+            notification_recorder.clone(),
+        )));
 
         let exit = Arc::new(AtomicBool::new(false));
         let transaction_status_service = TransactionStatusService::new(
@@ -570,13 +663,21 @@ pub(crate) mod tests {
             Some(test_notifier.clone()),
             blockstore,
             false,
-            None, // No bank notification sender
+            Some(bank_notification_sender),
             exit.clone(),
         );
 
         transaction_status_sender
             .send(TransactionStatusMessage::Batch(transaction_status_batch))
             .unwrap();
+
+        // Simulate a bank notification of frozen slot
+        transaction_status_sender
+            .send(TransactionStatusMessage::BankEvent(
+                BankNotification::Frozen(bank.clone()),
+            ))
+            .unwrap();
+
         transaction_status_service.quiesce_and_join_for_tests(exit);
         assert_eq!(test_notifier.notifications.len(), 2);
 
@@ -596,6 +697,25 @@ pub(crate) mod tests {
 
         let result1 = test_notifier.notifications.get(&key1).unwrap();
         let result2 = test_notifier.notifications.get(&key2).unwrap();
+
+        notitfication_tracker.join().unwrap();
+
+        let notifications = &notification_recorder.read().unwrap().notifications;
+        // Check all notifications and make sure they are in the right order:
+        // TransactionEvent, TransactionEvent, BankEvent
+        assert_eq!(notifications.len(), 3);
+        assert_eq!(
+            notifications[0],
+            TestNotificationType::TransactionEvent(key1.signature)
+        );
+        assert_eq!(
+            notifications[1],
+            TestNotificationType::TransactionEvent(key2.signature)
+        );
+        assert_eq!(
+            notifications[2],
+            TestNotificationType::BankEvent(bank.slot())
+        );
 
         assert_eq!(
             expected_transaction1.signature(),
