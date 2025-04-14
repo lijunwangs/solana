@@ -2380,6 +2380,9 @@ pub struct Sockets {
     pub tpu_quic: Vec<UdpSocket>,
     pub tpu_forwards_quic: Vec<UdpSocket>,
     pub tpu_vote_quic: Vec<UdpSocket>,
+    // Connection cache endpoints
+    pub tpu_forwards_client: UdpSocket,
+    pub tpu_vote_client: UdpSocket,
 }
 
 pub struct NodeConfig {
@@ -2465,6 +2468,9 @@ impl Node {
         let ancestor_hashes_requests = bind_to_unspecified().unwrap();
         let ancestor_hashes_requests_quic = bind_to_unspecified().unwrap();
 
+        let tpu_forwards_client = bind_to_localhost().unwrap();
+        let tpu_vote_client = bind_to_localhost().unwrap();
+
         let mut info = ContactInfo::new(
             *pubkey,
             timestamp(), // wallclock
@@ -2541,6 +2547,8 @@ impl Node {
                 tpu_quic,
                 tpu_forwards_quic,
                 tpu_vote_quic,
+                tpu_forwards_client,
+                tpu_vote_client,
             },
         }
     }
@@ -2643,6 +2651,10 @@ impl Node {
         let rpc_port = find_available_port_in_range(bind_ip_addr, port_range).unwrap();
         let rpc_pubsub_port = find_available_port_in_range(bind_ip_addr, port_range).unwrap();
 
+        let (_, tpu_forwards_client) =
+            Self::bind_with_config(bind_ip_addr, port_range, socket_config);
+        let (_, tpu_vote_client) = Self::bind_with_config(bind_ip_addr, port_range, socket_config);
+
         let addr = gossip_addr.ip();
         let mut info = ContactInfo::new(
             *pubkey,
@@ -2704,6 +2716,8 @@ impl Node {
                 tpu_quic,
                 tpu_forwards_quic,
                 tpu_vote_quic,
+                tpu_forwards_client,
+                tpu_vote_client,
             },
         }
     }
@@ -2808,6 +2822,10 @@ impl Node {
         let (_, ancestor_hashes_requests_quic) =
             Self::bind_with_config(bind_ip_addr, port_range, socket_config);
 
+        let (_, tpu_forwards_client) =
+            Self::bind_with_config(bind_ip_addr, port_range, socket_config);
+        let (_, tpu_vote_client) = Self::bind_with_config(bind_ip_addr, port_range, socket_config);
+
         let mut info = ContactInfo::new(
             *pubkey,
             timestamp(), // wallclock
@@ -2854,6 +2872,8 @@ impl Node {
                 tpu_quic,
                 tpu_forwards_quic,
                 tpu_vote_quic,
+                tpu_forwards_client,
+                tpu_vote_client,
             },
         }
     }
