@@ -30,6 +30,7 @@ pub struct TransactionStatusBatch {
     pub commit_results: Vec<TransactionCommitResult>,
     pub balances: TransactionBalancesSet,
     pub token_balances: TransactionTokenBalancesSet,
+    pub costs: Vec<Option<u64>>,
     pub transaction_indexes: Vec<usize>,
 }
 
@@ -46,6 +47,7 @@ impl TransactionStatusSender {
         commit_results: Vec<TransactionCommitResult>,
         balances: TransactionBalancesSet,
         token_balances: TransactionTokenBalancesSet,
+        costs: Vec<Option<u64>>,
         transaction_indexes: Vec<usize>,
     ) {
         if let Err(e) = self
@@ -56,6 +58,7 @@ impl TransactionStatusSender {
                 commit_results,
                 balances,
                 token_balances,
+                costs,
                 transaction_indexes,
             }))
         {
