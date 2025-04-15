@@ -14,10 +14,7 @@ use {
     crossbeam_channel::{Receiver, RecvTimeoutError, Sender},
     solana_rpc_client_api::response::{SlotTransactionStats, SlotUpdate},
     solana_runtime::{
-        bank::Bank,
-        bank_forks::BankForks,
-        // bank_notification::{BankNotification, BankNotificationReceiver},
-        prioritization_fee_cache::PrioritizationFeeCache,
+        bank::Bank, bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache,
     },
     solana_sdk::{clock::Slot, timing::timestamp},
     std::{
