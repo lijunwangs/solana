@@ -16,25 +16,23 @@ use {
     },
 };
 
-// Macro to send the packet batch to the sender
-macro_rules! send {
-    ($sender:expr, $batch:expr, $count:expr) => {
-        match $sender.send($batch) {
-            Ok(_) => {
-                trace!("Sent batch: {} received from vortexor successfully", $count);
-            }
-            Err(err) => {
-                debug!("Failed to send batch {} error: {:?}", $count, err);
-                break;
-            }
+#[inline]
+fn send(sender: &TracedSender, batch: Arc<Vec<PacketBatch>>, count: usize) -> Result<(), String> {
+    match sender.send(batch) {
+        Ok(_) => {
+            trace!("Sent batch: {count} received from vortexor successfully");
+            Ok(())
         }
-    };
+        Err(err) => Err(format!("Failed to send batch {count} down {err:?}")),
+    }
 }
 
 pub struct VortexorReceiverAdapter {
     thread_hdl: JoinHandle<()>,
     receiver: VerifiedPacketReceiver,
 }
+
+const MAX_PACKET_BATCH_SIZE: usize = 8;
 
 impl VortexorReceiverAdapter {
     pub fn new(
@@ -53,13 +51,15 @@ impl VortexorReceiverAdapter {
         let thread_hdl = Builder::new()
             .name("vtxRcvAdptr".to_string())
             .spawn(move || {
-                Self::recv_send(
+                if let Err(msg) = Self::recv_send(
                     batch_receiver,
                     recv_timeout,
-                    8,
+                    MAX_PACKET_BATCH_SIZE,
                     packets_sender,
                     forward_stage_sender,
-                );
+                ) {
+                    info!("Quiting VortexorReceiverAdapter: {msg}");
+                }
             })
             .unwrap();
         Self {
@@ -79,19 +79,19 @@ impl VortexorReceiverAdapter {
         batch_size: usize,
         traced_sender: TracedSender,
         forward_stage_sender: Option<Sender<(BankingPacketBatch, bool)>>,
-    ) {
+    ) -> Result<(), String> {
         loop {
             match Self::receive_until(packet_batch_receiver.clone(), recv_timeout, batch_size) {
                 Ok(packet_batch) => {
                     let count = packet_batch.len();
                     // Send out packet batches
                     if let Some(forward_stage_sender) = &forward_stage_sender {
-                        send!(traced_sender, packet_batch.clone(), count);
+                        send(&traced_sender, packet_batch.clone(), count)?;
                         // Send out packet batches to forward stage
                         let _ = forward_stage_sender
                             .try_send((packet_batch, false /* reject non-vote */));
                     } else {
-                        send!(traced_sender, packet_batch, count);
+                        send(&traced_sender, packet_batch, count)?;
                     }
                 }
                 Err(err) => match err {
@@ -99,7 +99,7 @@ impl VortexorReceiverAdapter {
                         continue;
                     }
                     RecvTimeoutError::Disconnected => {
-                        break;
+                        return Err("Disconnected from the input channel".to_string());
                     }
                 },
             }

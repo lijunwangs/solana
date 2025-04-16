@@ -382,6 +382,7 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
             .long("tpu-vortexor-receiver-address")
             .value_name("HOST:PORT")
             .takes_value(true)
+            .hidden(hidden_unless_forced())
             .validator(solana_net_utils::is_host_port)
             .help("TPU Vortexor Receiver address to which verified transaction packet will be forwarded."),
     )
