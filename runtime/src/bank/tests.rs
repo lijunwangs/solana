@@ -578,20 +578,14 @@ pub(in crate::bank) fn new_from_parent_next_epoch(
     new_bank_from_parent_with_bank_forks(bank_forks, parent, &Pubkey::default(), slot)
 }
 
+#[test_case(true; "alpenglow")]
+#[test_case(false; "towerbft")]
 fn test_bank_update_vote_stake_rewards(is_alpenglow: bool) {
     let thread_pool = ThreadPoolBuilder::new().num_threads(1).build().unwrap();
     check_bank_update_vote_stake_rewards(
         |bank: &Bank| bank._load_vote_and_stake_accounts(&thread_pool, null_tracer()),
         is_alpenglow,
     );
-}
-
-#[test]
-fn test_bank_update_vote_stake_rewards_tests() {
-    test_bank_update_vote_stake_rewards(false);
-    //TODO(wen): rewards to Alpenglow vote accounts don't work until epoch_stakes calculation
-    // is updated.
-    //    test_bank_update_vote_stake_rewards(true);
 }
 
 impl Bank {
