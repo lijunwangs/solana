@@ -832,7 +832,6 @@ mod tests {
                         },
                         child,
                         &voting_keypair.pubkey(),
-                        false,
                     );
                 }
             }

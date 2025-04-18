@@ -1517,7 +1517,6 @@ impl Validator {
             ledger_signal_receiver,
             rpc_subscriptions.clone(),
             &poh_recorder,
-            transaction_recorder.clone(),
             tower,
             config.tower_storage.clone(),
             config.vote_history_storage.clone(),
