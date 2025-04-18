@@ -13,6 +13,7 @@ use {
     solana_clock::{Slot, DEFAULT_DEV_SLOTS_PER_EPOCH, DEFAULT_TICKS_PER_SLOT},
     solana_commitment_config::CommitmentConfig,
     solana_core::{
+        alpenglow_consensus::vote_history_storage::FileVoteHistoryStorage,
         consensus::tower_storage::FileTowerStorage,
         validator::{Validator, ValidatorConfig, ValidatorStartProgress, ValidatorTpuConfig},
     },
@@ -183,6 +184,8 @@ impl LocalCluster {
                 .0,
         ];
         config.tower_storage = Arc::new(FileTowerStorage::new(ledger_path.to_path_buf()));
+        config.vote_history_storage =
+            Arc::new(FileVoteHistoryStorage::new(ledger_path.to_path_buf()));
 
         let snapshot_config = &mut config.snapshot_config;
         let dummy: PathBuf = DUMMY_SNAPSHOT_CONFIG_PATH_MARKER.into();
