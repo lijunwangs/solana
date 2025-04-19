@@ -4461,6 +4461,7 @@ pub fn populate_blockstore_for_tests(
             None,
             blockstore,
             false,
+            None,
             tss_exit.clone(),
         );
 
@@ -4473,6 +4474,7 @@ pub fn populate_blockstore_for_tests(
             Some(
                 &solana_ledger::blockstore_processor::TransactionStatusSender {
                     sender: transaction_status_sender,
+                    event_notification_synchronizer: None,
                 },
             ),
             Some(&replay_vote_sender),
