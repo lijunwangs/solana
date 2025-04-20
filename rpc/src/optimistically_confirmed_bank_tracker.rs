@@ -475,7 +475,10 @@ mod tests {
 
         let mut last_notified_confirmed_slot: Slot = 0;
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::OptimisticallyConfirmed(2),
+            (
+                BankNotification::OptimisticallyConfirmed(2),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -485,13 +488,17 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 2);
         assert_eq!(highest_confirmed_slot, 2);
 
         // Test max optimistically confirmed bank remains in the cache
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::OptimisticallyConfirmed(1),
+            (
+                BankNotification::OptimisticallyConfirmed(1),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -501,13 +508,17 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 2);
         assert_eq!(highest_confirmed_slot, 2);
 
         // Test bank will only be cached when frozen
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::OptimisticallyConfirmed(3),
+            (
+                BankNotification::OptimisticallyConfirmed(3),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -517,6 +528,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 2);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 1);
@@ -528,7 +540,10 @@ mod tests {
         bank3.freeze();
 
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::Frozen(bank3),
+            (
+                BankNotification::Frozen(bank3),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -538,6 +553,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 3);
         assert_eq!(highest_confirmed_slot, 3);
@@ -548,7 +564,10 @@ mod tests {
         let bank4 = Bank::new_from_parent(bank3, &Pubkey::default(), 4);
         bank_forks.write().unwrap().insert(bank4);
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::OptimisticallyConfirmed(4),
+            (
+                BankNotification::OptimisticallyConfirmed(4),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -558,6 +577,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 3);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 1);
@@ -577,7 +597,10 @@ mod tests {
         let parent_roots = bank5.ancestors.keys();
 
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::NewRootBank(bank5),
+            (
+                BankNotification::NewRootBank(bank5),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -587,6 +610,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 5);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
@@ -596,7 +620,10 @@ mod tests {
         assert_eq!(newest_root_slot, 0);
 
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::NewRootedChain(parent_roots),
+            (
+                BankNotification::NewRootedChain(parent_roots),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -606,6 +633,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
 
         assert_eq!(newest_root_slot, 5);
@@ -623,7 +651,10 @@ mod tests {
         bank_forks.write().unwrap().insert(bank7);
         bank_forks.write().unwrap().set_root(7, None, None).unwrap();
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::OptimisticallyConfirmed(6),
+            (
+                BankNotification::OptimisticallyConfirmed(6),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -633,6 +664,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 5);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
@@ -644,7 +676,10 @@ mod tests {
         let parent_roots = bank7.ancestors.keys();
 
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::NewRootBank(bank7),
+            (
+                BankNotification::NewRootBank(bank7),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -654,6 +689,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 7);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
@@ -662,7 +698,10 @@ mod tests {
         assert_eq!(newest_root_slot, 5);
 
         OptimisticallyConfirmedBankTracker::process_notification(
-            BankNotification::NewRootedChain(parent_roots),
+            (
+                BankNotification::NewRootedChain(parent_roots),
+                None, /* no event sequence */
+            ),
             &bank_forks,
             &optimistically_confirmed_bank,
             &subscriptions,
@@ -672,6 +711,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
+            &None, // No event notification synchronizer
         );
 
         assert_eq!(newest_root_slot, 7);
