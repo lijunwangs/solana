@@ -408,10 +408,19 @@ async fn handle_connection(
                     },
                     result = broadcast_receiver.recv() => {
 
+                        info!("received notification: {:?}", result);
                         // In both possible error cases (closed or lagged) we disconnect the client.
-                        if let Some(json) = broadcast_handler.handle(result?)? {
-                            sender.send_text(&*json).await?;
-                            info!("sent notification: {:?}", json);
+                        let handle_result = broadcast_handler.handle(result?);
+                        if handle_result.is_err() {
+                            warn!("broadcast handler error: {:?}", handle_result);
+                            handle_result?;
+                        } else {
+                            if let Some(json) = handle_result.unwrap() {
+                                sender.send_text(&*json).await?;
+                                info!("sent notification: {:?}", json);
+                            } else {
+                                info!("notification not sent, empty json?");
+                            }
                         }
                     },
                     _ = &mut tripwire => {
