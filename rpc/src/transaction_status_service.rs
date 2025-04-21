@@ -78,7 +78,7 @@ impl TransactionStatusService {
                         event_notification_synchronizer.clone(),
                     ) {
                         Ok(_) => {
-                            info!("TransactionStatusService processed message");
+                            // info!("TransactionStatusService processed message");
                         }
                         Err(err) => {
                             error!("TransactionStatusService stopping due to error: {err}");
