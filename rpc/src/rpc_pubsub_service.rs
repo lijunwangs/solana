@@ -416,8 +416,10 @@ async fn handle_connection(
                             handle_result?;
                         } else {
                             if let Some(json) = handle_result.unwrap() {
-                                sender.send_text(&*json).await?;
-                                info!("sent notification: {:?}", json);
+                                let send_result = sender.send_text(&*json).await;
+
+                                info!("sent notification: result: {:?}", send_result);
+                                send_result?;
                             } else {
                                 info!("notification not sent, empty json?");
                             }
