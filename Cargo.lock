@@ -9216,6 +9216,7 @@ dependencies = [
 name = "solana-local-cluster"
 version = "3.0.0"
 dependencies = [
+ "alpenglow-vote",
  "assert_matches",
  "crossbeam-channel",
  "fs_extra",
