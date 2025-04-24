@@ -7,24 +7,33 @@
 //! is stopped along with the native TPU streamers.
 
 use {
-    crossbeam_channel::Sender,
-    log::{error, info},
-    solana_gossip::cluster_info::ClusterInfo,
-    solana_perf::packet::PacketBatch,
-    solana_sdk::signature::Keypair,
-    solana_streamer::{
+    crate::{banking_trace::TracedSender, sigverify::TransactionSigVerifier, sigverify_stage::SigVerifyStage, vortexor_receiver_adapter::VortexorReceiverAdapter}, agave_banking_stage_ingress_types::BankingPacketBatch, crossbeam_channel::Sender, log::{error, info}, solana_gossip::cluster_info::ClusterInfo, solana_perf::packet::PacketBatch, solana_sdk::signature::Keypair, solana_streamer::{
         quic::{spawn_server_multi, QuicServerParams, SpawnServerResult},
         streamer::StakedNodes,
-    },
-    std::{
+    }, std::{
         net::{SocketAddr, UdpSocket},
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc, RwLock,
         },
-        thread,
-    },
+        thread, time::Duration,
+    }
 };
+
+/// The `SigVerifier` enum is used to determine whether to use a local or remote signature verifier.
+enum SigVerifier {
+    Local(SigVerifyStage),
+    Remote(VortexorReceiverAdapter),
+}
+
+impl SigVerifier {
+    fn join(self) -> thread::Result<()> {
+        match self {
+            SigVerifier::Local(sig_verify_stage) => sig_verify_stage.join(),
+            SigVerifier::Remote(vortexor_receiver_adapter) => vortexor_receiver_adapter.join(),
+        }
+    }
+}
 
 //// Configuration for the Vortexor receiver.
 pub struct VotexorReceiverConfig {
@@ -40,10 +49,15 @@ pub struct TpuSwitchConfig {
     pub transactions_forwards_quic_sockets: Vec<UdpSocket>,
     pub keypair: Keypair,
     pub packet_sender: Sender<PacketBatch>,
+    pub packet_receiver: Receiver<PacketBatch>,
     pub forwarded_packet_sender: Sender<PacketBatch>,
     pub staked_nodes: Arc<RwLock<StakedNodes>>,
     pub tpu_quic_server_config: QuicServerParams,
     pub tpu_fwd_quic_server_config: QuicServerParams,
+    pub tpu_coalesce: Duration,
+    pub enable_block_production_forwarding: bool,
+    pub non_vote_sender: TracedSender,
+    pub forward_stage_sender: Sender<(BankingPacketBatch, bool)>,
 }
 
 /// Manages the fallback between vortexors and native TPU streamers.
@@ -67,6 +81,32 @@ impl TpuSwitch {
         exit: Arc<AtomicBool>,
     ) -> Self {
         let (tpu_quic_t, tpu_forwards_quic_t) = start_quic_tpu_streamers(&config, &exit);
+
+        let sig_verifier = if let Some(vortexor_config) = &config.vortexor_receiver_config {
+            info!("starting vortexor adapter");
+            let sockets = vortexor_config.vortexor_receivers.into_iter().map(Arc::new).collect();
+            let adapter = VortexorReceiverAdapter::new(
+                sockets,
+                Duration::from_millis(5),
+                config.tpu_coalesce.clone(),
+                config.non_vote_sender.clone(),
+                config.enable_block_production_forwarding.then(|| config.forward_stage_sender.clone()),
+                exit.clone(),
+            );
+            SigVerifier::Remote(adapter)
+        } else {
+            info!("starting regular sigverify stage");
+            let verifier = TransactionSigVerifier::new(
+                config.non_vote_sender.clone(),
+                config.enable_block_production_forwarding.then(|| config.forward_stage_sender.clone()),
+            );
+            SigVerifier::Local(SigVerifyStage::new(
+                config.packet_receiver.clone(),
+                verifier,
+                "solSigVerTpu",
+                "tpu-verifier",
+            ))
+        };
 
         Self {
             config,
@@ -145,6 +185,10 @@ fn start_quic_tpu_streamers(config: &TpuSwitchConfig, exit: &Arc<AtomicBool>) ->
         staked_nodes,
         tpu_quic_server_config,
         tpu_fwd_quic_server_config,
+        enable_block_production_forwarding: _,
+        non_vote_sender: _,
+        forward_stage_sender: _,
+        tpu_coalesce: _,
     } = config;
 
     let (tpu_quic_t, key_updater) = if vortexor_receiver_config.is_none() {
