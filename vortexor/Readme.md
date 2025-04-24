@@ -215,3 +215,10 @@ information. This can be any node supporting RPC web socket in the network. e.g:
 
 Multiple RPC servers and web socket servers can be set. It requires equal number
 of RPC and web socket servers to be used.
+
+* In summary, the following are steps to setup the vortexor and validator:
+
+** Determine/design the validator's receiver address. And RPC/Web socket server addresses
+** Run the vortexor with these information.
+** Find out the vortexor's TPU and TPU forward address
+** Run the validator with vortexor's TPU and forward address information
