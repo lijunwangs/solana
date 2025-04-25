@@ -1,102 +1,167 @@
 use {
-    super::{Stake, SUPERMAJORITY},
-    solana_clock::Slot,
-    solana_pubkey::Pubkey,
+    super::{
+        bit_vector::BitVector,
+        transaction::{AlpenglowVoteTransaction, BlsVoteTransaction},
+        Stake,
+    },
+    solana_bls::{Signature, SignatureProjective},
+    solana_pubkey::Pubkey as ValidatorPubkey,
     solana_transaction::versioned::VersionedTransaction,
     std::{collections::HashMap, sync::Arc},
+    thiserror::Error,
 };
 
-pub(crate) type CertificateMap = HashMap<Pubkey, Arc<VersionedTransaction>>;
+pub trait VoteCertificate: Default {
+    type VoteTransaction: AlpenglowVoteTransaction;
 
-//TODO(wen): split certificate according to different blockid and bankhash
-pub struct VoteCertificate {
-    // Must be either all notarization or finalization votes.
-    // We keep separate certificates for each type
-    certificate: CertificateMap,
+    fn new(stake: Stake, transactions: Vec<Arc<Self::VoteTransaction>>) -> Self;
+    fn size(&self) -> Option<usize>;
+    fn transactions(&self) -> Vec<Arc<Self::VoteTransaction>>;
+    fn stake(&self) -> Stake;
+}
+
+// NOTE: This will go away after BLS implementation is finished.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct LegacyVoteCertificate {
+    // We don't need to send the actual vote transactions out for now.
+    transactions: Vec<Arc<VersionedTransaction>>,
     // Total stake of all the slots in the certificate
     stake: Stake,
-    // The slot the votes in the certificate are for
-    slot: Slot,
-    is_complete: bool,
 }
 
-impl VoteCertificate {
-    pub fn new(slot: Slot) -> Self {
+impl VoteCertificate for LegacyVoteCertificate {
+    type VoteTransaction = VersionedTransaction;
+
+    fn new(stake: Stake, transactions: Vec<Arc<VersionedTransaction>>) -> Self {
         Self {
-            certificate: HashMap::new(),
-            stake: 0,
-            slot,
-            is_complete: false,
+            stake,
+            transactions,
         }
     }
 
-    pub fn add_vote(
-        &mut self,
-        validator_key: &Pubkey,
-        transaction: Arc<VersionedTransaction>,
-        validator_stake: Stake,
-        total_stake: Stake,
-    ) -> bool {
-        // Caller needs to verify that this is the same type (Notarization, Skip) as all the other votes in the current certificate
-        if self.certificate.contains_key(validator_key) {
-            // Make duplicate vote fail silently, we may get votes from different resources and votes may arrive out of order.
-            // This also needs to silently fail because the new skip vote might conflict with some old votes in old slots,
-            // but perfectly fine for some other slots. E.g. old vote is (23, 23), (22, 24) will fail for slot 23, but it's
-            // fine for slot 22 and 24.
-            return false;
-        }
-        // TODO: verification that this vote can land
-        self.certificate.insert(*validator_key, transaction);
-        self.stake += validator_stake;
-        self.is_complete = self.check_complete(total_stake);
-
-        true
+    fn size(&self) -> Option<usize> {
+        Some(self.transactions.len())
     }
 
-    pub fn is_complete(&self) -> bool {
-        self.is_complete
+    fn transactions(&self) -> Vec<Arc<VersionedTransaction>> {
+        self.transactions.clone()
     }
 
-    pub fn check_complete(&mut self, total_stake: Stake) -> bool {
-        (self.stake as f64 / total_stake as f64) > SUPERMAJORITY
-    }
-
-    pub fn slot(&self) -> Slot {
-        self.slot
-    }
-
-    pub fn size(&self) -> usize {
-        self.certificate.len()
-    }
-
-    // Return an iterator of CertificateMap, only return Some if the certificate is complete
-    pub(crate) fn get_certificate_iter_for_complete_cert(
-        &self,
-    ) -> Option<std::collections::hash_map::Iter<'_, Pubkey, Arc<VersionedTransaction>>> {
-        if self.is_complete {
-            Some(self.certificate.iter())
-        } else {
-            None
-        }
+    fn stake(&self) -> Stake {
+        self.stake
     }
 }
 
-#[cfg(test)]
-mod test {
-    use {super::*, std::sync::Arc};
+impl VoteCertificate for BlsCertificate {
+    type VoteTransaction = BlsVoteTransaction;
 
-    #[test]
-    fn test_vote_certificate() {
-        let mut vote_cert = VoteCertificate::new(1);
-        let transaction = Arc::new(VersionedTransaction::default());
-        let total_stake = 100;
+    fn new(_stake: Stake, _transactions: Vec<Arc<BlsVoteTransaction>>) -> Self {
+        unimplemented!()
+    }
 
-        assert!(vote_cert.add_vote(&Pubkey::new_unique(), transaction.clone(), 10, total_stake),);
-        assert_eq!(vote_cert.stake, 10);
-        assert!(!vote_cert.is_complete());
+    fn size(&self) -> Option<usize> {
+        unimplemented!()
+    }
 
-        assert!(vote_cert.add_vote(&Pubkey::new_unique(), transaction.clone(), 60, total_stake),);
-        assert_eq!(vote_cert.stake, 70);
-        assert!(vote_cert.is_complete());
+    fn transactions(&self) -> Vec<Arc<BlsVoteTransaction>> {
+        unimplemented!()
+    }
+
+    fn stake(&self) -> Stake {
+        unimplemented!()
+    }
+}
+
+#[derive(Debug, Error, PartialEq)]
+pub enum BlsCertificateError {
+    #[error("Index out of bounds")]
+    IndexOutOfBound,
+    #[error("Invalid signature")]
+    InvalidSignature,
+    #[error("Validator does not exist")]
+    ValidatorDoesNotExist,
+}
+
+/// Vote data included in a BLS certificate
+#[derive(Debug, Default, Eq, Clone, PartialEq)]
+pub struct CertificateVoteData {
+    // TODO: decide on vote data to be included in cert
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Clone)]
+pub struct BlsCertificate {
+    /// Vote message
+    pub vote_data: CertificateVoteData,
+    /// BLS aggregate signature
+    pub aggregate_signature: Signature,
+    /// Bit-vector indicating which votes are invluded in the aggregate signature
+    pub bit_vector: BitVector,
+}
+
+impl BlsCertificate {
+    pub fn new(
+        vote_data: CertificateVoteData,
+        validator_pubkey_map: &HashMap<ValidatorPubkey, usize>,
+        transactions_map: &HashMap<ValidatorPubkey, BlsVoteTransaction>,
+    ) -> Result<Self, BlsCertificateError> {
+        let mut aggregate_signature = SignatureProjective::default();
+        let mut bit_vector = BitVector::default();
+        let pubkey_transactions = transactions_map.iter();
+
+        // TODO: signature aggregation can be done out-of-order;
+        // consider aggregating signatures separately in parallel
+        for (pubkey, transaction) in pubkey_transactions {
+            // aggregate the signature
+            let signature: SignatureProjective = transaction
+                .signature
+                .try_into()
+                .map_err(|_| BlsCertificateError::InvalidSignature)?;
+            aggregate_signature.aggregate_with([&signature]);
+
+            // set bit-vector for the validator
+            let validator_index = validator_pubkey_map
+                .get(pubkey)
+                .ok_or(BlsCertificateError::ValidatorDoesNotExist)?;
+            bit_vector
+                .set_bit(*validator_index, true)
+                .map_err(|_| BlsCertificateError::IndexOutOfBound)?;
+        }
+
+        Ok(Self {
+            vote_data,
+            aggregate_signature: aggregate_signature.into(),
+            bit_vector,
+        })
+    }
+
+    pub fn add(
+        &mut self,
+        validator_pubkey_map: &HashMap<ValidatorPubkey, usize>,
+        validator_pubkey: &ValidatorPubkey,
+        transaction: &BlsVoteTransaction,
+    ) -> Result<(), BlsCertificateError> {
+        let aggregate_signature: SignatureProjective = self
+            .aggregate_signature
+            .try_into()
+            .map_err(|_| BlsCertificateError::InvalidSignature)?;
+        let new_signature: SignatureProjective = transaction
+            .signature
+            .try_into()
+            .map_err(|_| BlsCertificateError::InvalidSignature)?;
+
+        // the function aggregate fails only on empty signatures, so it is safe to unwrap here
+        // TODO: update this after simplfying signature aggregation interface in `solana_bls`
+        let new_aggregate =
+            SignatureProjective::aggregate([&aggregate_signature, &new_signature]).unwrap();
+        self.aggregate_signature = new_aggregate.into();
+
+        // set bit-vector for the validator
+        let validator_index = validator_pubkey_map
+            .get(validator_pubkey)
+            .ok_or(BlsCertificateError::ValidatorDoesNotExist)?;
+        self.bit_vector
+            .set_bit(*validator_index, true)
+            .map_err(|_| BlsCertificateError::IndexOutOfBound)?;
+        Ok(())
     }
 }
