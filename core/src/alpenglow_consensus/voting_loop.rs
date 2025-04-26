@@ -1,11 +1,11 @@
 //! The Alpenglow voting loop, handles all three types of votes as well as
 //! rooting, leader logic, and dumping and repairing the notarized versions.
 use {
-    super::{BLOCKTIME, DELTA, DELTA_TIMEOUT},
+    super::{certificate_pool::AddVoteError, BLOCKTIME, DELTA, DELTA_TIMEOUT},
     crate::{
         alpenglow_consensus::{
             certificate_pool::CertificatePool,
-            vote_certificate::LegacyVoteCertificate,
+            vote_certificate::{LegacyVoteCertificate, VoteCertificate},
             vote_history::VoteHistory,
             vote_history_storage::{SavedVoteHistory, SavedVoteHistoryVersions},
         },
@@ -77,7 +77,7 @@ pub struct VotingLoopConfig {
     // Senders
     pub snapshot_controller: Option<Arc<SnapshotController>>,
     pub voting_sender: Sender<VoteOp>,
-    pub lockouts_sender: Sender<CommitmentAggregationData>,
+    pub commitment_sender: Sender<CommitmentAggregationData>,
     pub drop_bank_sender: Sender<Vec<BankWithScheduler>>,
     pub bank_notification_sender: Option<BankNotificationSenderConfig>,
     pub slot_status_notifier: Option<SlotStatusNotifier>,
@@ -94,6 +94,7 @@ struct VotingContext {
     authorized_voter_keypairs: Arc<RwLock<Vec<Arc<Keypair>>>>,
     has_new_vote_been_rooted: bool,
     voting_sender: Sender<VoteOp>,
+    commitment_sender: Sender<CommitmentAggregationData>,
     wait_to_vote_slot: Option<Slot>,
     tracked_vote_transactions: Vec<TrackedVoteTransaction>,
 }
@@ -168,7 +169,7 @@ impl VotingLoop {
             banking_tracer,
             snapshot_controller,
             voting_sender,
-            lockouts_sender,
+            commitment_sender,
             drop_bank_sender,
             bank_notification_sender,
             slot_status_notifier,
@@ -203,6 +204,7 @@ impl VotingLoop {
             authorized_voter_keypairs,
             has_new_vote_been_rooted,
             voting_sender,
+            commitment_sender,
             wait_to_vote_slot,
             tracked_vote_transactions: vec![],
         };
@@ -316,6 +318,7 @@ impl VotingLoop {
                         &vote_receiver,
                         &mut cert_pool,
                         bank_forks.as_ref(),
+                        &voting_context.commitment_sender,
                     );
 
                     if skipped || notarized {
@@ -345,11 +348,6 @@ impl VotingLoop {
                         &mut voting_context,
                     ) {
                         notarized = true;
-                        Self::alpenglow_update_commitment_cache(
-                            AlpenglowCommitmentType::Notarize,
-                            current_slot,
-                            &lockouts_sender,
-                        );
                     }
                 }
 
@@ -383,7 +381,7 @@ impl VotingLoop {
             }
 
             // Set new root
-            if let Some(new_root) = Self::maybe_set_root(
+            Self::maybe_set_root(
                 leader_end_slot,
                 &mut cert_pool,
                 snapshot_controller.as_deref(),
@@ -391,14 +389,7 @@ impl VotingLoop {
                 &drop_bank_sender,
                 &mut shared_context,
                 &mut voting_context,
-            ) {
-                // TODO(ashwin): this can happen at anytime, doesn't need to wait to here to let rpc know
-                Self::alpenglow_update_commitment_cache(
-                    AlpenglowCommitmentType::Root,
-                    new_root,
-                    &lockouts_sender,
-                );
-            }
+            );
 
             // TODO(ashwin): If we were the leader for `current_slot` and the bank has not completed,
             // we can abandon the bank now
@@ -783,6 +774,11 @@ impl VotingLoop {
         let vote = Vote::new_notarization_vote(slot, block_id, hash);
         Self::send_vote(vote, false, bank, cert_pool, voting_context);
 
+        Self::alpenglow_update_commitment_cache(
+            AlpenglowCommitmentType::Notarize,
+            slot,
+            &voting_context.commitment_sender,
+        );
         true
     }
 
@@ -812,9 +808,14 @@ impl VotingLoop {
         let GenerateVoteTxResult::Tx(vote_tx) = vote_tx_result else {
             return;
         };
-        if let Err(e) =
-            cert_pool.add_vote(&vote, vote_tx.clone().into(), &context.vote_account_pubkey)
-        {
+
+        if let Err(e) = Self::add_vote_and_maybe_update_commitment(
+            &vote,
+            &context.vote_account_pubkey,
+            vote_tx.clone().into(),
+            cert_pool,
+            &context.commitment_sender,
+        ) {
             if !is_refresh {
                 warn!("Unable to push our own vote into the pool {}", e);
                 return;
@@ -947,6 +948,7 @@ impl VotingLoop {
         vote_receiver: &VoteReceiver,
         cert_pool: &mut CertificatePool<LegacyVoteCertificate>,
         bank_forks: &RwLock<BankForks>,
+        commitment_sender: &Sender<CommitmentAggregationData>,
     ) {
         let mut cached_root_bank = None;
 
@@ -964,19 +966,45 @@ impl VotingLoop {
                     return;
                 }
 
-                if let Err(e) = cert_pool.add_vote(&vote, tx, &vote_account_pubkey) {
+                if let Err(e) = Self::add_vote_and_maybe_update_commitment(
+                    &vote,
+                    &vote_account_pubkey,
+                    tx,
+                    cert_pool,
+                    commitment_sender,
+                ) {
                     // TODO(ashwin): increment metrics on non duplicate failures
                     warn!("Unable to push vote into the pool {}", e);
                 }
             })
     }
 
+    /// Adds a vote to the certificate pool and updates the commitment cache if necessary
+    fn add_vote_and_maybe_update_commitment<VC: VoteCertificate>(
+        vote: &Vote,
+        vote_account_pubkey: &Pubkey,
+        tx: VC::VoteTransaction,
+        cert_pool: &mut CertificatePool<VC>,
+        commitment_sender: &Sender<CommitmentAggregationData>,
+    ) -> Result<(), AddVoteError> {
+        let Some(new_finalized_slot) = cert_pool.add_vote(vote, tx, vote_account_pubkey)? else {
+            return Ok(());
+        };
+        trace!("New finalization certificate for {new_finalized_slot}");
+        Self::alpenglow_update_commitment_cache(
+            AlpenglowCommitmentType::Finalized,
+            new_finalized_slot,
+            commitment_sender,
+        );
+        Ok(())
+    }
+
     fn alpenglow_update_commitment_cache(
         commitment_type: AlpenglowCommitmentType,
         slot: Slot,
-        lockouts_sender: &Sender<CommitmentAggregationData>,
+        commitment_sender: &Sender<CommitmentAggregationData>,
     ) {
-        if let Err(e) = lockouts_sender.send(
+        if let Err(e) = commitment_sender.send(
             CommitmentAggregationData::AlpenglowCommitmentAggregationData(
                 AlpenglowCommitmentAggregationData {
                     commitment_type,
@@ -984,7 +1012,7 @@ impl VotingLoop {
                 },
             ),
         ) {
-            trace!("lockouts_sender failed: {:?}", e);
+            trace!("commitment_sender failed: {:?}", e);
         }
     }
 

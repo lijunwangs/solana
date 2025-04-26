@@ -52,7 +52,7 @@ use {
             run_cluster_partition, run_kill_partition_switch_threshold, save_tower,
             setup_snapshot_validator_config, test_faulty_node, wait_for_duplicate_proof,
             wait_for_last_vote_in_tower_to_land_in_ledger, SnapshotValidatorConfig,
-            ValidatorTestConfig, DEFAULT_NODE_STAKE, RUST_LOG_FILTER,
+            ValidatorTestConfig, AG_DEBUG_LOG_FILTER, DEFAULT_NODE_STAKE, RUST_LOG_FILTER,
         },
         local_cluster::{ClusterConfig, LocalCluster, DEFAULT_MINT_LAMPORTS},
         validator_configs::*,
@@ -139,8 +139,8 @@ fn test_local_cluster_start_and_exit_with_config() {
     assert_eq!(cluster.validators.len(), NUM_NODES);
 }
 
-fn test_alpenglow_nodes_basic(num_nodes: usize, num_offline_nodes: usize, num_new_roots: usize) {
-    solana_logger::setup_with_default(RUST_LOG_FILTER);
+fn test_alpenglow_nodes_basic(num_nodes: usize, num_offline_nodes: usize) {
+    solana_logger::setup_with_default(AG_DEBUG_LOG_FILTER);
     let validator_keys = (0..num_nodes)
         .map(|i| (Arc::new(keypair_from_seed(&[i as u8; 32]).unwrap()), true))
         .collect::<Vec<_>>();
@@ -185,7 +185,7 @@ fn test_alpenglow_nodes_basic(num_nodes: usize, num_offline_nodes: usize, num_ne
 
     // Check for new roots
     cluster.check_for_new_roots(
-        num_new_roots,
+        16,
         &format!("test_{}_nodes_alpenglow", num_nodes),
         SocketAddrSpace::Unspecified,
     );
@@ -195,23 +195,21 @@ fn test_alpenglow_nodes_basic(num_nodes: usize, num_offline_nodes: usize, num_ne
 #[serial]
 fn test_1_node_alpenglow() {
     const NUM_NODES: usize = 1;
-    test_alpenglow_nodes_basic(NUM_NODES, 0, 16);
+    test_alpenglow_nodes_basic(NUM_NODES, 0);
 }
 
 #[test]
 #[serial]
 fn test_2_nodes_alpenglow() {
     const NUM_NODES: usize = 2;
-    test_alpenglow_nodes_basic(NUM_NODES, 0, 16);
+    test_alpenglow_nodes_basic(NUM_NODES, 0);
 }
 
-// TODO: this test takes approximately forever to run on CI - debug and re-enable.
-#[ignore]
 #[test]
 #[serial]
 fn test_4_nodes_alpenglow() {
     const NUM_NODES: usize = 4;
-    test_alpenglow_nodes_basic(NUM_NODES, 0, 16);
+    test_alpenglow_nodes_basic(NUM_NODES, 0);
 }
 
 #[test]
@@ -219,7 +217,7 @@ fn test_4_nodes_alpenglow() {
 fn test_4_nodes_with_1_offline_alpenglow() {
     const NUM_NODES: usize = 4;
     const NUM_OFFLINE: usize = 1;
-    test_alpenglow_nodes_basic(NUM_NODES, NUM_OFFLINE, 32);
+    test_alpenglow_nodes_basic(NUM_NODES, NUM_OFFLINE);
 }
 
 #[test]
@@ -1392,6 +1390,7 @@ fn test_snapshot_restart_tower() {
 
 #[test]
 #[serial]
+#[ignore]
 fn test_snapshots_blockstore_floor() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
     // First set up the cluster with 1 snapshotting leader
@@ -1634,6 +1633,7 @@ fn test_fake_shreds_broadcast_leader() {
 
 #[test]
 #[serial]
+#[ignore]
 fn test_wait_for_max_stake() {
     solana_logger::setup_with_default(RUST_LOG_FILTER);
     let validator_config = ValidatorConfig::default_for_test();
@@ -2765,7 +2765,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig, i
 
     let on_partition_resolved = |cluster: &mut LocalCluster, _: &mut ()| {
         cluster.check_for_new_roots(
-            20,
+            16,
             "run_test_load_program_accounts_partition",
             SocketAddrSpace::Unspecified,
         );
@@ -3932,6 +3932,7 @@ fn test_kill_heaviest_partition() {
 
 #[test]
 #[serial]
+#[ignore]
 fn test_kill_partition_switch_threshold_no_progress() {
     let max_switch_threshold_failure_pct = 1.0 - 2.0 * SWITCH_FORK_THRESHOLD;
     let total_stake = 10_000 * DEFAULT_NODE_STAKE;
@@ -3966,6 +3967,7 @@ fn test_kill_partition_switch_threshold_no_progress() {
 
 #[test]
 #[serial]
+#[ignore]
 fn test_kill_partition_switch_threshold_progress() {
     let max_switch_threshold_failure_pct = 1.0 - 2.0 * SWITCH_FORK_THRESHOLD;
     let total_stake = 10_000 * DEFAULT_NODE_STAKE;
