@@ -1,4 +1,4 @@
-> **Note:** Vortexor is under active development.  
+> **Note:** Vortexor is under active development.
 > For the quick instruction to pair a validator and vortexor, please read [Pair a Vortexor and Validator](#pair-a-vortexor-and-validator).
 
 # Introduction
