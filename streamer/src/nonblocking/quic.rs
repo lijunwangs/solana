@@ -1270,10 +1270,22 @@ async fn handle_chunks(
     let bytes_sent = accum.meta.size;
     let chunks_sent = accum.chunks.len();
 
-    if let Err(err) = packet_sender.send(accum.clone()) {
+    if let Err(err) = packet_sender.try_send(accum.clone()) {
         stats
             .total_handle_chunk_to_packet_batcher_send_err
             .fetch_add(1, Ordering::Relaxed);
+        match err {
+            TrySendError::Full(_) => {
+                stats
+                    .total_handle_chunk_to_packet_batcher_send_full_err
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+            TrySendError::Disconnected(_) => {
+                stats
+                    .total_handle_chunk_to_packet_batcher_send_disconnected_err
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
         trace!("packet batch send error {:?}", err);
     } else {
         stats
