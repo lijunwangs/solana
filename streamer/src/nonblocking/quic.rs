@@ -318,7 +318,7 @@ async fn run_server(
     let (sender, receiver) = bounded(coalesce_channel_size);
     let exit_clone = exit.clone();
     let stats_clone = stats.clone();
-    let sender_thread = thread::spawn(move || {
+    thread::spawn(move || {
         packet_batch_sender(packet_sender, receiver, exit_clone, stats_clone, coalesce);
     });
 
@@ -439,7 +439,6 @@ async fn run_server(
             debug!("accept(): Timed out waiting for connection");
         }
     }
-    sender_thread.join().unwrap();
 }
 
 fn prune_unstaked_connection_table(
