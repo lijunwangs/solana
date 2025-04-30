@@ -81,6 +81,7 @@ pub fn safe_clone_config(config: &ValidatorConfig) -> ValidatorConfig {
         use_tpu_client_next: config.use_tpu_client_next,
         retransmit_xdp: config.retransmit_xdp.clone(),
         repair_handler_type: config.repair_handler_type.clone(),
+        voting_service_additional_listeners: config.voting_service_additional_listeners.clone(),
     }
 }
 

@@ -299,6 +299,7 @@ pub struct ValidatorConfig {
     pub use_tpu_client_next: bool,
     pub retransmit_xdp: Option<XdpConfig>,
     pub repair_handler_type: RepairHandlerType,
+    pub voting_service_additional_listeners: Option<Vec<SocketAddr>>,
 }
 
 impl ValidatorConfig {
@@ -380,6 +381,7 @@ impl ValidatorConfig {
             use_tpu_client_next: true,
             retransmit_xdp: None,
             repair_handler_type: RepairHandlerType::default(),
+            voting_service_additional_listeners: None,
         }
     }
 
@@ -1566,6 +1568,7 @@ impl Validator {
             wen_restart_repair_slots.clone(),
             slot_status_notifier,
             vote_connection_cache,
+            config.voting_service_additional_listeners.as_ref(),
         )
         .map_err(ValidatorError::Other)?;
 

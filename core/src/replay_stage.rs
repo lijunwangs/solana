@@ -7996,6 +7996,7 @@ pub(crate) mod tests {
             &vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
+            None,
             &mut staked_validators_cache,
         );
 
@@ -8110,6 +8111,7 @@ pub(crate) mod tests {
             &vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
+            None,
             &mut staked_validators_cache,
         );
 
@@ -8247,6 +8249,7 @@ pub(crate) mod tests {
             &vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
+            None,
             &mut staked_validators_cache,
         );
 
@@ -8400,6 +8403,7 @@ pub(crate) mod tests {
             vote_history_storage,
             vote_info,
             Arc::new(connection_cache),
+            None,
             &mut staked_validators_cache,
         );
 
