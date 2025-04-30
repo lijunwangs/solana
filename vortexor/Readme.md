@@ -150,9 +150,19 @@ designed to be seamless for operators.
 
 To pair a validator and Vortexor, follow these steps:
 
----
 
-### Step 1: Run the Vortexor
+### Step 1: Determine the validator's receiver address and RPC/Web Socket Addresses
+The validator's receiver address should be first determined as the IP:port.
+For example, if there are multiple network interfaces, and the vortexor and validators
+can can communicate on the private network, the IP address can be of the private
+interface's address if the validator. The port should be free of collision from
+other ports used on the system.
+
+The RPC/Web socket server can be any available servers in the network. It does
+NOT need to be the pairing validator. There must be equal number of RPC and Web
+socket servers specified.
+
+### Step 2: Run the Vortexor
 Run the Vortexor using the following command:
 
 ```bash
@@ -185,7 +195,7 @@ solana-vortexor --identity /home/solana/.config/solana/id.json \
 
 ---
 
-### Step 2: Find the Vortexor's TPU and Forward Addresses
+### Step 3: Find the Vortexor's TPU and Forward Addresses
 The Vortexor's TPU and forward addresses can be found in its log file. For example:
 
 ```
@@ -196,12 +206,12 @@ When configuring the validator, deduct the `QUIC_PORT_OFFSET` (which is 6) from
 the TPU and forward ports. For example, with the ports shown in the vortexor's
 log file, the TPU and forward port should be set to the following when starting
 the validator:
-- TPU port: `9200` → `9194`
-- TPU forward port: `9201` → `9195`
+- TPU port: `9200` → `9194`, then specify 9194 in the --public-tpu-address for the validator.
+- TPU forward port: `9201` → `9195`, then specify 9195 in the --public-tpu-forwards-address for the validator.
 
 ---
 
-### Step 3: Configure the Validator
+### Step 4: Configure the Validator
 Run the validator with the following additional parameters to pair it with the Vortexor:
 
 ```bash
@@ -224,13 +234,3 @@ vortexor running on node 10.138.0.131:
 --public-tpu-address 10.138.0.131:9194 \
 --public-tpu-forwards-address 10.138.0.131:9195
 ```
-
----
-
-### Summary of Steps
-1. Determine the validator's receiver address and the RPC/WebSocket server addresses.
-2. Run the Vortexor with the above information.
-3. Find the Vortexor's TPU and forward addresses from its logs.
-4. Run the validator with the Vortexor's TPU and forward address information.
-
-This setup ensures the validator and Vortexor are properly paired.
