@@ -7,23 +7,44 @@
 //! is stopped along with the native TPU streamers.
 
 use {
-    crate::{banking_trace::TracedSender, sigverify::TransactionSigVerifier, sigverify_stage::SigVerifyStage, vortexor_receiver_adapter::VortexorReceiverAdapter}, agave_banking_stage_ingress_types::BankingPacketBatch, crossbeam_channel::Sender, log::{error, info}, solana_gossip::cluster_info::ClusterInfo, solana_perf::packet::PacketBatch, solana_sdk::signature::Keypair, solana_streamer::{
+    crate::{
+        admin_rpc_post_init::KeyNotifiers, banking_trace::TracedSender,
+        sigverify::TransactionSigVerifier, sigverify_stage::SigVerifyStage,
+        vortexor_receiver_adapter::VortexorReceiverAdapter,
+    },
+    agave_banking_stage_ingress_types::BankingPacketBatch,
+    core::panic,
+    crossbeam_channel::{Receiver, Sender},
+    log::info,
+    solana_gossip::{cluster_info::ClusterInfo, contact_info::Error as ContactInforError},
+    solana_perf::packet::PacketBatch,
+    solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair},
+    solana_streamer::{
         quic::{spawn_server_multi, QuicServerParams, SpawnServerResult},
         streamer::StakedNodes,
-    }, std::{
+    },
+    std::{
         net::{SocketAddr, UdpSocket},
         sync::{
             atomic::{AtomicBool, Ordering},
             Arc, RwLock,
         },
-        thread, time::Duration,
-    }
+        thread,
+        time::Duration,
+    },
 };
 
 /// The `SigVerifier` enum is used to determine whether to use a local or remote signature verifier.
 enum SigVerifier {
     Local(SigVerifyStage),
     Remote(VortexorReceiverAdapter),
+    Mixed((SigVerifyStage, VortexorReceiverAdapter)),
+}
+
+enum SigVerifierType {
+    Local,
+    Remote,
+    Mixed,
 }
 
 impl SigVerifier {
@@ -31,11 +52,15 @@ impl SigVerifier {
         match self {
             SigVerifier::Local(sig_verify_stage) => sig_verify_stage.join(),
             SigVerifier::Remote(vortexor_receiver_adapter) => vortexor_receiver_adapter.join(),
+            SigVerifier::Mixed((sig_verify_stage, vortexor_receiver_adapter)) => {
+                sig_verify_stage.join()?;
+                vortexor_receiver_adapter.join()
+            }
         }
     }
 }
 
-//// Configuration for the Vortexor receiver.
+/// Configuration for the Vortexor receiver.
 pub struct VotexorReceiverConfig {
     pub vortexor_tpu_address: SocketAddr,
     pub vortexor_tpu_forward_address: SocketAddr,
@@ -44,6 +69,8 @@ pub struct VotexorReceiverConfig {
 
 /// Configuration for the TpuSwitch.
 pub struct TpuSwitchConfig {
+    /// Indicating if UDP based TPU is still enabled
+    pub tpu_enable_udp: bool,
     pub vortexor_receiver_config: Option<VotexorReceiverConfig>,
     pub transactions_quic_sockets: Vec<UdpSocket>,
     pub transactions_forwards_quic_sockets: Vec<UdpSocket>,
@@ -58,6 +85,7 @@ pub struct TpuSwitchConfig {
     pub enable_block_production_forwarding: bool,
     pub non_vote_sender: TracedSender,
     pub forward_stage_sender: Sender<(BankingPacketBatch, bool)>,
+    pub key_notifiers: Arc<RwLock<KeyNotifiers>>,
 }
 
 /// Manages the fallback between vortexors and native TPU streamers.
@@ -66,11 +94,21 @@ pub struct TpuSwitch {
     cluster_info: Arc<ClusterInfo>,
     tpu_quic_t: Option<thread::JoinHandle<()>>,
     tpu_forwards_quic_t: Option<thread::JoinHandle<()>>,
+    sig_verifier: Option<SigVerifier>,
+    native_tpu_address: SocketAddr,
+    native_tpu_forward_address: SocketAddr,
     exit: Arc<AtomicBool>,
+    sub_service_exit: Arc<AtomicBool>,
 }
 
 fn clone_udp_sockets(sockets: &[UdpSocket]) -> Vec<UdpSocket> {
-    sockets.iter().map(|s| s.try_clone().expect("Expected to be able to clone the socket")).collect()
+    sockets
+        .iter()
+        .map(|s| {
+            s.try_clone()
+                .expect("Expected to be able to clone the socket")
+        })
+        .collect()
 }
 
 impl TpuSwitch {
@@ -80,88 +118,171 @@ impl TpuSwitch {
         cluster_info: Arc<ClusterInfo>,
         exit: Arc<AtomicBool>,
     ) -> Self {
-        let (tpu_quic_t, tpu_forwards_quic_t) = start_quic_tpu_streamers(&config, &exit);
+        let native_tpu_address = config.transactions_quic_sockets[0]
+            .local_addr()
+            .expect("Expected to be able to get local address");
+        let native_tpu_address = SocketAddr::new(
+            native_tpu_address.ip(),
+            native_tpu_address.port() - QUIC_PORT_OFFSET,
+        );
+        let native_tpu_forward_address = config.transactions_forwards_quic_sockets[0]
+            .local_addr()
+            .expect("Expected to be able to get local address");
+        let native_tpu_forward_address = SocketAddr::new(
+            native_tpu_forward_address.ip(),
+            native_tpu_forward_address.port() - QUIC_PORT_OFFSET,
+        );
 
-        let sig_verifier = if let Some(vortexor_config) = &config.vortexor_receiver_config {
-            info!("starting vortexor adapter");
-            let sockets = vortexor_config.vortexor_receivers.into_iter().map(Arc::new).collect();
-            let adapter = VortexorReceiverAdapter::new(
-                sockets,
-                Duration::from_millis(5),
-                config.tpu_coalesce.clone(),
-                config.non_vote_sender.clone(),
-                config.enable_block_production_forwarding.then(|| config.forward_stage_sender.clone()),
-                exit.clone(),
-            );
-            SigVerifier::Remote(adapter)
+        let cluster_info = cluster_info.clone();
+        let sub_service_exit = Arc::new(AtomicBool::new(false));
+        let (tpu_quic_t, tpu_forwards_quic_t) =
+            start_quic_tpu_streamers(&config, &sub_service_exit);
+
+        let verifier_type = if config.vortexor_receiver_config.is_some() {
+            if config.tpu_enable_udp {
+                SigVerifierType::Mixed
+            } else {
+                SigVerifierType::Remote
+            }
         } else {
-            info!("starting regular sigverify stage");
-            let verifier = TransactionSigVerifier::new(
-                config.non_vote_sender.clone(),
-                config.enable_block_production_forwarding.then(|| config.forward_stage_sender.clone()),
-            );
-            SigVerifier::Local(SigVerifyStage::new(
-                config.packet_receiver.clone(),
-                verifier,
-                "solSigVerTpu",
-                "tpu-verifier",
-            ))
+            SigVerifierType::Local
         };
+        let sig_verifier = Some(start_sig_verifier(
+            verifier_type,
+            &config,
+            &sub_service_exit,
+        ));
 
         Self {
             config,
             cluster_info,
             tpu_quic_t,
             tpu_forwards_quic_t,
+            sig_verifier,
+            native_tpu_address,
+            native_tpu_forward_address,
             exit,
+            sub_service_exit,
         }
     }
 
     /// Switches to the vortexor by updating gossip and stopping the native TPU streamers.
-    pub fn switch_to_vortexor(&self) {
+    pub fn switch_to_vortexor(&mut self) {
         info!("Switching to vortexor...");
-        self.update_gossip(
-            self.config.vortexor_tpu_address,
-            self.config.vortexor_tpu_forward_address,
-        );
+        if let Some(vortexor_config) = &self.config.vortexor_receiver_config {
+            self.update_gossip(
+                &vortexor_config.vortexor_tpu_address,
+                &vortexor_config.vortexor_tpu_forward_address,
+            )
+            .expect("Failed to update TPU address via gossip");
 
-        // Stop the native TPU streamers.
-        if let Ok(mut tpu) = self.tpu.write() {
-            if let Err(err) = tpu.join() {
-                error!("Failed to stop native TPU streamers: {:?}", err);
+            let sub_service_exit = Arc::new(AtomicBool::new(false));
+
+            self.sig_verifier = match self.sig_verifier.take() {
+                Some(SigVerifier::Local(sig_verify_stage)) => {
+                    if !self.config.tpu_enable_udp {
+                        sig_verify_stage.join().unwrap_or_else(|err| {
+                            panic!("Failed to stop local sig verifier: {:?}", err)
+                        });
+                        Some(SigVerifier::Remote(start_remote_sig_verifier(
+                            &self.config,
+                            &sub_service_exit,
+                        )))
+                    } else {
+                        Some(SigVerifier::Mixed((
+                            sig_verify_stage,
+                            start_remote_sig_verifier(&self.config, &sub_service_exit),
+                        )))
+                    }
+                }
+                Some(SigVerifier::Mixed((_, _))) => {
+                    // Vortexor receiver is already started
+                    panic!("Wrong TPU switch from Mixed to Remote");
+                }
+                Some(SigVerifier::Remote(_)) => {
+                    // Vortexor receiver is already started
+                    panic!("Wrong TPU switch from Remote to Remote");
+                }
+                None => {
+                    panic!("Sig verifier is not set");
+                }
+            };
+
+            // Stop the native TPU streamers.
+            self.sub_service_exit.store(true, Ordering::Relaxed);
+            if let Some(tpu_quic_t) = self.tpu_quic_t.take() {
+                tpu_quic_t
+                    .join()
+                    .unwrap_or_else(|err| panic!("Failed to stop native TPU streamer: {:?}", err));
             }
-        }
+            if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t.take() {
+                tpu_forwards_quic_t.join().unwrap_or_else(|err| {
+                    panic!("Failed to stop native TPU forward streamer: {:?}", err)
+                });
+            }
+
+            self.sub_service_exit = sub_service_exit;
+        } else {
+            error!("Vortexor receiver config is not set");
+        };
     }
 
     /// Switches to the native TPU streamers by updating gossip and starting the TPU.
-    pub fn switch_to_native_tpu(&self) {
+    pub fn switch_to_native_tpu(&mut self) {
         info!("Switching to native TPU streamers...");
-        self.update_gossip(
-            self.config.native_tpu_address,
-            self.config.native_tpu_forward_address,
-        );
+        self.update_gossip(&self.native_tpu_address, &self.native_tpu_forward_address)
+            .expect("Failed to update TPU address via gossip");
+        self.sub_service_exit.store(true, Ordering::Relaxed);
 
-        // Start the native TPU streamers.
-        if let Ok(mut tpu) = self.tpu.write() {
-            // Restart the TPU (implementation depends on your TPU struct).
-            info!("Starting native TPU streamers...");
-        }
+        let sub_service_exit = Arc::new(AtomicBool::new(false));
+
+        self.sig_verifier = match self.sig_verifier.take() {
+            Some(SigVerifier::Remote(vortexor_receiver_adapter)) => {
+                vortexor_receiver_adapter
+                    .join()
+                    .unwrap_or_else(|err| panic!("Failed to stop vortexor receiver: {:?}", err));
+                Some(SigVerifier::Local(start_local_sig_verifier(&self.config)))
+            }
+            Some(SigVerifier::Mixed((sig_verify_stage, vortexor_receiver))) => {
+                vortexor_receiver
+                    .join()
+                    .unwrap_or_else(|err| panic!("Failed to stop local sig verifier: {:?}", err));
+                Some(SigVerifier::Local(sig_verify_stage))
+            }
+            Some(SigVerifier::Local(_)) => {
+                // Local sig verifier is already started
+                panic!("Wrong TPU switch from Local to Local");
+            }
+            None => {
+                panic!("Sig verifier is not set");
+            }
+        };
+
+        let (tpu_quic_t, tpu_forwards_quic_t) =
+            start_quic_tpu_streamers(&self.config, &sub_service_exit);
+        self.tpu_quic_t = tpu_quic_t;
+        self.tpu_forwards_quic_t = tpu_forwards_quic_t;
+        self.sub_service_exit = sub_service_exit;
     }
 
     /// Updates gossip to advertise the given TPU and TPU forward addresses.
-    fn update_gossip(&self, tpu_address: SocketAddr, tpu_forward_address: SocketAddr) {
+    fn update_gossip(
+        &self,
+        tpu_address: &SocketAddr,
+        tpu_forward_address: &SocketAddr,
+    ) -> Result<(), ContactInforError> {
         info!(
             "Updating gossip to advertise TPU address: {} and TPU forward address: {}",
             tpu_address, tpu_forward_address
         );
-
-        // Implementation for updating gossip (depends on your GossipService).
+        self.cluster_info.set_tpu(*tpu_address)?;
+        self.cluster_info
+            .set_tpu_forwards(*tpu_forward_address)
     }
 
     /// Starts the fallback manager loop to monitor and handle transitions.
     pub fn start(&self) {
         let exit = self.exit.clone();
-        let manager = self.clone();
 
         thread::spawn(move || {
             while !exit.load(Ordering::Relaxed) {
@@ -172,10 +293,86 @@ impl TpuSwitch {
             info!("Exiting TpuSwitch...");
         });
     }
+
+    pub fn join(self) -> thread::Result<()> {
+        if let Some(sig_verifier) = self.sig_verifier {
+            sig_verifier.join()?;
+        }
+        if let Some(tpu_quic_t) = self.tpu_quic_t {
+            tpu_quic_t.join()?;
+        }
+        if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t {
+            tpu_forwards_quic_t.join()?;
+        }
+        Ok(())
+    }
 }
 
-fn start_quic_tpu_streamers(config: &TpuSwitchConfig, exit: &Arc<AtomicBool>) -> (Option<thread::JoinHandle<()>>, Option<thread::JoinHandle<()>>) {
+fn start_sig_verifier(
+    verifier_type: SigVerifierType,
+    config: &TpuSwitchConfig,
+    exit: &Arc<AtomicBool>,
+) -> SigVerifier {
+    match verifier_type {
+        SigVerifierType::Remote => SigVerifier::Remote(start_remote_sig_verifier(config, exit)),
+        SigVerifierType::Local => SigVerifier::Local(start_local_sig_verifier(config)),
+        SigVerifierType::Mixed => {
+            let local_sig_verifier = start_local_sig_verifier(config);
+            let remote_sig_verifier = start_remote_sig_verifier(config, exit);
+            SigVerifier::Mixed((local_sig_verifier, remote_sig_verifier))
+        }
+    }
+}
+
+fn start_local_sig_verifier(config: &TpuSwitchConfig) -> SigVerifyStage {
+    info!("starting regular sigverify stage");
+    let verifier = TransactionSigVerifier::new(
+        config.non_vote_sender.clone(),
+        config
+            .enable_block_production_forwarding
+            .then(|| config.forward_stage_sender.clone()),
+    );
+    SigVerifyStage::new(
+        config.packet_receiver.clone(),
+        verifier,
+        "solSigVerTpu",
+        "tpu-verifier",
+    )
+}
+
+fn start_remote_sig_verifier(
+    config: &TpuSwitchConfig,
+    exit: &Arc<AtomicBool>,
+) -> VortexorReceiverAdapter {
+    info!("starting vortexor adapter");
+    let vortexor_config = config
+        .vortexor_receiver_config
+        .as_ref()
+        .expect("Vortexor config is required for remote sig verifier");
+    let sockets = clone_udp_sockets(&vortexor_config.vortexor_receivers);
+    let sockets = sockets.into_iter().map(Arc::new).collect();
+
+    VortexorReceiverAdapter::new(
+        sockets,
+        Duration::from_millis(5),
+        config.tpu_coalesce,
+        config.non_vote_sender.clone(),
+        config
+            .enable_block_production_forwarding
+            .then(|| config.forward_stage_sender.clone()),
+        exit.clone(),
+    )
+}
+
+fn start_quic_tpu_streamers(
+    config: &TpuSwitchConfig,
+    exit: &Arc<AtomicBool>,
+) -> (
+    Option<thread::JoinHandle<()>>,
+    Option<thread::JoinHandle<()>>,
+) {
     let TpuSwitchConfig {
+        tpu_enable_udp: _,
         vortexor_receiver_config,
         keypair,
         transactions_quic_sockets,
@@ -189,6 +386,8 @@ fn start_quic_tpu_streamers(config: &TpuSwitchConfig, exit: &Arc<AtomicBool>) ->
         non_vote_sender: _,
         forward_stage_sender: _,
         tpu_coalesce: _,
+        packet_receiver: _,
+        key_notifiers,
     } = config;
 
     let (tpu_quic_t, key_updater) = if vortexor_receiver_config.is_none() {
@@ -234,16 +433,18 @@ fn start_quic_tpu_streamers(config: &TpuSwitchConfig, exit: &Arc<AtomicBool>) ->
     } else {
         (None, None)
     };
-    (tpu_quic_t, tpu_forwards_quic_t)
-}
 
-impl Clone for TpuSwitch {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            gossip_service: Arc::clone(&self.gossip_service),
-            tpu: Arc::clone(&self.tpu),
-            exit: Arc::clone(&self.exit),
-        }
+    if let Some(key_updater) = key_updater {
+        key_notifiers
+            .write()
+            .unwrap()
+            .add("tpu_quic".to_string(), key_updater);
     }
+    if let Some(forwards_key_updater) = forwards_key_updater {
+        key_notifiers
+            .write()
+            .unwrap()
+            .add("tpu_forwards_quic".to_string(), forwards_key_updater);
+    }
+    (tpu_quic_t, tpu_forwards_quic_t)
 }
