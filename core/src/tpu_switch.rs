@@ -47,6 +47,9 @@ enum SigVerifierType {
     Mixed,
 }
 
+const KEY_UPDATER_TPU_QUIC: &str = "tpu_quic";
+const KEY_UPDATER_TPU_FORWARDS_QUIC: &str = "tpu_forwards_quic";
+
 impl SigVerifier {
     fn join(self) -> thread::Result<()> {
         match self {
@@ -182,7 +185,7 @@ impl TpuSwitch {
                 Some(SigVerifier::Local(sig_verify_stage)) => {
                     if !self.config.tpu_enable_udp {
                         sig_verify_stage.join().unwrap_or_else(|err| {
-                            panic!("Failed to stop local sig verifier: {:?}", err)
+                            panic!("Failed to stop local sig verifier: {err:?}")
                         });
                         Some(SigVerifier::Remote(start_remote_sig_verifier(
                             &self.config,
@@ -213,12 +216,22 @@ impl TpuSwitch {
             if let Some(tpu_quic_t) = self.tpu_quic_t.take() {
                 tpu_quic_t
                     .join()
-                    .unwrap_or_else(|err| panic!("Failed to stop native TPU streamer: {:?}", err));
+                    .unwrap_or_else(|err| panic!("Failed to stop native TPU streamer: {err:?}"));
+                self.config
+                    .key_notifiers
+                    .write()
+                    .unwrap()
+                    .remove(KEY_UPDATER_TPU_QUIC);
             }
             if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t.take() {
                 tpu_forwards_quic_t.join().unwrap_or_else(|err| {
-                    panic!("Failed to stop native TPU forward streamer: {:?}", err)
+                    panic!("Failed to stop native TPU forward streamer: {err:?}")
                 });
+                self.config
+                    .key_notifiers
+                    .write()
+                    .unwrap()
+                    .remove(KEY_UPDATER_TPU_FORWARDS_QUIC);
             }
 
             self.sub_service_exit = sub_service_exit;
@@ -240,13 +253,13 @@ impl TpuSwitch {
             Some(SigVerifier::Remote(vortexor_receiver_adapter)) => {
                 vortexor_receiver_adapter
                     .join()
-                    .unwrap_or_else(|err| panic!("Failed to stop vortexor receiver: {:?}", err));
+                    .unwrap_or_else(|err| panic!("Failed to stop vortexor receiver: {err:?}"));
                 Some(SigVerifier::Local(start_local_sig_verifier(&self.config)))
             }
             Some(SigVerifier::Mixed((sig_verify_stage, vortexor_receiver))) => {
                 vortexor_receiver
                     .join()
-                    .unwrap_or_else(|err| panic!("Failed to stop local sig verifier: {:?}", err));
+                    .unwrap_or_else(|err| panic!("Failed to stop local sig verifier: {err:?}"));
                 Some(SigVerifier::Local(sig_verify_stage))
             }
             Some(SigVerifier::Local(_)) => {
@@ -272,12 +285,10 @@ impl TpuSwitch {
         tpu_forward_address: &SocketAddr,
     ) -> Result<(), ContactInforError> {
         info!(
-            "Updating gossip to advertise TPU address: {} and TPU forward address: {}",
-            tpu_address, tpu_forward_address
+            "Updating gossip to advertise TPU address: {tpu_address} and TPU forward address: {tpu_forward_address}",
         );
         self.cluster_info.set_tpu(*tpu_address)?;
-        self.cluster_info
-            .set_tpu_forwards(*tpu_forward_address)
+        self.cluster_info.set_tpu_forwards(*tpu_forward_address)
     }
 
     /// Starts the fallback manager loop to monitor and handle transitions.
@@ -438,13 +449,13 @@ fn start_quic_tpu_streamers(
         key_notifiers
             .write()
             .unwrap()
-            .add("tpu_quic".to_string(), key_updater);
+            .add(KEY_UPDATER_TPU_QUIC.to_string(), key_updater);
     }
     if let Some(forwards_key_updater) = forwards_key_updater {
-        key_notifiers
-            .write()
-            .unwrap()
-            .add("tpu_forwards_quic".to_string(), forwards_key_updater);
+        key_notifiers.write().unwrap().add(
+            KEY_UPDATER_TPU_FORWARDS_QUIC.to_string(),
+            forwards_key_updater,
+        );
     }
     (tpu_quic_t, tpu_forwards_quic_t)
 }

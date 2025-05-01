@@ -1669,6 +1669,14 @@ impl Validator {
             // because it is added inside Tpu.
         }
 
+        // add connection_cache because it is still used in Forwarder.
+        if let Some(connection_cache) = connection_cache {
+            key_notifiers
+                .write()
+                .unwrap()
+                .add("connection_cache".to_string(), connection_cache);
+        }
+
         *admin_rpc_service_post_init.write().unwrap() = Some(AdminRpcRequestMetadataPostInit {
             bank_forks: bank_forks.clone(),
             cluster_info: cluster_info.clone(),
