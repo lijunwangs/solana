@@ -316,10 +316,13 @@ async fn run_server(
     let staked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
     let (sender, receiver) = bounded(coalesce_channel_size);
-    let exit_clone = exit.clone();
-    let stats_clone = stats.clone();
-    thread::spawn(move || {
-        packet_batch_sender(packet_sender, receiver, exit_clone, stats_clone, coalesce);
+
+    thread::spawn({
+        let exit = exit.clone();
+        let stats = stats.clone();
+        move || {
+            packet_batch_sender(packet_sender, receiver, exit, stats, coalesce);
+        }
     });
 
     let mut accepts = endpoints
@@ -1710,15 +1713,17 @@ pub mod test {
         let exit = Arc::new(AtomicBool::new(false));
         let stats = Arc::new(StreamerStats::default());
 
-        let exit_clone = exit.clone();
-        let handle = thread::spawn(move || {
-            packet_batch_sender(
-                pkt_batch_sender,
-                pkt_receiver,
-                exit_clone,
-                stats,
-                DEFAULT_TPU_COALESCE,
-            );
+        let handle = thread::spawn({
+            let exit = exit.clone();
+            move || {
+                packet_batch_sender(
+                    pkt_batch_sender,
+                    pkt_receiver,
+                    exit,
+                    stats,
+                    DEFAULT_TPU_COALESCE,
+                );
+            }
         });
 
         let num_packets = 1000;
