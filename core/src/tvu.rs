@@ -247,6 +247,7 @@ impl Tvu {
             unbounded();
         let (dumped_slots_sender, dumped_slots_receiver) = unbounded();
         let (popular_pruned_forks_sender, popular_pruned_forks_receiver) = unbounded();
+        let (certificate_sender, certificate_receiver) = unbounded();
         let window_service = {
             let epoch_schedule = bank_forks
                 .read()
@@ -289,6 +290,7 @@ impl Tvu {
                 window_service_channels,
                 leader_schedule_cache.clone(),
                 outstanding_repair_requests,
+                certificate_receiver,
             )
         };
 
@@ -322,6 +324,7 @@ impl Tvu {
             block_metadata_notifier,
             dumped_slots_sender,
             alpenglow_vote_sender,
+            certificate_sender,
         };
 
         let replay_receivers = ReplayReceivers {
