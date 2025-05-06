@@ -62,35 +62,21 @@ impl Vortexor {
     ) -> TpuSockets {
         let quic_config = SocketConfig::default().reuseport(true);
 
-        let tpu_port_range = tpu_address
-            .map(|addr| (addr.port(), addr.port().saturating_add(1)))
-            .unwrap_or(dynamic_port_range);
-
-        let tpu_bind_address = tpu_address.map(|addr| addr.ip()).unwrap_or(bind_address);
-
-        let (_, tpu_quic) =
-            bind_in_range_with_config(tpu_bind_address, tpu_port_range, quic_config)
-                .expect("expected bind to succeed");
-
-        let tpu_quic_port = tpu_quic.local_addr().unwrap().port();
-        let tpu_quic = bind_more_with_config(tpu_quic, num_quic_endpoints, quic_config).unwrap();
-
-        let tpu_forward_bind_address = tpu_forward_address
-            .map(|addr| addr.ip())
-            .unwrap_or(bind_address);
-
-        let tpu_forward_port_range = tpu_forward_address
-            .map(|addr| (addr.port(), addr.port().saturating_add(1)))
-            .unwrap_or((tpu_quic_port.saturating_add(1), dynamic_port_range.1));
-        let (_, tpu_quic_fwd) = bind_in_range_with_config(
-            tpu_forward_bind_address,
-            tpu_forward_port_range,
+        let tpu_quic = bind_sockets(
+            bind_address,
+            dynamic_port_range,
+            tpu_address,
+            num_quic_endpoints,
             quic_config,
-        )
-        .expect("expected bind to succeed");
+        );
 
-        let tpu_quic_fwd =
-            bind_more_with_config(tpu_quic_fwd, num_quic_endpoints, quic_config).unwrap();
+        let tpu_quic_fwd = bind_sockets(
+            bind_address,
+            dynamic_port_range,
+            tpu_forward_address,
+            num_quic_endpoints,
+            quic_config,
+        );
 
         TpuSockets {
             tpu_quic,
@@ -191,4 +177,23 @@ impl Vortexor {
         }
         Ok(())
     }
+}
+
+/// Binds the sockets to the specified address and port range if address is Some.
+/// If the address is None, it binds to the specified bind_address and port range.
+fn bind_sockets(
+    bind_address: std::net::IpAddr,
+    port_range: (u16, u16),
+    address: Option<SocketAddr>,
+    num_quic_endpoints: usize,
+    quic_config: SocketConfig,
+) -> Vec<UdpSocket> {
+    let (bind_address, port_range) = address
+        .map(|addr| (addr.ip(), (addr.port(), addr.port().saturating_add(1))))
+        .unwrap_or((bind_address, port_range));
+
+    let (_, socket) = bind_in_range_with_config(bind_address, port_range, quic_config)
+        .expect("expected bind to succeed");
+
+    bind_more_with_config(socket, num_quic_endpoints, quic_config).unwrap()
 }
