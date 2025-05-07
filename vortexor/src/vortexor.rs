@@ -4,7 +4,7 @@ use {
         banking_trace::TracedSender, sigverify::TransactionSigVerifier,
         sigverify_stage::SigVerifyStage,
     },
-    solana_net_utils::{bind_in_range_with_config, bind_more_with_config, SocketConfig},
+    solana_net_utils::{multi_bind_in_range_with_config, SocketConfig},
     solana_perf::packet::PacketBatch,
     solana_sdk::{quic::NotifyKeyUpdate, signature::Keypair},
     solana_streamer::{
@@ -192,8 +192,8 @@ fn bind_sockets(
         .map(|addr| (addr.ip(), (addr.port(), addr.port().saturating_add(1))))
         .unwrap_or((bind_address, port_range));
 
-    let (_, socket) = bind_in_range_with_config(bind_address, port_range, quic_config)
-        .expect("expected bind to succeed");
-
-    bind_more_with_config(socket, num_quic_endpoints, quic_config).unwrap()
+    let (_, sockets) =
+        multi_bind_in_range_with_config(bind_address, port_range, quic_config, num_quic_endpoints)
+            .expect("expected bind to succeed");
+    sockets
 }
