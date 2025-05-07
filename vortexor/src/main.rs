@@ -176,10 +176,10 @@ pub fn main() {
 
     for destination in destinations.read().unwrap().iter() {
         info!(
-            "To pair the validator with receiver address {destination} with this
-             vortexor, add the following arguments in the validator's start command:\
-              --tpu-vortexor-receiver-address {destination}\
-              --public-tpu-address {tpu_public_address}
+            "To pair the validator with receiver address {destination} with this \
+             vortexor, add the following arguments in the validator's start command: \
+              --tpu-vortexor-receiver-address {destination} \
+              --public-tpu-address {tpu_public_address} \
               --public-tpu-forward-address {tpu_fwd_public_address}",
         );
     }
