@@ -54,7 +54,7 @@ impl AsyncTaskSemaphore {
         while *count > self.permits {
             count = self.cond_var.wait(count).unwrap();
         }
-        info!("AsyncTaskSemaphore acquired, count: {}", *count);
+        debug!("AsyncTaskSemaphore acquired, count: {}", *count);
         count
     }
 
