@@ -21,7 +21,7 @@ use {
     tokio::{runtime::Runtime, time::timeout},
 };
 
-pub const MAX_OUTSTANDING_TASK: u64 = 20000000;
+pub const MAX_OUTSTANDING_TASK: u64 = 2000;
 const SEND_DATA_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A semaphore used for limiting the number of asynchronous tasks spawn to the
@@ -54,7 +54,7 @@ impl AsyncTaskSemaphore {
         while *count > self.permits {
             count = self.cond_var.wait(count).unwrap();
         }
-        debug!("AsyncTaskSemaphore acquired, count: {}", *count);
+        //debug!("AsyncTaskSemaphore acquired, count: {}", *count);
         count
     }
 
