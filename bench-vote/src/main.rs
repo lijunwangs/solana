@@ -129,6 +129,12 @@ fn main() -> Result<()> {
                 .default_value("false")
                 .help("Controls if to use QUIC for sending/receiving vote transactions."),
         )
+        .arg(
+            Arg::with_name("async")
+                .long("async")
+                .requires("use-quic")
+                .help("Controls if to use async method for sending/receiving vote transactions."),
+        )
         .get_matches();
 
     solana_logger::setup();
@@ -144,6 +150,7 @@ fn main() -> Result<()> {
     let server_only = matches.is_present("server-only");
     let client_only = matches.is_present("client-only");
     let verbose = matches.is_present("verbose");
+    let async_send = matches.is_present("async");
 
     let destination = matches.is_present("server-address").then(|| {
         let addr = matches
@@ -264,6 +271,7 @@ fn main() -> Result<()> {
             use_connection_cache,
             verbose,
             quic_params,
+            async_send,
         )
     });
 
@@ -319,6 +327,7 @@ fn producer(
     use_connection_cache: bool,
     verbose: bool,
     quic_params: Option<QuicParams>,
+    async_send: bool,
 ) -> Vec<JoinHandle<()>> {
     println!("Running clients against {sock:?}");
     let transporter = if use_connection_cache || quic_params.is_some() {
@@ -383,7 +392,13 @@ fn producer(
                     Transporter::Cache(cache) => {
                         let connection = cache.get_connection(&sock);
 
-                        match connection.send_data(&serialized_transaction) {
+                        let result = if async_send {
+                            connection.send_data_async(serialized_transaction)
+                        } else {
+                            connection.send_data(&serialized_transaction)
+                        };
+
+                        match result {
                             Ok(_) => {
                                 if verbose {
                                     println!("Sent transaction successfully");
