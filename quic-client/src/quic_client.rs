@@ -54,7 +54,6 @@ impl AsyncTaskSemaphore {
         while *count > self.permits {
             count = self.cond_var.wait(count).unwrap();
         }
-        panic!("Debug if I am called!");
         info!("AsyncTaskSemaphore acquired, count: {}", *count);
         count
     }
