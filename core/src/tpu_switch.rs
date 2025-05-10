@@ -172,107 +172,149 @@ impl TpuSwitch {
     /// Switches to the vortexor by updating gossip and stopping the native TPU streamers.
     pub fn switch_to_vortexor(&mut self) {
         info!("Switching to vortexor...");
+
         if let Some(vortexor_config) = &self.config.vortexor_receiver_config {
-            self.update_gossip(
-                &vortexor_config.vortexor_tpu_address,
-                &vortexor_config.vortexor_tpu_forward_address,
-            )
-            .expect("Failed to update TPU address via gossip");
+            self.update_gossip_addresses(vortexor_config);
 
             let sub_service_exit = Arc::new(AtomicBool::new(false));
+            self.switch_sig_verifier_to_vortexor(&sub_service_exit);
 
-            self.sig_verifier = match self.sig_verifier.take() {
-                Some(SigVerifier::Local(sig_verify_stage)) => {
-                    if !self.config.tpu_enable_udp {
-                        sig_verify_stage.join().unwrap_or_else(|err| {
-                            panic!("Failed to stop local sig verifier: {err:?}")
-                        });
-                        Some(SigVerifier::Remote(start_remote_sig_verifier(
-                            &self.config,
-                            &sub_service_exit,
-                        )))
-                    } else {
-                        Some(SigVerifier::Mixed((
-                            sig_verify_stage,
-                            start_remote_sig_verifier(&self.config, &sub_service_exit),
-                        )))
-                    }
-                }
-                Some(SigVerifier::Mixed((_, _))) => {
-                    // Vortexor receiver is already started
-                    panic!("Wrong TPU switch from Mixed to Remote");
-                }
-                Some(SigVerifier::Remote(_)) => {
-                    // Vortexor receiver is already started
-                    panic!("Wrong TPU switch from Remote to Remote");
-                }
-                None => {
-                    panic!("Sig verifier is not set");
-                }
-            };
-
-            // Stop the native TPU streamers.
-            self.sub_service_exit.store(true, Ordering::Relaxed);
-            if let Some(tpu_quic_t) = self.tpu_quic_t.take() {
-                tpu_quic_t
-                    .join()
-                    .unwrap_or_else(|err| panic!("Failed to stop native TPU streamer: {err:?}"));
-                self.config
-                    .key_notifiers
-                    .write()
-                    .unwrap()
-                    .remove(KEY_UPDATER_TPU_QUIC);
-            }
-            if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t.take() {
-                tpu_forwards_quic_t.join().unwrap_or_else(|err| {
-                    panic!("Failed to stop native TPU forward streamer: {err:?}")
-                });
-                self.config
-                    .key_notifiers
-                    .write()
-                    .unwrap()
-                    .remove(KEY_UPDATER_TPU_FORWARDS_QUIC);
-            }
+            self.stop_native_tpu_streamers();
 
             self.sub_service_exit = sub_service_exit;
         } else {
             error!("Vortexor receiver config is not set");
-        };
+        }
     }
 
-    /// Switches to the native TPU streamers by updating gossip and starting the TPU.
-    pub fn switch_to_native_tpu(&mut self) {
-        info!("Switching to native TPU streamers...");
-        self.update_gossip(&self.native_tpu_address, &self.native_tpu_forward_address)
-            .expect("Failed to update TPU address via gossip");
-        self.sub_service_exit.store(true, Ordering::Relaxed);
+    /// Updates gossip to advertise vortexor TPU and TPU forward addresses.
+    fn update_gossip_addresses(&self, vortexor_config: &VotexorReceiverConfig) {
+        self.update_gossip(
+            &vortexor_config.vortexor_tpu_address,
+            &vortexor_config.vortexor_tpu_forward_address,
+        )
+        .expect("Failed to update TPU address via gossip");
+    }
 
-        let sub_service_exit = Arc::new(AtomicBool::new(false));
-
+    /// Switches the signature verifier to use the vortexor.
+    fn switch_sig_verifier_to_vortexor(&mut self, sub_service_exit: &Arc<AtomicBool>) {
         self.sig_verifier = match self.sig_verifier.take() {
-            Some(SigVerifier::Remote(vortexor_receiver_adapter)) => {
-                vortexor_receiver_adapter
-                    .join()
-                    .unwrap_or_else(|err| panic!("Failed to stop vortexor receiver: {err:?}"));
-                Some(SigVerifier::Local(start_local_sig_verifier(&self.config)))
+            Some(SigVerifier::Local(sig_verify_stage)) => {
+                if !self.config.tpu_enable_udp {
+                    sig_verify_stage.join().unwrap_or_else(|err| {
+                        panic!("Failed to stop local sig verifier: {err:?}")
+                    });
+                    Some(SigVerifier::Remote(start_remote_sig_verifier(
+                        &self.config,
+                        sub_service_exit,
+                    )))
+                } else {
+                    Some(SigVerifier::Mixed((
+                        sig_verify_stage,
+                        start_remote_sig_verifier(&self.config, sub_service_exit),
+                    )))
+                }
             }
-            Some(SigVerifier::Mixed((sig_verify_stage, vortexor_receiver))) => {
-                vortexor_receiver
-                    .join()
-                    .unwrap_or_else(|err| panic!("Failed to stop local sig verifier: {err:?}"));
-                Some(SigVerifier::Local(sig_verify_stage))
+            Some(SigVerifier::Mixed((_, _))) => {
+                panic!("Wrong TPU switch from Mixed to Remote");
             }
-            Some(SigVerifier::Local(_)) => {
-                // Local sig verifier is already started
-                panic!("Wrong TPU switch from Local to Local");
+            Some(SigVerifier::Remote(_)) => {
+                panic!("Wrong TPU switch from Remote to Remote");
             }
             None => {
                 panic!("Sig verifier is not set");
             }
         };
+    }
 
+    /// Stops the native TPU streamers and removes their key notifiers.
+    fn stop_native_tpu_streamers(&mut self) {
+        self.sub_service_exit.store(true, Ordering::Relaxed);
+
+        if let Some(tpu_quic_t) = self.tpu_quic_t.take() {
+            tpu_quic_t
+                .join()
+                .unwrap_or_else(|err| panic!("Failed to stop native TPU streamer: {err:?}"));
+            self.config
+                .key_notifiers
+                .write()
+                .unwrap()
+                .remove(KEY_UPDATER_TPU_QUIC);
+        }
+
+        if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t.take() {
+            tpu_forwards_quic_t
+                .join()
+                .unwrap_or_else(|err| panic!("Failed to stop native TPU forward streamer: {err:?}"));
+            self.config
+                .key_notifiers
+                .write()
+                .unwrap()
+                .remove(KEY_UPDATER_TPU_FORWARDS_QUIC);
+        }
+    }
+
+    /// Switches to the native TPU streamers by updating gossip and starting the TPU.
+    pub fn switch_to_native_tpu(&mut self) {
+        info!("Switching to native TPU streamers...");
+
+        // Update gossip to advertise native TPU addresses
+        self.update_native_tpu_gossip();
+
+        // Stop vortexor-related services
+        self.stop_vortexor_services();
+
+        // Start native TPU streamers
+        self.start_native_tpu_streamers();
+    }
+
+    /// Updates gossip to advertise native TPU and TPU forward addresses.
+    fn update_native_tpu_gossip(&self) {
+        self.update_gossip(&self.native_tpu_address, &self.native_tpu_forward_address)
+            .expect("Failed to update TPU address via gossip");
+    }
+
+    /// Stops vortexor-related services and resets the signature verifier.
+    fn stop_vortexor_services(&mut self) {
+        self.sub_service_exit.store(true, Ordering::Relaxed);
+
+        // Stop the current signature verifier
+        self.sig_verifier = self.stop_and_reset_sig_verifier();
+    }
+
+    /// Stops the current signature verifier and resets it to a local verifier.
+    fn stop_and_reset_sig_verifier(&mut self) -> Option<SigVerifier> {
+        match self.sig_verifier.take() {
+            Some(SigVerifier::Remote(vortexor_receiver_adapter)) => {
+                self.stop_vortexor_receiver(vortexor_receiver_adapter);
+                Some(SigVerifier::Local(start_local_sig_verifier(&self.config)))
+            }
+            Some(SigVerifier::Mixed((sig_verify_stage, vortexor_receiver_adapter))) => {
+                self.stop_vortexor_receiver(vortexor_receiver_adapter);
+                Some(SigVerifier::Local(sig_verify_stage))
+            }
+            Some(SigVerifier::Local(_)) => {
+                panic!("Wrong TPU switch from Local to Local");
+            }
+            None => {
+                panic!("Sig verifier is not set");
+            }
+        }
+    }
+
+    /// Stops the vortexor receiver adapter.
+    fn stop_vortexor_receiver(&self, vortexor_receiver_adapter: VortexorReceiverAdapter) {
+        vortexor_receiver_adapter
+            .join()
+            .unwrap_or_else(|err| panic!("Failed to stop vortexor receiver: {err:?}"));
+    }
+
+    /// Starts the native TPU streamers and updates the sub-service exit flag.
+    fn start_native_tpu_streamers(&mut self) {
+        let sub_service_exit = Arc::new(AtomicBool::new(false));
         let (tpu_quic_t, tpu_forwards_quic_t) =
             start_quic_tpu_streamers(&self.config, &sub_service_exit);
+
         self.tpu_quic_t = tpu_quic_t;
         self.tpu_forwards_quic_t = tpu_forwards_quic_t;
         self.sub_service_exit = sub_service_exit;
