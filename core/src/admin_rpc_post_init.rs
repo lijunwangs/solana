@@ -31,26 +31,25 @@ pub enum KeyUpdaterType {
     ConnectionCache,
 }
 
-/// Responsible for managing the updaters for key updates
+/// Responsible for managing the updaters for identity key change
 #[derive(Default)]
 pub struct KeyUpdaters {
-    pub notifies: HashMap<KeyUpdaterType, Arc<dyn NotifyKeyUpdate + Sync + Send>>,
+    updaters: HashMap<KeyUpdaterType, Arc<dyn NotifyKeyUpdate + Sync + Send>>,
 }
 
 impl KeyUpdaters {
     /// Add a new key updater to the list
-    pub fn add(&mut self, key: KeyUpdaterType, notify: Arc<dyn NotifyKeyUpdate + Sync + Send>) {
-        self.notifies.insert(key, notify);
-    }
-
-    /// Get a key updater by its key
-    pub fn get(&self, key: &KeyUpdaterType) -> Option<Arc<dyn NotifyKeyUpdate + Sync + Send>> {
-        self.notifies.get(key).cloned()
+    pub fn add(
+        &mut self,
+        updater_type: KeyUpdaterType,
+        updater: Arc<dyn NotifyKeyUpdate + Sync + Send>,
+    ) {
+        self.updaters.insert(updater_type, updater);
     }
 
     /// Remove a key updater by its key
-    pub fn remove(&mut self, key: &KeyUpdaterType) {
-        self.notifies.remove(key);
+    pub fn remove(&mut self, updater_type: &KeyUpdaterType) {
+        self.updaters.remove(updater_type);
     }
 }
 
@@ -67,7 +66,7 @@ impl<'a> IntoIterator for &'a KeyUpdaters {
     >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.notifies.iter()
+        self.updaters.iter()
     }
 }
 
