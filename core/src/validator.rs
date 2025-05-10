@@ -4,7 +4,7 @@ pub use solana_perf::report_target_features;
 use {
     crate::{
         accounts_hash_verifier::AccountsHashVerifier,
-        admin_rpc_post_init::{AdminRpcRequestMetadataPostInit, KeyNotifiers},
+        admin_rpc_post_init::{AdminRpcRequestMetadataPostInit, KeyUpdaterType, KeyUpdaters},
         banking_trace::{self, BankingTracer, TraceError},
         cluster_info_vote_listener::VoteTracker,
         completed_data_sets_service::CompletedDataSetsService,
@@ -1578,7 +1578,7 @@ impl Validator {
             return Err(ValidatorError::WenRestartFinished.into());
         }
 
-        let key_notifiers = Arc::new(RwLock::new(KeyNotifiers::default()));
+        let key_notifiers = Arc::new(RwLock::new(KeyUpdaters::default()));
         let forwarding_tpu_client = if let Some(connection_cache) = &connection_cache {
             ForwardingClientOption::ConnectionCache(connection_cache.clone())
         } else {
@@ -1661,7 +1661,7 @@ impl Validator {
         if config.use_tpu_client_next {
             if let Some(json_rpc_service) = &json_rpc_service {
                 key_notifiers.write().unwrap().add(
-                    "rpc_service".to_string(),
+                    KeyUpdaterType::RpcService,
                     json_rpc_service.get_client_key_updater(),
                 );
             }
@@ -1674,7 +1674,7 @@ impl Validator {
             key_notifiers
                 .write()
                 .unwrap()
-                .add("connection_cache".to_string(), connection_cache);
+                .add(KeyUpdaterType::ConnectionCache, connection_cache);
         }
 
         *admin_rpc_service_post_init.write().unwrap() = Some(AdminRpcRequestMetadataPostInit {

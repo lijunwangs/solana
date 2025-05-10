@@ -14,34 +14,57 @@ use {
     },
 };
 
-#[derive(Default)]
-pub struct KeyNotifiers {
-    pub notifies: HashMap<String, Arc<dyn NotifyKeyUpdate + Sync + Send>>,
+/// Key updaters:
+#[derive(PartialEq, Eq, Hash, Clone, Debug)]
+pub enum KeyUpdaterType {
+    /// TPU key updater
+    Tpu,
+    /// TPU forwards key updater
+    TpuForwards,
+    /// TPU vote key updater
+    TpuVote,
+    /// Forward key updater
+    Forward,
+    /// For the RPC service
+    RpcService,
+    /// For the connection cache
+    ConnectionCache,
 }
 
-impl KeyNotifiers {
-    pub fn add(&mut self, key: String, notify: Arc<dyn NotifyKeyUpdate + Sync + Send>) {
+/// Responsible for managing the updaters for key updates
+#[derive(Default)]
+pub struct KeyUpdaters {
+    pub notifies: HashMap<KeyUpdaterType, Arc<dyn NotifyKeyUpdate + Sync + Send>>,
+}
+
+impl KeyUpdaters {
+    /// Add a new key updater to the list
+    pub fn add(&mut self, key: KeyUpdaterType, notify: Arc<dyn NotifyKeyUpdate + Sync + Send>) {
         self.notifies.insert(key, notify);
     }
 
-    pub fn get(&self, key: &str) -> Option<Arc<dyn NotifyKeyUpdate + Sync + Send>> {
+    /// Get a key updater by its key
+    pub fn get(&self, key: &KeyUpdaterType) -> Option<Arc<dyn NotifyKeyUpdate + Sync + Send>> {
         self.notifies.get(key).cloned()
     }
 
-    pub fn remove(&mut self, key: &str) {
+    /// Remove a key updater by its key
+    pub fn remove(&mut self, key: &KeyUpdaterType) {
         self.notifies.remove(key);
     }
-
-    // pub fn iter(&self) -> impl Iterator<Item = (&String, &Arc<dyn NotifyKeyUpdate + Sync + Send>)> {
-    //     self.notifies.iter()
-    // }
 }
 
-/// Implement the Iterator trait for KeyNotifiers
-impl<'a> IntoIterator for &'a KeyNotifiers {
-    type Item = (&'a String, &'a Arc<dyn NotifyKeyUpdate + Sync + Send>);
-    type IntoIter =
-        std::collections::hash_map::Iter<'a, String, Arc<dyn NotifyKeyUpdate + Sync + Send>>;
+/// Implement the Iterator trait for KeyUpdaters
+impl<'a> IntoIterator for &'a KeyUpdaters {
+    type Item = (
+        &'a KeyUpdaterType,
+        &'a Arc<dyn NotifyKeyUpdate + Sync + Send>,
+    );
+    type IntoIter = std::collections::hash_map::Iter<
+        'a,
+        KeyUpdaterType,
+        Arc<dyn NotifyKeyUpdate + Sync + Send>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
         self.notifies.iter()
@@ -54,7 +77,7 @@ pub struct AdminRpcRequestMetadataPostInit {
     pub bank_forks: Arc<RwLock<BankForks>>,
     pub vote_account: Pubkey,
     pub repair_whitelist: Arc<RwLock<HashSet<Pubkey>>>,
-    pub notifies: Arc<RwLock<KeyNotifiers>>,
+    pub notifies: Arc<RwLock<KeyUpdaters>>,
     pub repair_socket: Arc<UdpSocket>,
     pub outstanding_repair_requests: Arc<RwLock<OutstandingRequests<ShredRepairType>>>,
     pub cluster_slots: Arc<ClusterSlots>,

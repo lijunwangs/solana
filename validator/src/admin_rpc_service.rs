@@ -752,7 +752,7 @@ impl AdminRpcImpl {
 
             for (key, notifier) in &*post_init.notifies.read().unwrap() {
                 if let Err(err) = notifier.update_key(&identity_keypair) {
-                    error!("Error updating network layer keypair: {err} on {key}");
+                    error!("Error updating network layer keypair: {err} on {key:?}");
                 }
             }
 
@@ -903,7 +903,7 @@ mod tests {
             accounts_index::AccountSecondaryIndexes,
         },
         solana_core::{
-            admin_rpc_post_init::KeyNotifiers,
+            admin_rpc_post_init::KeyUpdaters,
             consensus::tower_storage::NullTowerStorage,
             validator::{Validator, ValidatorConfig, ValidatorTpuConfig},
         },
@@ -982,7 +982,7 @@ mod tests {
                     bank_forks: bank_forks.clone(),
                     vote_account,
                     repair_whitelist,
-                    notifies: Arc::new(RwLock::new(KeyNotifiers::default())),
+                    notifies: Arc::new(RwLock::new(KeyUpdaters::default())),
                     repair_socket: Arc::new(bind_to_unspecified().unwrap()),
                     outstanding_repair_requests: Arc::<
                         RwLock<repair_service::OutstandingShredRepairs>,

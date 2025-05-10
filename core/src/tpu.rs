@@ -10,7 +10,7 @@ pub use solana_streamer::quic::DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER as MAX_QUIC
 pub use {crate::forwarding_stage::ForwardingClientOption, solana_sdk::net::DEFAULT_TPU_COALESCE};
 use {
     crate::{
-        admin_rpc_post_init::KeyNotifiers,
+        admin_rpc_post_init::{KeyUpdaterType, KeyUpdaters},
         banking_stage::BankingStage,
         banking_trace::{Channels, TracerThread},
         cluster_info_vote_listener::{
@@ -154,7 +154,7 @@ impl Tpu {
         transaction_struct: TransactionStructure,
         enable_block_production_forwarding: bool,
         _generator_config: Option<GeneratorConfig>, /* vestigial code for replay invalidator */
-        key_notifiers: Arc<RwLock<KeyNotifiers>>,
+        key_notifiers: Arc<RwLock<KeyUpdaters>>,
     ) -> Self {
         let TpuSockets {
             transactions: transactions_sockets,
@@ -372,27 +372,16 @@ impl Tpu {
             turbine_quic_endpoint_sender,
         );
 
+        let mut key_notifiers = key_notifiers.write().unwrap();
         if let Some(key_updater) = key_updater {
-            key_notifiers
-                .write()
-                .unwrap()
-                .add("tpu_quic".to_string(), key_updater);
+            key_notifiers.add(KeyUpdaterType::Tpu, key_updater);
         }
         if let Some(forwards_key_updater) = forwards_key_updater {
-            key_notifiers
-                .write()
-                .unwrap()
-                .add("tpu_forwards_quic".to_string(), forwards_key_updater);
+            key_notifiers.add(KeyUpdaterType::TpuForwards, forwards_key_updater);
         }
-        key_notifiers
-            .write()
-            .unwrap()
-            .add("tpu_vote_quic".to_string(), vote_streamer_key_updater);
+        key_notifiers.add(KeyUpdaterType::TpuVote, vote_streamer_key_updater);
 
-        key_notifiers
-            .write()
-            .unwrap()
-            .add("client_updater".to_string(), client_updater);
+        key_notifiers.add(KeyUpdaterType::Forward, client_updater);
 
         Self {
             fetch_stage,
