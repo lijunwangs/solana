@@ -53,10 +53,7 @@ impl KeyUpdaters {
     }
 
     pub fn get_updaters(&self) -> Vec<Arc<dyn NotifyKeyUpdate + Sync + Send>> {
-        self.updaters
-            .values()
-            .map(|updater| updater.clone())
-            .collect()
+        self.updaters.values().cloned().collect()
     }
 }
 
