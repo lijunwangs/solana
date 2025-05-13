@@ -1449,7 +1449,6 @@ mod tests {
                     KeyUpdaterType::TpuForwards,
                     KeyUpdaterType::TpuVote,
                     KeyUpdaterType::Forward,
-                    KeyUpdaterType::ConnectionCache
                 ])
             );
             let mut io = MetaIoHandler::default();

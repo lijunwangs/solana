@@ -27,8 +27,6 @@ pub enum KeyUpdaterType {
     Forward,
     /// For the RPC service
     RpcService,
-    /// For the connection cache
-    ConnectionCache,
 }
 
 /// Responsible for managing the updaters for identity key change
