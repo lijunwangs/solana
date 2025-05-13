@@ -49,10 +49,6 @@ impl KeyUpdaters {
     pub fn remove(&mut self, updater_type: &KeyUpdaterType) {
         self.updaters.remove(updater_type);
     }
-
-    pub fn get_updaters(&self) -> Vec<Arc<dyn NotifyKeyUpdate + Sync + Send>> {
-        self.updaters.values().cloned().collect()
-    }
 }
 
 /// Implement the Iterator trait for KeyUpdaters
