@@ -635,7 +635,7 @@ checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 [[package]]
 name = "alpenglow-vote"
 version = "0.1.0"
-source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=c84cec6#c84cec6f98add7b993fd5bafece2da9c26e9db8b"
+source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=070c5b1#070c5b1d365dba5f2b0e092d3fd5bf0ed110c2f1"
 dependencies = [
  "bincode",
  "bitflags 2.9.1",
@@ -647,6 +647,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "solana-account",
+ "solana-bls",
  "solana-frozen-abi",
  "solana-frozen-abi-macro",
  "solana-hash",
@@ -7351,17 +7352,22 @@ dependencies = [
 
 [[package]]
 name = "solana-bls"
-version = "0.1.0"
-source = "git+https://github.com/anza-xyz/solana-sdk?branch=bls#a09580963525e608b5650b8be36f234d980b820c"
+version = "0.1.1"
+source = "git+https://github.com/anza-xyz/solana-sdk?branch=bls#9e1431b3e83310bb118c47404265d905acea2dce"
 dependencies = [
+ "base64 0.22.1",
  "blst",
  "blstrs",
  "bytemuck",
+ "cfg_eval",
  "ff",
  "group",
  "rand 0.8.5",
  "serde",
  "serde_with",
+ "solana-signature",
+ "solana-signer",
+ "subtle",
  "thiserror 2.0.12",
 ]
 
@@ -7665,7 +7671,9 @@ dependencies = [
  "solana-account",
  "solana-account-decoder",
  "solana-address-lookup-table-interface",
+ "solana-bls",
  "solana-borsh",
+ "solana-bpf-loader-program",
  "solana-clap-utils",
  "solana-cli-config",
  "solana-cli-output",
@@ -8693,6 +8701,7 @@ dependencies = [
  "serde_yaml 0.9.34+deprecated",
  "solana-account",
  "solana-accounts-db",
+ "solana-bls",
  "solana-borsh",
  "solana-clap-utils",
  "solana-cli-config",
@@ -10388,6 +10397,7 @@ dependencies = [
  "solana-account-info",
  "solana-accounts-db",
  "solana-address-lookup-table-interface",
+ "solana-bls",
  "solana-bpf-loader-program",
  "solana-bucket-map",
  "solana-build-alpenglow-vote",
@@ -11287,6 +11297,7 @@ dependencies = [
  "serde_json",
  "solana-account",
  "solana-accounts-db",
+ "solana-bls",
  "solana-cli-output",
  "solana-clock",
  "solana-cluster-type",
@@ -11939,6 +11950,7 @@ dependencies = [
  "serde_derive",
  "solana-account",
  "solana-bincode",
+ "solana-bls",
  "solana-clock",
  "solana-frozen-abi",
  "solana-frozen-abi-macro",

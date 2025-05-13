@@ -31,6 +31,7 @@ serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 solana-account = "=2.2.1"
 solana-accounts-db = { workspace = true }
+solana-bls = { workspace = true }
 solana-clap-utils = { workspace = true }
 solana-cli-config = { workspace = true }
 solana-clock = "=2.2.2"

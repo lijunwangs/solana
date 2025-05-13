@@ -3,6 +3,7 @@ use {
     alpenglow_vote::state::VoteState as AlpenglowVoteState,
     log::*,
     solana_account::{Account, AccountSharedData},
+    solana_bls::{keypair::Keypair as BLSKeypair, Pubkey as BLSPubkey},
     solana_feature_gate_interface::{self as feature, Feature},
     solana_fee_calculator::FeeRateGovernor,
     solana_genesis_config::{ClusterType, GenesisConfig},
@@ -51,14 +52,18 @@ pub struct ValidatorVoteKeypairs {
     pub node_keypair: Keypair,
     pub vote_keypair: Keypair,
     pub stake_keypair: Keypair,
+    pub bls_keypair: BLSKeypair,
 }
 
 impl ValidatorVoteKeypairs {
     pub fn new(node_keypair: Keypair, vote_keypair: Keypair, stake_keypair: Keypair) -> Self {
+        // TODO(wen): change to derive from vote private key when bls crate is published.
+        let bls_keypair = BLSKeypair::new();
         Self {
             node_keypair,
             vote_keypair,
             stake_keypair,
+            bls_keypair,
         }
     }
 
@@ -67,6 +72,7 @@ impl ValidatorVoteKeypairs {
             node_keypair: Keypair::new(),
             vote_keypair: Keypair::new(),
             stake_keypair: Keypair::new(),
+            bls_keypair: BLSKeypair::new(),
         }
     }
 }
@@ -139,6 +145,7 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
         &validator_pubkey,
         &voting_keypairs[0].borrow().vote_keypair.pubkey(),
         &voting_keypairs[0].borrow().stake_keypair.pubkey(),
+        Some(&voting_keypairs[0].borrow().bls_keypair.public.into()),
         stakes[0],
         VALIDATOR_LAMPORTS,
         FeeRateGovernor::new(0, 0), // most tests can't handle transaction fees
@@ -163,12 +170,15 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
         // Create accounts
         let node_account = Account::new(VALIDATOR_LAMPORTS, 0, &system_program::id());
         let vote_account = if alpenglow_so_path.is_some() {
+            //TODO(wen): change to derive from vote private key when bls crate is published.
+            let bls_keypair = BLSKeypair::new();
             AlpenglowVoteState::create_account_with_authorized(
                 &node_pubkey,
                 &vote_pubkey,
                 &vote_pubkey,
                 0,
                 *stake,
+                bls_keypair.public.into(),
             )
         } else {
             vote_state::create_account(&vote_pubkey, &node_pubkey, 0, *stake)
@@ -266,12 +276,16 @@ pub fn create_genesis_config_with_leader_with_mint_keypair(
     ])
     .unwrap();
 
+    // TODO(wen): change to derive from vote private key when bls crate is published.
+    let bls_keypair = BLSKeypair::new();
+    let bls_pubkey: BLSPubkey = bls_keypair.public.into();
     let genesis_config = create_genesis_config_with_leader_ex(
         mint_lamports,
         &mint_keypair.pubkey(),
         validator_pubkey,
         &voting_keypair.pubkey(),
         &Pubkey::new_unique(),
+        Some(&bls_pubkey),
         validator_stake_lamports,
         VALIDATOR_LAMPORTS,
         FeeRateGovernor::new(0, 0), // most tests can't handle transaction fees
@@ -403,6 +417,7 @@ pub fn create_genesis_config_with_leader_ex_no_features(
     validator_pubkey: &Pubkey,
     validator_vote_account_pubkey: &Pubkey,
     validator_stake_account_pubkey: &Pubkey,
+    validator_bls_pubkey: Option<&BLSPubkey>,
     validator_stake_lamports: u64,
     validator_lamports: u64,
     fee_rate_governor: FeeRateGovernor,
@@ -418,6 +433,7 @@ pub fn create_genesis_config_with_leader_ex_no_features(
             validator_vote_account_pubkey,
             0,
             validator_stake_lamports,
+            *validator_bls_pubkey.unwrap(),
         )
     } else {
         vote_state::create_account(
@@ -487,6 +503,7 @@ pub fn create_genesis_config_with_leader_ex(
     validator_pubkey: &Pubkey,
     validator_vote_account_pubkey: &Pubkey,
     validator_stake_account_pubkey: &Pubkey,
+    validator_bls_pubkey: Option<&BLSPubkey>,
     validator_stake_lamports: u64,
     validator_lamports: u64,
     fee_rate_governor: FeeRateGovernor,
@@ -501,6 +518,7 @@ pub fn create_genesis_config_with_leader_ex(
         validator_pubkey,
         validator_vote_account_pubkey,
         validator_stake_account_pubkey,
+        validator_bls_pubkey,
         validator_stake_lamports,
         validator_lamports,
         fee_rate_governor,

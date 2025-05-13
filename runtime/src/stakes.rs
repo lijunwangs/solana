@@ -559,9 +559,9 @@ pub(crate) mod tests {
         alpenglow_vote::state::VoteState as AlpenglowVoteState,
         rayon::ThreadPoolBuilder,
         solana_account::WritableAccount,
+        solana_bls::keypair::Keypair as BLSKeypair,
         solana_pubkey::Pubkey,
         solana_rent::Rent,
-        solana_stake_interface as stake,
         solana_stake_program::stake_state,
         solana_vote_program::vote_state::{self, VoteState, VoteStateVersions},
         test_case::test_case,
@@ -573,6 +573,7 @@ pub(crate) mod tests {
         is_alpenglow: bool,
     ) -> ((Pubkey, AccountSharedData), (Pubkey, AccountSharedData)) {
         let vote_pubkey = solana_pubkey::new_rand();
+        let bls_keypair = BLSKeypair::new();
         let vote_account = if is_alpenglow {
             AlpenglowVoteState::create_account_with_authorized(
                 &vote_pubkey,
@@ -580,6 +581,7 @@ pub(crate) mod tests {
                 &vote_pubkey,
                 0,
                 1,
+                bls_keypair.public.into(),
             )
         } else {
             vote_state::create_account(&vote_pubkey, &solana_pubkey::new_rand(), 0, 1)
@@ -922,7 +924,7 @@ pub(crate) mod tests {
         // not a stake account, and whacks above entry
         stakes_cache.check_and_store(
             &stake_pubkey,
-            &AccountSharedData::new(1, 0, &stake::program::id()),
+            &AccountSharedData::new(1, 0, &solana_stake_interface::program::id()),
             None,
         );
         {
