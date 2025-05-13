@@ -10,6 +10,7 @@ pub use solana_streamer::quic::DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER as MAX_QUIC
 pub use {crate::forwarding_stage::ForwardingClientOption, solana_sdk::net::DEFAULT_TPU_COALESCE};
 use {
     crate::{
+        admin_rpc_post_init::KeyNotifiers,
         banking_stage::BankingStage,
         banking_trace::{Channels, TracerThread},
         cluster_info_vote_listener::{
@@ -42,7 +43,6 @@ use {
         transaction_recorder::TransactionRecorder,
     },
     solana_pubkey::Pubkey,
-    solana_quic_definitions::NotifyKeyUpdate,
     solana_rpc::{
         optimistically_confirmed_bank_tracker::BankNotificationSender,
         rpc_subscriptions::RpcSubscriptions,
@@ -154,7 +154,8 @@ impl Tpu {
         transaction_struct: TransactionStructure,
         enable_block_production_forwarding: bool,
         _generator_config: Option<GeneratorConfig>, /* vestigial code for replay invalidator */
-    ) -> (Self, Vec<Arc<dyn NotifyKeyUpdate + Sync + Send>>) {
+        key_notifiers: Arc<RwLock<KeyNotifiers>>,
+    ) -> Self {
         let TpuSockets {
             transactions: transactions_sockets,
             transaction_forwards: tpu_forwards_sockets,
@@ -371,33 +372,43 @@ impl Tpu {
             turbine_quic_endpoint_sender,
         );
 
-        let mut key_updaters: Vec<Arc<dyn NotifyKeyUpdate + Send + Sync>> = Vec::new();
         if let Some(key_updater) = key_updater {
-            key_updaters.push(key_updater);
+            key_notifiers
+                .write()
+                .unwrap()
+                .add("tpu_quic".to_string(), key_updater);
         }
         if let Some(forwards_key_updater) = forwards_key_updater {
-            key_updaters.push(forwards_key_updater);
+            key_notifiers
+                .write()
+                .unwrap()
+                .add("tpu_forwards_quic".to_string(), forwards_key_updater);
         }
-        key_updaters.push(vote_streamer_key_updater);
-        key_updaters.push(client_updater);
-        (
-            Self {
-                fetch_stage,
-                sig_verifier,
-                vote_sigverify_stage,
-                banking_stage,
-                forwarding_stage,
-                cluster_info_vote_listener,
-                broadcast_stage,
-                tpu_quic_t,
-                tpu_forwards_quic_t,
-                tpu_entry_notifier,
-                staked_nodes_updater_service,
-                tracer_thread_hdl,
-                tpu_vote_quic_t,
-            },
-            key_updaters,
-        )
+        key_notifiers
+            .write()
+            .unwrap()
+            .add("tpu_vote_quic".to_string(), vote_streamer_key_updater);
+
+        key_notifiers
+            .write()
+            .unwrap()
+            .add("client_updater".to_string(), client_updater);
+
+        Self {
+            fetch_stage,
+            sig_verifier,
+            vote_sigverify_stage,
+            banking_stage,
+            forwarding_stage,
+            cluster_info_vote_listener,
+            broadcast_stage,
+            tpu_quic_t,
+            tpu_forwards_quic_t,
+            tpu_entry_notifier,
+            staked_nodes_updater_service,
+            tracer_thread_hdl,
+            tpu_vote_quic_t,
+        }
     }
 
     pub fn join(self) -> thread::Result<()> {
