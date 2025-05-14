@@ -8,8 +8,10 @@
 
 use {
     crate::{
-        admin_rpc_post_init::KeyNotifiers, banking_trace::TracedSender,
-        sigverify::TransactionSigVerifier, sigverify_stage::SigVerifyStage,
+        admin_rpc_post_init::{KeyUpdaterType, KeyUpdaters},
+        banking_trace::TracedSender,
+        sigverify::TransactionSigVerifier,
+        sigverify_stage::SigVerifyStage,
         vortexor_receiver_adapter::VortexorReceiverAdapter,
     },
     agave_banking_stage_ingress_types::BankingPacketBatch,
@@ -46,9 +48,6 @@ enum SigVerifierType {
     Remote,
     Mixed,
 }
-
-const KEY_UPDATER_TPU_QUIC: &str = "tpu_quic";
-const KEY_UPDATER_TPU_FORWARDS_QUIC: &str = "tpu_forwards_quic";
 
 impl SigVerifier {
     fn join(self) -> thread::Result<()> {
@@ -88,7 +87,7 @@ pub struct TpuSwitchConfig {
     pub enable_block_production_forwarding: bool,
     pub non_vote_sender: TracedSender,
     pub forward_stage_sender: Sender<(BankingPacketBatch, bool)>,
-    pub key_notifiers: Arc<RwLock<KeyNotifiers>>,
+    pub key_notifiers: Arc<RwLock<KeyUpdaters>>,
 }
 
 /// Manages the fallback between vortexors and native TPU streamers.
@@ -201,9 +200,9 @@ impl TpuSwitch {
         self.sig_verifier = match self.sig_verifier.take() {
             Some(SigVerifier::Local(sig_verify_stage)) => {
                 if !self.config.tpu_enable_udp {
-                    sig_verify_stage.join().unwrap_or_else(|err| {
-                        panic!("Failed to stop local sig verifier: {err:?}")
-                    });
+                    sig_verify_stage
+                        .join()
+                        .unwrap_or_else(|err| panic!("Failed to stop local sig verifier: {err:?}"));
                     Some(SigVerifier::Remote(start_remote_sig_verifier(
                         &self.config,
                         sub_service_exit,
@@ -239,18 +238,18 @@ impl TpuSwitch {
                 .key_notifiers
                 .write()
                 .unwrap()
-                .remove(KEY_UPDATER_TPU_QUIC);
+                .remove(&KeyUpdaterType::Tpu);
         }
 
         if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t.take() {
-            tpu_forwards_quic_t
-                .join()
-                .unwrap_or_else(|err| panic!("Failed to stop native TPU forward streamer: {err:?}"));
+            tpu_forwards_quic_t.join().unwrap_or_else(|err| {
+                panic!("Failed to stop native TPU forward streamer: {err:?}")
+            });
             self.config
                 .key_notifiers
                 .write()
                 .unwrap()
-                .remove(KEY_UPDATER_TPU_FORWARDS_QUIC);
+                .remove(&KeyUpdaterType::TpuForwards);
         }
     }
 
@@ -491,13 +490,13 @@ fn start_quic_tpu_streamers(
         key_notifiers
             .write()
             .unwrap()
-            .add(KEY_UPDATER_TPU_QUIC.to_string(), key_updater);
+            .add(KeyUpdaterType::Tpu, key_updater);
     }
     if let Some(forwards_key_updater) = forwards_key_updater {
-        key_notifiers.write().unwrap().add(
-            KEY_UPDATER_TPU_FORWARDS_QUIC.to_string(),
-            forwards_key_updater,
-        );
+        key_notifiers
+            .write()
+            .unwrap()
+            .add(KeyUpdaterType::TpuForwards, forwards_key_updater);
     }
     (tpu_quic_t, tpu_forwards_quic_t)
 }
