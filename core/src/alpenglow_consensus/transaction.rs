@@ -1,11 +1,13 @@
-use solana_transaction::versioned::VersionedTransaction;
+use {
+    solana_bls::keypair::Keypair as BLSKeypair, solana_transaction::versioned::VersionedTransaction,
+};
 
 pub trait AlpenglowVoteTransaction: Clone + std::fmt::Debug {
-    fn new_for_test() -> Self;
+    fn new_for_test(bls_keypair: BLSKeypair) -> Self;
 }
 
 impl AlpenglowVoteTransaction for VersionedTransaction {
-    fn new_for_test() -> Self {
+    fn new_for_test(_bls_keypair: BLSKeypair) -> Self {
         Self::default()
     }
 }
