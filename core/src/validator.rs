@@ -25,7 +25,7 @@ use {
             serve_repair_service::ServeRepairService,
         },
         sample_performance_service::SamplePerformanceService,
-        sigverify,
+        sigverifier::ed25519_sigverifier,
         snapshot_packager_service::SnapshotPackagerService,
         stats_reporter_service::StatsReporterService,
         system_monitor_service::{
@@ -673,7 +673,7 @@ impl Validator {
         } else {
             info!("Initializing sigverify...");
         }
-        sigverify::init();
+        ed25519_sigverifier::init();
         info!("Initializing sigverify done.");
 
         if !ledger_path.is_dir() {
