@@ -44,8 +44,11 @@ enum SigVerifier {
 }
 
 enum SigVerifierType {
+    /// Using local sig verifier
     Local,
+    /// Using vortexor
     Remote,
+    /// Local sig verifier is still being run even when we are using vortexor
     Mixed,
 }
 
@@ -170,19 +173,29 @@ impl TpuSwitch {
 
     /// Switches to the vortexor by updating gossip and stopping the native TPU streamers.
     pub fn switch_to_vortexor(&mut self) {
-        info!("Switching to vortexor...");
+        match self.sig_verifier {
+            Some(SigVerifier::Local(_)) => {
+                info!("Switching to vortexor...");
 
-        if let Some(vortexor_config) = &self.config.vortexor_receiver_config {
-            self.update_gossip_addresses(vortexor_config);
+                if let Some(vortexor_config) = &self.config.vortexor_receiver_config {
+                    self.update_gossip_addresses(vortexor_config);
 
-            let sub_service_exit = Arc::new(AtomicBool::new(false));
-            self.switch_sig_verifier_to_vortexor(&sub_service_exit);
+                    let sub_service_exit = Arc::new(AtomicBool::new(false));
+                    self.switch_sig_verifier_to_vortexor(&sub_service_exit);
 
-            self.stop_native_tpu_streamers();
+                    self.stop_native_tpu_streamers();
 
-            self.sub_service_exit = sub_service_exit;
-        } else {
-            error!("Vortexor receiver config is not set");
+                    self.sub_service_exit = sub_service_exit;
+                } else {
+                    error!("Vortexor receiver config is not set");
+                }
+            }
+            Some(SigVerifier::Remote(_) | SigVerifier::Mixed(_)) => {
+                // already using vortexor, do nothing
+            }
+            None => {
+                panic!("Unexpected condition!");
+            }
         }
     }
 
@@ -255,16 +268,26 @@ impl TpuSwitch {
 
     /// Switches to the native TPU streamers by updating gossip and starting the TPU.
     pub fn switch_to_native_tpu(&mut self) {
-        info!("Switching to native TPU streamers...");
+        match self.sig_verifier {
+            Some(SigVerifier::Local(_)) => {
+                // nothing to do;
+            }
+            Some(SigVerifier::Remote(_) | SigVerifier::Mixed(_)) => {
+                info!("Switching to native TPU streamers...");
 
-        // Update gossip to advertise native TPU addresses
-        self.update_native_tpu_gossip();
+                // Update gossip to advertise native TPU addresses
+                self.update_native_tpu_gossip();
 
-        // Stop vortexor-related services
-        self.stop_vortexor_services();
+                // Stop vortexor-related services
+                self.stop_vortexor_services();
 
-        // Start native TPU streamers
-        self.start_native_tpu_streamers();
+                // Start native TPU streamers
+                self.start_native_tpu_streamers();
+            }
+            None => {
+                panic!("Unexpected condition");
+            }
+        }
     }
 
     /// Updates gossip to advertise native TPU and TPU forward addresses.

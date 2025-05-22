@@ -7,11 +7,13 @@
 //! Vortexor receiver adapter.
 
 use {
+    crate::tpu_switch::TpuSwitch,
     crossbeam_channel::Receiver,
     log::{error, info},
     std::{
         net::SocketAddr,
-        thread,
+        sync::{Arc, RwLock},
+        thread::{self, JoinHandle, Result},
         time::{Duration, Instant},
     },
 };
@@ -23,28 +25,38 @@ pub struct HeartbeatMonitorConfig {
 
 /// Heartbeat monitor service.
 pub struct HeartbeatMonitor {
-    config: HeartbeatMonitorConfig,
-    heartbeat_receiver: Receiver<SocketAddr>,
+    monitor_thread: JoinHandle<()>,
 }
 
 impl HeartbeatMonitor {
     /// Creates a new HeartbeatMonitor.
-    pub fn new(config: HeartbeatMonitorConfig, heartbeat_receiver: Receiver<SocketAddr>) -> Self {
-        Self {
-            config,
-            heartbeat_receiver,
-        }
+    pub fn new(
+        config: HeartbeatMonitorConfig,
+        heartbeat_receiver: Receiver<SocketAddr>,
+        tpu_switch: Arc<RwLock<TpuSwitch>>,
+    ) -> Self {
+        let monitor_thread =
+            HeartbeatMonitor::start(config.timeout, tpu_switch, heartbeat_receiver);
+        Self { monitor_thread }
+    }
+
+    fn switch_to_navite_tpu(tpu_switch: Arc<RwLock<TpuSwitch>>) {
+        let mut tpu_switch = tpu_switch.write().unwrap();
+        tpu_switch.switch_to_native_tpu();
+    }
+
+    fn switch_to_vortexor(tpu_switch: Arc<RwLock<TpuSwitch>>) {
+        let mut tpu_switch = tpu_switch.write().unwrap();
+        tpu_switch.switch_to_native_tpu();
     }
 
     /// Starts the heartbeat monitor service.
     /// If a timeout is detected, it will trigger a fallback action.
-    pub fn start<F>(&self, fallback_action: F)
-    where
-        F: Fn() + Send + 'static,
-    {
-        let timeout = self.config.timeout;
-        let heartbeat_receiver = self.heartbeat_receiver.clone();
-
+    fn start(
+        timeout: Duration,
+        tpu_switch: Arc<RwLock<TpuSwitch>>,
+        heartbeat_receiver: Receiver<SocketAddr>,
+    ) -> JoinHandle<()> {
         thread::spawn(move || {
             let mut last_heartbeat = Instant::now();
 
@@ -57,17 +69,22 @@ impl HeartbeatMonitor {
                             "Heartbeat received from {}. Resetting timeout.",
                             source_addr
                         );
+                        HeartbeatMonitor::switch_to_vortexor(tpu_switch.clone());
                     }
                     Err(_) => {
                         // Timeout occurred, trigger the fallback action.
                         if last_heartbeat.elapsed() >= timeout {
                             error!("Heartbeat timeout detected. Triggering fallback action.");
-                            fallback_action();
+                            HeartbeatMonitor::switch_to_navite_tpu(tpu_switch.clone());
                         }
                     }
                 }
             }
-        });
+        })
+    }
+
+    pub fn join(self) -> Result<()> {
+        self.monitor_thread.join()
     }
 }
 
