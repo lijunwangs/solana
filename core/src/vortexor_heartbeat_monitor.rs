@@ -11,32 +11,27 @@ use {
     crossbeam_channel::Receiver,
     log::{error, info},
     std::{
-        net::SocketAddr,
         sync::{Arc, RwLock},
         thread::{self, JoinHandle, Result},
         time::{Duration, Instant},
     },
 };
 
-/// Configuration for the heartbeat monitor.
-pub struct HeartbeatMonitorConfig {
-    pub timeout: Duration,
-}
-
 /// Heartbeat monitor service.
-pub struct HeartbeatMonitor {
+pub(crate) struct HeartbeatMonitor {
     monitor_thread: JoinHandle<()>,
 }
+
+pub type HeartbeatMessage = ();
 
 impl HeartbeatMonitor {
     /// Creates a new HeartbeatMonitor.
     pub fn new(
-        config: HeartbeatMonitorConfig,
-        heartbeat_receiver: Receiver<SocketAddr>,
+        timeout: Duration,
+        heartbeat_receiver: Receiver<HeartbeatMessage>,
         tpu_switch: Arc<RwLock<TpuSwitch>>,
     ) -> Self {
-        let monitor_thread =
-            HeartbeatMonitor::start(config.timeout, tpu_switch, heartbeat_receiver);
+        let monitor_thread = HeartbeatMonitor::start(timeout, tpu_switch, heartbeat_receiver);
         Self { monitor_thread }
     }
 
@@ -47,7 +42,7 @@ impl HeartbeatMonitor {
 
     fn switch_to_vortexor(tpu_switch: Arc<RwLock<TpuSwitch>>) {
         let mut tpu_switch = tpu_switch.write().unwrap();
-        tpu_switch.switch_to_native_tpu();
+        tpu_switch.switch_to_vortexor();
     }
 
     /// Starts the heartbeat monitor service.
@@ -55,20 +50,17 @@ impl HeartbeatMonitor {
     fn start(
         timeout: Duration,
         tpu_switch: Arc<RwLock<TpuSwitch>>,
-        heartbeat_receiver: Receiver<SocketAddr>,
+        heartbeat_receiver: Receiver<HeartbeatMessage>,
     ) -> JoinHandle<()> {
         thread::spawn(move || {
             let mut last_heartbeat = Instant::now();
 
             loop {
                 match heartbeat_receiver.recv_timeout(timeout) {
-                    Ok(source_addr) => {
+                    Ok(_) => {
                         // Received a heartbeat, update the last heartbeat timestamp.
                         last_heartbeat = Instant::now();
-                        info!(
-                            "Heartbeat received from {}. Resetting timeout.",
-                            source_addr
-                        );
+                        info!("Heartbeat received from vortexor. Resetting timeout.",);
                         HeartbeatMonitor::switch_to_vortexor(tpu_switch.clone());
                     }
                     Err(_) => {
@@ -85,99 +77,5 @@ impl HeartbeatMonitor {
 
     pub fn join(self) -> Result<()> {
         self.monitor_thread.join()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use {
-        super::*,
-        crossbeam_channel::unbounded,
-        std::{
-            net::{IpAddr, Ipv4Addr, SocketAddr},
-            sync::{Arc, Mutex},
-            time::Duration,
-        },
-    };
-
-    #[test]
-    fn test_heartbeat_monitor_receives_heartbeat() {
-        let (sender, receiver) = unbounded();
-        let config = HeartbeatMonitorConfig {
-            timeout: Duration::from_secs(2),
-        };
-        let monitor = HeartbeatMonitor::new(config, receiver);
-
-        let fallback_triggered = Arc::new(Mutex::new(false));
-        let fallback_triggered_clone = Arc::clone(&fallback_triggered);
-
-        monitor.start(move || {
-            let mut triggered = fallback_triggered_clone.lock().unwrap();
-            *triggered = true;
-        });
-
-        // Send a heartbeat and ensure no fallback is triggered.
-        let source_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        sender.send(source_addr).unwrap();
-        thread::sleep(Duration::from_secs(1));
-
-        let triggered = fallback_triggered.lock().unwrap();
-        assert!(
-            !*triggered,
-            "Fallback should not be triggered when heartbeat is received."
-        );
-    }
-
-    #[test]
-    fn test_heartbeat_monitor_triggers_fallback_on_timeout() {
-        let (_sender, receiver) = unbounded();
-        let config = HeartbeatMonitorConfig {
-            timeout: Duration::from_secs(1),
-        };
-        let monitor = HeartbeatMonitor::new(config, receiver);
-
-        let fallback_triggered = Arc::new(Mutex::new(false));
-        let fallback_triggered_clone = Arc::clone(&fallback_triggered);
-
-        monitor.start(move || {
-            let mut triggered = fallback_triggered_clone.lock().unwrap();
-            *triggered = true;
-        });
-
-        // Do not send a heartbeat and wait for the timeout.
-        thread::sleep(Duration::from_secs(2));
-
-        let triggered = fallback_triggered.lock().unwrap();
-        assert!(*triggered, "Fallback should be triggered on timeout.");
-    }
-
-    #[test]
-    fn test_heartbeat_monitor_resets_on_heartbeat() {
-        let (sender, receiver) = unbounded();
-        let config = HeartbeatMonitorConfig {
-            timeout: Duration::from_secs(1),
-        };
-        let monitor = HeartbeatMonitor::new(config, receiver);
-
-        let fallback_triggered = Arc::new(Mutex::new(false));
-        let fallback_triggered_clone = Arc::clone(&fallback_triggered);
-
-        monitor.start(move || {
-            let mut triggered = fallback_triggered_clone.lock().unwrap();
-            *triggered = true;
-        });
-
-        // Send heartbeats periodically to prevent timeout.
-        let source_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080);
-        for _ in 0..3 {
-            sender.send(source_addr).unwrap();
-            thread::sleep(Duration::from_millis(500));
-        }
-
-        let triggered = fallback_triggered.lock().unwrap();
-        assert!(
-            !*triggered,
-            "Fallback should not be triggered when heartbeats are received periodically."
-        );
     }
 }

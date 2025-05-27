@@ -3,7 +3,7 @@
 //! banking stage.
 
 use {
-    crate::banking_trace::TracedSender,
+    crate::{banking_trace::TracedSender, vortexor_heartbeat_monitor::HeartbeatMessage},
     agave_banking_stage_ingress_types::BankingPacketBatch,
     crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Sender},
     solana_perf::packet::PacketBatch,
@@ -41,6 +41,8 @@ impl VortexorReceiverAdapter {
         tpu_coalesce: Duration,
         packets_sender: TracedSender,
         forward_stage_sender: Option<Sender<(BankingPacketBatch, bool)>>,
+        heartbeat_interval: Duration,
+        heartbeat_sender: Option<Sender<HeartbeatMessage>>,
         exit: Arc<AtomicBool>,
     ) -> Self {
         let (batch_sender, batch_receiver) = unbounded();
@@ -57,6 +59,8 @@ impl VortexorReceiverAdapter {
                     MAX_PACKET_BATCH_SIZE,
                     packets_sender,
                     forward_stage_sender,
+                    heartbeat_interval,
+                    heartbeat_sender,
                 ) {
                     info!("Quiting VortexorReceiverAdapter: {msg}");
                 }
@@ -79,7 +83,10 @@ impl VortexorReceiverAdapter {
         batch_size: usize,
         traced_sender: TracedSender,
         forward_stage_sender: Option<Sender<(BankingPacketBatch, bool)>>,
+        heartbeat_interval: Duration,
+        heartbeat_sender: Option<Sender<HeartbeatMessage>>,
     ) -> Result<(), String> {
+        let mut last_heartbeat_time = None;
         loop {
             match Self::receive_until(packet_batch_receiver.clone(), recv_timeout, batch_size) {
                 Ok(packet_batch) => {
@@ -92,6 +99,15 @@ impl VortexorReceiverAdapter {
                             .try_send((packet_batch, false /* reject non-vote */));
                     } else {
                         send(&traced_sender, packet_batch, count)?;
+                    }
+                    let now = Instant::now();
+                    if last_heartbeat_time
+                        .is_none_or(|time| now.duration_since(time) > heartbeat_interval)
+                    {
+                        if let Some(heartbeat_sender) = &heartbeat_sender {
+                            let _ = heartbeat_sender.send(());
+                        }
+                        last_heartbeat_time = Some(now);
                     }
                 }
                 Err(err) => match err {

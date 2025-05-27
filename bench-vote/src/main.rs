@@ -176,7 +176,7 @@ fn main() -> Result<()> {
         )));
 
         QuicParams {
-            identity_keypair,
+            identity_keypair: Arc::new(identity_keypair),
             staked_nodes
         }
     });
@@ -311,7 +311,7 @@ enum Transporter {
 }
 
 struct QuicParams {
-    identity_keypair: Keypair,
+    identity_keypair: Arc<Keypair>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
 }
 

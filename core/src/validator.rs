@@ -1629,7 +1629,7 @@ impl Validator {
             duplicate_confirmed_slot_sender,
             forwarding_tpu_client,
             turbine_quic_endpoint_sender,
-            &identity_keypair,
+            identity_keypair.clone(),
             config.runtime_config.log_messages_bytes_limit,
             &staked_nodes,
             config.staked_nodes_overrides.clone(),

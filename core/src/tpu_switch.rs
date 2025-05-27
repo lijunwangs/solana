@@ -12,6 +12,7 @@ use {
         banking_trace::TracedSender,
         sigverify::TransactionSigVerifier,
         sigverify_stage::SigVerifyStage,
+        vortexor_heartbeat_monitor::{HeartbeatMessage, HeartbeatMonitor},
         vortexor_receiver_adapter::VortexorReceiverAdapter,
     },
     agave_banking_stage_ingress_types::BankingPacketBatch,
@@ -79,7 +80,7 @@ pub struct TpuSwitchConfig {
     pub vortexor_receiver_config: Option<VotexorReceiverConfig>,
     pub transactions_quic_sockets: Vec<UdpSocket>,
     pub transactions_forwards_quic_sockets: Vec<UdpSocket>,
-    pub keypair: Keypair,
+    pub keypair: Arc<Keypair>,
     pub packet_sender: Sender<PacketBatch>,
     pub packet_receiver: Receiver<PacketBatch>,
     pub forwarded_packet_sender: Sender<PacketBatch>,
@@ -91,10 +92,11 @@ pub struct TpuSwitchConfig {
     pub non_vote_sender: TracedSender,
     pub forward_stage_sender: Sender<(BankingPacketBatch, bool)>,
     pub key_notifiers: Arc<RwLock<KeyUpdaters>>,
+    pub heartbeat_interval: Duration,
 }
 
 /// Manages the fallback between vortexors and native TPU streamers.
-pub struct TpuSwitch {
+pub(crate) struct TpuSwitch {
     config: TpuSwitchConfig,
     cluster_info: Arc<ClusterInfo>,
     tpu_quic_t: Option<thread::JoinHandle<()>>,
@@ -102,7 +104,7 @@ pub struct TpuSwitch {
     sig_verifier: Option<SigVerifier>,
     native_tpu_address: SocketAddr,
     native_tpu_forward_address: SocketAddr,
-    exit: Arc<AtomicBool>,
+    heartbeat_sender: Option<Sender<HeartbeatMessage>>,
     sub_service_exit: Arc<AtomicBool>,
 }
 
@@ -116,12 +118,53 @@ fn clone_udp_sockets(sockets: &[UdpSocket]) -> Vec<UdpSocket> {
         .collect()
 }
 
+pub struct TpuSwitchManager {
+    tpu_switch: Arc<RwLock<TpuSwitch>>,
+    heartbeat_monitor: Option<HeartbeatMonitor>,
+}
+
+impl TpuSwitchManager {
+    /// Creates a new TpuSwitchManager.
+    pub fn new(config: TpuSwitchConfig, cluster_info: Arc<ClusterInfo>) -> Self {
+        let (heartbeat_sender, heartbeat_receiver) = if config.vortexor_receiver_config.is_some() {
+            let (heartbeat_sender, heartbeat_receiver) = crossbeam_channel::bounded(1024);
+            (Some(heartbeat_sender), Some(heartbeat_receiver))
+        } else {
+            (None, None)
+        };
+        let heartbeat_interval = config.heartbeat_interval;
+        let tpu_switch = Arc::new(RwLock::new(TpuSwitch::new(
+            config,
+            cluster_info,
+            heartbeat_sender,
+        )));
+
+        let heartbeat_monitor = heartbeat_receiver.map(|receiver| {
+            HeartbeatMonitor::new(heartbeat_interval, receiver, tpu_switch.clone())
+        });
+
+        Self {
+            tpu_switch,
+            heartbeat_monitor,
+        }
+    }
+
+    pub fn join(mut self) -> thread::Result<()> {
+        let mut tpu_switch = self.tpu_switch.write().unwrap();
+        tpu_switch.join();
+        if let Some(monitor) = self.heartbeat_monitor.take() {
+            monitor.join()?;
+        }
+        Ok(())
+    }
+}
+
 impl TpuSwitch {
     /// Creates a new TpuSwitch.
-    pub fn new(
+    fn new(
         config: TpuSwitchConfig,
         cluster_info: Arc<ClusterInfo>,
-        exit: Arc<AtomicBool>,
+        heartbeat_sender: Option<Sender<HeartbeatMessage>>,
     ) -> Self {
         let native_tpu_address = config.transactions_quic_sockets[0]
             .local_addr()
@@ -152,9 +195,11 @@ impl TpuSwitch {
         } else {
             SigVerifierType::Local
         };
+
         let sig_verifier = Some(start_sig_verifier(
             verifier_type,
             &config,
+            heartbeat_sender.clone(),
             &sub_service_exit,
         ));
 
@@ -166,8 +211,8 @@ impl TpuSwitch {
             sig_verifier,
             native_tpu_address,
             native_tpu_forward_address,
-            exit,
             sub_service_exit,
+            heartbeat_sender,
         }
     }
 
@@ -181,7 +226,10 @@ impl TpuSwitch {
                     self.update_gossip_addresses(vortexor_config);
 
                     let sub_service_exit = Arc::new(AtomicBool::new(false));
-                    self.switch_sig_verifier_to_vortexor(&sub_service_exit);
+                    self.switch_sig_verifier_to_vortexor(
+                        self.heartbeat_sender.clone(),
+                        &sub_service_exit,
+                    );
 
                     self.stop_native_tpu_streamers();
 
@@ -209,7 +257,11 @@ impl TpuSwitch {
     }
 
     /// Switches the signature verifier to use the vortexor.
-    fn switch_sig_verifier_to_vortexor(&mut self, sub_service_exit: &Arc<AtomicBool>) {
+    fn switch_sig_verifier_to_vortexor(
+        &mut self,
+        heartbeat_sender: Option<Sender<HeartbeatMessage>>,
+        sub_service_exit: &Arc<AtomicBool>,
+    ) {
         self.sig_verifier = match self.sig_verifier.take() {
             Some(SigVerifier::Local(sig_verify_stage)) => {
                 if !self.config.tpu_enable_udp {
@@ -218,12 +270,13 @@ impl TpuSwitch {
                         .unwrap_or_else(|err| panic!("Failed to stop local sig verifier: {err:?}"));
                     Some(SigVerifier::Remote(start_remote_sig_verifier(
                         &self.config,
+                        heartbeat_sender,
                         sub_service_exit,
                     )))
                 } else {
                     Some(SigVerifier::Mixed((
                         sig_verify_stage,
-                        start_remote_sig_verifier(&self.config, sub_service_exit),
+                        start_remote_sig_verifier(&self.config, heartbeat_sender, sub_service_exit),
                     )))
                 }
             }
@@ -355,45 +408,30 @@ impl TpuSwitch {
         self.cluster_info.set_tpu_forwards(*tpu_forward_address)
     }
 
-    /// Starts the fallback manager loop to monitor and handle transitions.
-    pub fn start(&self) {
-        let exit = self.exit.clone();
-
-        thread::spawn(move || {
-            while !exit.load(Ordering::Relaxed) {
-                // Monitor and handle transitions (e.g., based on heartbeat or other conditions).
-                thread::sleep(std::time::Duration::from_secs(1));
-            }
-
-            info!("Exiting TpuSwitch...");
-        });
-    }
-
-    pub fn join(self) -> thread::Result<()> {
-        if let Some(sig_verifier) = self.sig_verifier {
-            sig_verifier.join()?;
+    pub fn join(&mut self) {
+        self.sub_service_exit.store(true, Ordering::Relaxed);
+        if let Some(sig_verifier) = self.sig_verifier.take() {
+            sig_verifier.join().unwrap_or_else(|err| {
+                panic!("Failed to stop sig verifier: {err:?}");
+            });
         }
-        if let Some(tpu_quic_t) = self.tpu_quic_t {
-            tpu_quic_t.join()?;
-        }
-        if let Some(tpu_forwards_quic_t) = self.tpu_forwards_quic_t {
-            tpu_forwards_quic_t.join()?;
-        }
-        Ok(())
     }
 }
 
 fn start_sig_verifier(
     verifier_type: SigVerifierType,
     config: &TpuSwitchConfig,
+    heartbeat_sender: Option<Sender<HeartbeatMessage>>,
     exit: &Arc<AtomicBool>,
 ) -> SigVerifier {
     match verifier_type {
-        SigVerifierType::Remote => SigVerifier::Remote(start_remote_sig_verifier(config, exit)),
+        SigVerifierType::Remote => {
+            SigVerifier::Remote(start_remote_sig_verifier(config, heartbeat_sender, exit))
+        }
         SigVerifierType::Local => SigVerifier::Local(start_local_sig_verifier(config)),
         SigVerifierType::Mixed => {
             let local_sig_verifier = start_local_sig_verifier(config);
-            let remote_sig_verifier = start_remote_sig_verifier(config, exit);
+            let remote_sig_verifier = start_remote_sig_verifier(config, heartbeat_sender, exit);
             SigVerifier::Mixed((local_sig_verifier, remote_sig_verifier))
         }
     }
@@ -417,6 +455,7 @@ fn start_local_sig_verifier(config: &TpuSwitchConfig) -> SigVerifyStage {
 
 fn start_remote_sig_verifier(
     config: &TpuSwitchConfig,
+    heartbeat_sender: Option<Sender<HeartbeatMessage>>,
     exit: &Arc<AtomicBool>,
 ) -> VortexorReceiverAdapter {
     info!("starting vortexor adapter");
@@ -435,6 +474,8 @@ fn start_remote_sig_verifier(
         config
             .enable_block_production_forwarding
             .then(|| config.forward_stage_sender.clone()),
+        config.heartbeat_interval,
+        heartbeat_sender,
         exit.clone(),
     )
 }
@@ -463,6 +504,7 @@ fn start_quic_tpu_streamers(
         tpu_coalesce: _,
         packet_receiver: _,
         key_notifiers,
+        heartbeat_interval: _,
     } = config;
 
     let (tpu_quic_t, key_updater) = if vortexor_receiver_config.is_none() {
