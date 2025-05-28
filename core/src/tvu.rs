@@ -5,6 +5,7 @@ use {
     crate::{
         alpenglow_consensus::{
             block_creation_loop::{LeaderWindowNotifier, ReplayHighestFrozen},
+            vote_history::VoteHistory,
             vote_history_storage::VoteHistoryStorage,
         },
         banking_trace::BankingTracer,
@@ -144,6 +145,7 @@ impl Tvu {
         poh_recorder: &Arc<RwLock<PohRecorder>>,
         tower: Tower,
         tower_storage: Arc<dyn TowerStorage>,
+        vote_history: VoteHistory,
         vote_history_storage: Arc<dyn VoteHistoryStorage>,
         leader_schedule_cache: &Arc<LeaderScheduleCache>,
         exit: Arc<AtomicBool>,
@@ -353,6 +355,8 @@ impl Tvu {
             cluster_info: cluster_info.clone(),
             poh_recorder: poh_recorder.clone(),
             tower,
+            vote_history,
+            vote_history_storage: vote_history_storage.clone(),
             vote_tracker,
             cluster_slots,
             log_messages_bytes_limit,
@@ -592,6 +596,7 @@ pub mod tests {
             &poh_recorder,
             Tower::default(),
             Arc::new(FileTowerStorage::default()),
+            VoteHistory::default(),
             Arc::new(FileVoteHistoryStorage::default()),
             &leader_schedule_cache,
             exit.clone(),
