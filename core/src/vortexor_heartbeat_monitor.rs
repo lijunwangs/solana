@@ -31,6 +31,7 @@ impl HeartbeatMonitor {
         heartbeat_receiver: Receiver<HeartbeatMessage>,
         tpu_switch: Arc<RwLock<TpuSwitch>>,
     ) -> Self {
+        info!("Starting heartbeat monitor with timeout: {timeout:?}");
         let monitor_thread = HeartbeatMonitor::start(timeout, tpu_switch, heartbeat_receiver);
         Self { monitor_thread }
     }
