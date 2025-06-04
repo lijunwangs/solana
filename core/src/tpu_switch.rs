@@ -12,6 +12,7 @@ use {
         banking_trace::TracedSender,
         sigverify::TransactionSigVerifier,
         sigverify_stage::SigVerifyStage,
+        tpu,
         vortexor_heartbeat_monitor::{HeartbeatMessage, HeartbeatMonitor},
         vortexor_receiver_adapter::VortexorReceiverAdapter,
     },
@@ -408,9 +409,25 @@ impl TpuSwitch {
         info!(
             "Updating gossip to advertise TPU address: {tpu_address} and TPU forward address: {tpu_forward_address}",
         );
-        let addr = self.cluster_info.my_contact_info().gossip().unwrap().ip();
+
+        let tpu_ip = tpu_address.ip();
+        let gossip_addr = self.cluster_info.my_contact_info().gossip().unwrap().ip();
+        let tpu_ip = if tpu_ip.is_unspecified() {
+            gossip_addr
+        } else {
+            tpu_ip
+        };
+
         self.cluster_info
-            .set_tpu(SocketAddr::new(addr, tpu_address.port()))?;
+            .set_tpu(SocketAddr::new(tpu_ip, tpu_address.port()))?;
+
+        let tpu_forward_ip = tpu_forward_address.ip();
+        let addr = if tpu_forward_ip.is_unspecified() {
+            gossip_addr
+        } else {
+            tpu_forward_ip
+        };
+
         self.cluster_info
             .set_tpu_forwards(SocketAddr::new(addr, tpu_forward_address.port()))
     }
