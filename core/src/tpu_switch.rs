@@ -182,6 +182,7 @@ impl TpuSwitch {
         );
 
         let cluster_info = cluster_info.clone();
+        info!("The gossip address is for this node is: {:?}", cluster_info.my_contact_info().gossip());
         let sub_service_exit = Arc::new(AtomicBool::new(false));
         let (tpu_quic_t, tpu_forwards_quic_t) =
             start_quic_tpu_streamers(&config, &sub_service_exit);
