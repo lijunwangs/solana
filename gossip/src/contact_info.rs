@@ -168,6 +168,7 @@ macro_rules! set_socket {
             SocketAddr: From<T>,
         {
             let socket = SocketAddr::from(socket);
+            info!("Setting socket: {} {} = {socket:?}", stringify!($name), stringify!($key));
             self.set_socket($key, socket)
         }
     };
@@ -177,6 +178,7 @@ macro_rules! set_socket {
             SocketAddr: From<T>,
         {
             let socket = SocketAddr::from(socket);
+            info!("Setting socket: {} {} = {socket:?}", stringify!($name), stringify!($key));
             self.set_socket($key, socket)?;
             self.set_socket($quic, get_quic_socket(&socket)?)
         }
@@ -187,6 +189,8 @@ macro_rules! set_socket {
             SocketAddr: From<T>,
         {
             let socket = SocketAddr::from(socket);
+            info!("Setting socket: {} {} = {socket:?}", stringify!($name), stringify!($key));
+
             let key = match protocol {
                 Protocol::UDP => $udp,
                 Protocol::QUIC => $quic,
