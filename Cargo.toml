@@ -177,8 +177,7 @@ used_underscore_binding = "deny"
 
 [workspace.dependencies]
 Inflector = "0.11.4"
-alpenglow-vote = { git = "https://github.com/solana-program/alpenglow-vote.git", rev = "21f0fa1" }
-# alpenglow-vote = { path = "../alpenglow-vote/program" }
+alpenglow-vote = { git = "https://github.com/solana-program/alpenglow-vote.git", rev = "e4f33e5" }
 aes-gcm-siv = "0.11.1"
 agave-banking-stage-ingress-types = { path = "banking-stage-ingress-types", version = "=3.0.0" }
 agave-cargo-registry = { path = "cargo-registry", version = "=3.0.0" }

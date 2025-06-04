@@ -328,7 +328,7 @@ pub fn create_custom_leader_schedule(
     validator_key_to_slots: impl Iterator<Item = (Pubkey, usize)>,
 ) -> LeaderSchedule {
     let leader_schedule: Vec<_> = validator_key_to_slots
-        .flat_map(|(pubkey, num_slots)| std::iter::repeat(pubkey).take(num_slots))
+        .flat_map(|(pubkey, num_slots)| std::iter::repeat_n(pubkey, num_slots))
         .collect();
 
     info!("leader_schedule: {}", leader_schedule.len());
@@ -380,7 +380,7 @@ pub fn create_custom_leader_schedule_with_random_keys(
 ///   rate at which slots advance in the cluster.
 /// * `additional_accounts` - Additional accounts to be added to the genesis configuration.
 /// * `is_alpenglow` - Boolean flag indicating whether to initialize the `LocalCluster` in Alpenglow
-///    mode.
+///   mode.
 #[allow(clippy::cognitive_complexity)]
 pub fn run_cluster_partition<C>(
     partitions: &[usize],

@@ -17,6 +17,7 @@ dev-context-only-utils = []
 
 [dependencies]
 alpenglow-vote = { workspace = true }
+bincode = { workspace = true }
 crossbeam-channel = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
@@ -29,6 +30,7 @@ solana-client = { workspace = true }
 solana-client-traits = { workspace = true }
 solana-clock = { workspace = true }
 solana-commitment-config = { workspace = true }
+solana-connection-cache = { workspace = true }
 solana-core = { workspace = true }
 solana-entry = { workspace = true }
 solana-epoch-schedule = { workspace = true }
@@ -61,8 +63,8 @@ solana-system-transaction = { workspace = true }
 solana-thin-client = { workspace = true }
 solana-time-utils = { workspace = true }
 solana-tpu-client = { workspace = true }
-solana-transaction = { workspace = true }
 solana-transaction-error = { workspace = true }
+solana-transaction = { workspace = true, features = ["bincode"] }
 solana-turbine = { workspace = true }
 solana-validator-exit = { workspace = true }
 solana-vote = { workspace = true }

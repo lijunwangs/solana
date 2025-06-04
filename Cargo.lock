@@ -635,7 +635,7 @@ checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 [[package]]
 name = "alpenglow-vote"
 version = "0.1.0"
-source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=21f0fa1#21f0fa1442dbe0be6e7bc25204799277ba8c1e79"
+source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=e4f33e5#e4f33e57647f8ca15789d347e763d28478823b5d"
 dependencies = [
  "bincode",
  "bitflags 2.9.1",
@@ -9231,6 +9231,7 @@ version = "3.0.0"
 dependencies = [
  "alpenglow-vote",
  "assert_matches",
+ "bincode",
  "crossbeam-channel",
  "fs_extra",
  "gag",
@@ -9246,6 +9247,7 @@ dependencies = [
  "solana-client-traits",
  "solana-clock",
  "solana-commitment-config",
+ "solana-connection-cache",
  "solana-core",
  "solana-download-utils",
  "solana-entry",
