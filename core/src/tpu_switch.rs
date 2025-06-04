@@ -182,7 +182,10 @@ impl TpuSwitch {
         );
 
         let cluster_info = cluster_info.clone();
-        info!("The gossip address is for this node is: {:?}", cluster_info.my_contact_info().gossip());
+        info!(
+            "The gossip address is for this node is: {:?}",
+            cluster_info.my_contact_info().gossip()
+        );
         let sub_service_exit = Arc::new(AtomicBool::new(false));
         let (tpu_quic_t, tpu_forwards_quic_t) =
             start_quic_tpu_streamers(&config, &sub_service_exit);
@@ -405,8 +408,11 @@ impl TpuSwitch {
         info!(
             "Updating gossip to advertise TPU address: {tpu_address} and TPU forward address: {tpu_forward_address}",
         );
-        self.cluster_info.set_tpu(*tpu_address)?;
-        self.cluster_info.set_tpu_forwards(*tpu_forward_address)
+        let addr = self.cluster_info.my_contact_info().gossip().unwrap().ip();
+        self.cluster_info
+            .set_tpu(SocketAddr::new(addr, tpu_address.port()))?;
+        self.cluster_info
+            .set_tpu_forwards(SocketAddr::new(addr, tpu_forward_address.port()))
     }
 
     pub fn join(&mut self) {

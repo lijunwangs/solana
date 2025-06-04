@@ -169,7 +169,12 @@ macro_rules! set_socket {
         {
             let trace = std::backtrace::Backtrace::capture();
             let socket = SocketAddr::from(socket);
-            info!("Setting socket: {} {} = {socket:?}, Backtrace: {:?}", stringify!($name), stringify!($key), trace);
+            info!(
+                "Setting socket: {} {} = {socket:?}, Backtrace: {:?}",
+                stringify!($name),
+                stringify!($key),
+                trace
+            );
             self.set_socket($key, socket)
         }
     };
@@ -180,7 +185,12 @@ macro_rules! set_socket {
         {
             let trace = std::backtrace::Backtrace::capture();
             let socket = SocketAddr::from(socket);
-            info!("Setting socket: {} {} = {socket:?}, Backtrace: {:?}", stringify!($name), stringify!($key), trace);
+            info!(
+                "Setting socket: {} {} = {socket:?}, Backtrace: {:?}",
+                stringify!($name),
+                stringify!($key),
+                trace
+            );
             self.set_socket($key, socket)?;
             self.set_socket($quic, get_quic_socket(&socket)?)
         }
@@ -192,7 +202,12 @@ macro_rules! set_socket {
         {
             let socket = SocketAddr::from(socket);
             let trace = std::backtrace::Backtrace::capture();
-            info!("Setting socket: {} {} = {socket:?}, Backtrace: {:?}", stringify!($name), stringify!($key), trace);
+            info!(
+                "Setting socket: {} {} = {socket:?}, Backtrace: {:?}",
+                stringify!($name),
+                stringify!($key),
+                trace
+            );
 
             let key = match protocol {
                 Protocol::UDP => $udp,
