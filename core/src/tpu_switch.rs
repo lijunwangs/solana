@@ -12,7 +12,6 @@ use {
         banking_trace::TracedSender,
         sigverify::TransactionSigVerifier,
         sigverify_stage::SigVerifyStage,
-        tpu,
         vortexor_heartbeat_monitor::{HeartbeatMessage, HeartbeatMonitor},
         vortexor_receiver_adapter::VortexorReceiverAdapter,
     },
