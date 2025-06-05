@@ -12,7 +12,6 @@ use {
         thread::{self, Builder, JoinHandle},
         time::{Duration, Instant},
     },
-    x509_parser::der_parser::rusticata_macros::debug,
 };
 
 pub struct PacketBatchSender {
