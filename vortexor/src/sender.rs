@@ -108,7 +108,7 @@ impl PacketBatchSender {
                         for destination in destinations.iter() {
                             let _ = send_sock.send_to(HEARTBEAT_PAYLOAD, destination);
                         }
-                        trace!("Sent heartbeat to all destinations");
+                        debug!("Sent heartbeat to all destinations");
                         last_sent = Instant::now();
                     }
                     continue;
