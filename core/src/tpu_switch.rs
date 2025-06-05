@@ -326,11 +326,11 @@ impl TpuSwitch {
 
     /// Switches to the native TPU streamers by updating gossip and starting the TPU.
     pub fn switch_to_native_tpu(&mut self) {
-        match self.sig_verifier {
+        match self.sig_verifier.take() {
             Some(SigVerifier::Local(_)) => {
                 // nothing to do;
             }
-            Some(SigVerifier::Remote(_) | SigVerifier::Mixed(_)) => {
+            Some(SigVerifier::Remote(_)) => {
                 info!("Switching to native TPU streamers...");
 
                 // Update gossip to advertise native TPU addresses
@@ -338,7 +338,27 @@ impl TpuSwitch {
 
                 // Start native TPU streamers
                 self.start_native_tpu_streamers();
+
+                self.sig_verifier = Some(start_sig_verifier(
+                    SigVerifierType::Local,
+                    &self.config,
+                    self.heartbeat_sender.clone(),
+                    &self.sub_service_exit.clone(),
+                ));
             }
+
+            Some(SigVerifier::Mixed((verify_stage, _adaptor))) => {
+                info!("Switching to native TPU streamers...");
+
+                // Update gossip to advertise native TPU addresses
+                self.update_native_tpu_gossip();
+
+                // Start native TPU streamers
+                self.start_native_tpu_streamers();
+
+                self.sig_verifier = Some(SigVerifier::Local(verify_stage));
+            }
+
             None => {
                 panic!("Unexpected condition");
             }
