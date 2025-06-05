@@ -12,6 +12,7 @@ use {
         thread::{self, Builder, JoinHandle},
         time::{Duration, Instant},
     },
+    x509_parser::der_parser::rusticata_macros::debug,
 };
 
 pub struct PacketBatchSender {
@@ -106,7 +107,8 @@ impl PacketBatchSender {
                     // If enough time has passed since last sent, send heartbeat
                     if last_sent.elapsed() >= HEARTBEAT_INTERVAL {
                         for destination in destinations.iter() {
-                            let _ = send_sock.send_to(HEARTBEAT_PAYLOAD, destination);
+                            let result = send_sock.send_to(HEARTBEAT_PAYLOAD, destination);
+                            debug!("Sent heartbeat to {destination}: {result:?}",);
                         }
                         debug!("Sent heartbeat to all destinations {:?}", destinations);
                         last_sent = Instant::now();
