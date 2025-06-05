@@ -105,6 +105,7 @@ impl VortexorReceiverAdapter {
                         .is_none_or(|time| now.duration_since(time) > heartbeat_interval)
                     {
                         if let Some(heartbeat_sender) = &heartbeat_sender {
+                            info!("Sending heartbeat to heartbeat monitor");
                             let _ = heartbeat_sender.send(());
                         }
                         last_heartbeat_time = Some(now);
