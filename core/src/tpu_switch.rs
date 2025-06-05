@@ -244,6 +244,7 @@ impl TpuSwitch {
             }
             Some(SigVerifier::Remote(_) | SigVerifier::Mixed(_)) => {
                 // already using vortexor, do nothing
+                info!("Already using vortexor, no switch needed");
             }
             None => {
                 panic!("Unexpected condition!");
