@@ -353,7 +353,7 @@ impl TpuSwitch {
     /// Stops vortexor-related services and resets the signature verifier.
     /// This will be used when explicitly stopping the vortexor services via
     /// ADMIN RPC.
-    fn stop_vortexor_services(&mut self) {
+    pub fn stop_vortexor_services(&mut self) {
         self.sub_service_exit.store(true, Ordering::Relaxed);
 
         // Stop the current signature verifier
