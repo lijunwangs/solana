@@ -96,7 +96,7 @@ pub struct TpuSwitchConfig {
 }
 
 /// Manages the fallback between vortexors and native TPU streamers.
-pub(crate) struct TpuSwitch {
+pub struct TpuSwitch {
     config: TpuSwitchConfig,
     cluster_info: Arc<ClusterInfo>,
     tpu_quic_t: Option<thread::JoinHandle<()>>,
