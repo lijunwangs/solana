@@ -335,9 +335,6 @@ impl TpuSwitch {
                 // Update gossip to advertise native TPU addresses
                 self.update_native_tpu_gossip();
 
-                // Stop vortexor-related services
-                self.stop_vortexor_services();
-
                 // Start native TPU streamers
                 self.start_native_tpu_streamers();
             }
@@ -354,6 +351,8 @@ impl TpuSwitch {
     }
 
     /// Stops vortexor-related services and resets the signature verifier.
+    /// This will be used when explicitly stopping the vortexor services via
+    /// ADMIN RPC.
     fn stop_vortexor_services(&mut self) {
         self.sub_service_exit.store(true, Ordering::Relaxed);
 
