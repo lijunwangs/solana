@@ -22,6 +22,8 @@ pub const DEFAULT_SENDER_THREADS_COUNT: usize = 8;
 pub const DEFAULT_BATCH_SIZE: usize = 128;
 
 pub const DEFAULT_RECV_TIMEOUT: Duration = Duration::from_millis(100);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const HEARTBEAT_PAYLOAD: &[u8] = b"VH";
 
 impl PacketBatchSender {
     pub fn new(
@@ -72,40 +74,49 @@ impl PacketBatchSender {
         batch_size: usize,
         destinations: Arc<RwLock<Vec<SocketAddr>>>,
     ) {
+        let mut last_sent = Instant::now();
         loop {
             let destinations = destinations.read().expect("Expected to get destinations");
             match Self::receive_until(packet_batch_receiver.clone(), recv_timeout, batch_size) {
                 Ok((packet_count, packet_batches)) => {
-                    trace!("Received packet counts: {}", packet_count);
-                    // Collect all packets once for all destinations
-                    let mut packets: Vec<&[u8]> = Vec::new();
+                    if packet_count > 0 {
+                        // Collect all packets once for all destinations
+                        let mut packets: Vec<&[u8]> = Vec::new();
 
-                    for batch in &packet_batches {
-                        for packet_batch in batch.iter() {
-                            for packet in packet_batch {
-                                if let Some(data) = packet.data(0..) {
-                                    packets.push(data);
+                        for batch in &packet_batches {
+                            for packet_batch in batch.iter() {
+                                for packet in packet_batch {
+                                    if let Some(data) = packet.data(0..) {
+                                        packets.push(data);
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Send all packets to each destination
-                    for destination in destinations.iter() {
-                        let packet_refs: Vec<(&[u8], &SocketAddr)> =
-                            packets.iter().map(|data| (*data, destination)).collect();
-                        let _result = batch_send(&send_sock, packet_refs.into_iter());
+                        // Send all packets to each destination
+                        for destination in destinations.iter() {
+                            let packet_refs: Vec<(&[u8], &SocketAddr)> =
+                                packets.iter().map(|data| (*data, destination)).collect();
+                            let _result = batch_send(&send_sock, packet_refs.into_iter());
+                        }
+                        last_sent = Instant::now();
                     }
                 }
-                Err(err) => match err {
-                    RecvTimeoutError::Timeout => {
-                        continue;
+                Err(RecvTimeoutError::Timeout) => {
+                    // If enough time has passed since last sent, send heartbeat
+                    if last_sent.elapsed() >= HEARTBEAT_INTERVAL {
+                        for destination in destinations.iter() {
+                            let _ = send_sock.send_to(HEARTBEAT_PAYLOAD, destination);
+                        }
+                        trace!("Sent heartbeat to all destinations");
+                        last_sent = Instant::now();
                     }
-                    RecvTimeoutError::Disconnected => {
-                        info!("Exiting the recv_sender as channel is disconnected.");
-                        break;
-                    }
-                },
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    info!("Exiting the recv_sender as channel is disconnected.");
+                    break;
+                }
             }
         }
     }
