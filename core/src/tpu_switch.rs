@@ -327,8 +327,9 @@ impl TpuSwitch {
     /// Switches to the native TPU streamers by updating gossip and starting the TPU.
     pub fn switch_to_native_tpu(&mut self) {
         match self.sig_verifier.take() {
-            Some(SigVerifier::Local(_)) => {
+            Some(SigVerifier::Local(sig_verify)) => {
                 // nothing to do;
+                self.sig_verifier = Some(SigVerifier::Local(sig_verify));
             }
             Some(SigVerifier::Remote(_)) => {
                 info!("Switching to native TPU streamers...");
