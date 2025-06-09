@@ -220,7 +220,7 @@ impl Tpu {
             keypair: keypair.clone(),
             packet_sender: Some(packet_sender),
             packet_receiver: Some(packet_receiver),
-            forwarded_packet_sender,
+            forwarded_packet_sender: Some(forwarded_packet_sender),
             staked_nodes: staked_nodes.clone(),
             tpu_quic_server_config,
             tpu_fwd_quic_server_config,

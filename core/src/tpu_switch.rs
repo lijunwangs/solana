@@ -83,7 +83,7 @@ pub struct TpuSwitchConfig {
     pub keypair: Arc<Keypair>,
     pub packet_sender: Option<Sender<PacketBatch>>,
     pub packet_receiver: Option<Receiver<PacketBatch>>,
-    pub forwarded_packet_sender: Sender<PacketBatch>,
+    pub forwarded_packet_sender: Option<Sender<PacketBatch>>,
     pub staked_nodes: Arc<RwLock<StakedNodes>>,
     pub tpu_quic_server_config: QuicServerParams,
     pub tpu_fwd_quic_server_config: QuicServerParams,
@@ -272,6 +272,8 @@ impl TpuSwitch {
                 // need to drop the sender channel to trigger the local sig verifier to stop
                 let sender = self.config.packet_sender.take();
                 drop(sender); // Drop the sender to avoid sending packets to the local sig verifier
+                let forward_sender = self.config.forwarded_packet_sender.take();
+                drop(forward_sender); // Drop the forward sender to avoid sending packets to the local sig verifier
                 if !self.config.tpu_enable_udp {
                     sig_verify_stage
                         .join()
@@ -587,7 +589,7 @@ fn start_quic_tpu_streamers(
             "quic_streamer_tpu_forwards",
             clone_udp_sockets(transactions_forwards_quic_sockets),
             keypair,
-            forwarded_packet_sender.clone(),
+            forwarded_packet_sender.clone().unwrap(),
             exit.clone(),
             staked_nodes.clone(),
             tpu_fwd_quic_server_config.clone(),
