@@ -229,13 +229,13 @@ impl TpuSwitch {
                 if let Some(vortexor_config) = &self.config.vortexor_receiver_config {
                     self.update_gossip_addresses(vortexor_config);
 
+                    self.stop_native_tpu_streamers();
+
                     let sub_service_exit = Arc::new(AtomicBool::new(false));
                     self.switch_sig_verifier_to_vortexor(
                         self.heartbeat_sender.clone(),
                         &sub_service_exit,
                     );
-
-                    self.stop_native_tpu_streamers();
 
                     self.sub_service_exit = sub_service_exit;
                 } else {
