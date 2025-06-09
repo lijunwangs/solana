@@ -81,8 +81,8 @@ pub struct TpuSwitchConfig {
     pub transactions_quic_sockets: Vec<UdpSocket>,
     pub transactions_forwards_quic_sockets: Vec<UdpSocket>,
     pub keypair: Arc<Keypair>,
-    pub packet_sender: Sender<PacketBatch>,
-    pub packet_receiver: Receiver<PacketBatch>,
+    pub packet_sender: Option<Sender<PacketBatch>>,
+    pub packet_receiver: Option<Receiver<PacketBatch>>,
     pub forwarded_packet_sender: Sender<PacketBatch>,
     pub staked_nodes: Arc<RwLock<StakedNodes>>,
     pub tpu_quic_server_config: QuicServerParams,
@@ -269,6 +269,9 @@ impl TpuSwitch {
     ) {
         self.sig_verifier = match self.sig_verifier.take() {
             Some(SigVerifier::Local(sig_verify_stage)) => {
+                // need to drop the sender channel to trigger the local sig verifier to stop
+                let sender = self.config.packet_sender.take();
+                drop(sender); // Drop the sender to avoid sending packets to the local sig verifier
                 if !self.config.tpu_enable_udp {
                     sig_verify_stage
                         .join()
@@ -490,7 +493,7 @@ fn start_local_sig_verifier(config: &TpuSwitchConfig) -> SigVerifyStage {
             .then(|| config.forward_stage_sender.clone()),
     );
     SigVerifyStage::new(
-        config.packet_receiver.clone(),
+        config.packet_receiver.clone().unwrap(),
         verifier,
         "solSigVerTpu",
         "tpu-verifier",
@@ -562,7 +565,7 @@ fn start_quic_tpu_streamers(
             "quic_streamer_tpu",
             clone_udp_sockets(transactions_quic_sockets),
             keypair,
-            packet_sender.clone(),
+            packet_sender.clone().unwrap(),
             exit.clone(),
             staked_nodes.clone(),
             tpu_quic_server_config.clone(),
