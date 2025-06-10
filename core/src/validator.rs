@@ -1674,6 +1674,7 @@ impl Validator {
                 vote_quic: node.sockets.tpu_vote_quic,
                 vote_forwarding_client: node.sockets.tpu_vote_forwarding_client,
                 vortexor_receivers: node.sockets.vortexor_receivers,
+                alpenglow: node.sockets.alpenglow,
             },
             rpc_subscriptions.clone(),
             transaction_status_sender,
@@ -1819,6 +1820,10 @@ impl Validator {
         info!(
             "local retransmit address: {}",
             node.sockets.retransmit_sockets[0].local_addr().unwrap()
+        );
+        info!(
+            "local alpenglow address: {}",
+            node.sockets.alpenglow.local_addr().unwrap()
         );
     }
 
