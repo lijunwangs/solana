@@ -8026,6 +8026,7 @@ pub(crate) mod tests {
             connection_cache.protocol(),
             Duration::from_secs(5),
             5,
+            false,
         );
 
         crate::voting_service::VotingService::handle_vote(
@@ -8141,6 +8142,7 @@ pub(crate) mod tests {
             connection_cache.protocol(),
             Duration::from_secs(5),
             5,
+            false,
         );
 
         crate::voting_service::VotingService::handle_vote(
@@ -8279,6 +8281,7 @@ pub(crate) mod tests {
             connection_cache.protocol(),
             Duration::from_secs(5),
             5,
+            false,
         );
 
         crate::voting_service::VotingService::handle_vote(
@@ -8433,6 +8436,7 @@ pub(crate) mod tests {
             connection_cache.protocol(),
             Duration::from_secs(5),
             5,
+            false,
         );
 
         crate::voting_service::VotingService::handle_vote(
