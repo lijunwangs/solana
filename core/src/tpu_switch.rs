@@ -188,7 +188,7 @@ impl TpuSwitch {
         );
         let sub_service_exit = Arc::new(AtomicBool::new(false));
         let (tpu_quic_t, tpu_forwards_quic_t) =
-            start_quic_tpu_streamers(&config, &sub_service_exit);
+            start_quic_tpu_streamers(false, &config, &sub_service_exit);
 
         let verifier_type = if config.vortexor_receiver_config.is_some() {
             if config.tpu_enable_udp {
@@ -418,7 +418,7 @@ impl TpuSwitch {
     fn start_native_tpu_streamers(&mut self) {
         let sub_service_exit = Arc::new(AtomicBool::new(false));
         let (tpu_quic_t, tpu_forwards_quic_t) =
-            start_quic_tpu_streamers(&self.config, &sub_service_exit);
+            start_quic_tpu_streamers(true, &self.config, &sub_service_exit);
 
         self.tpu_quic_t = tpu_quic_t;
         self.tpu_forwards_quic_t = tpu_forwards_quic_t;
@@ -530,6 +530,7 @@ fn start_remote_sig_verifier(
 }
 
 fn start_quic_tpu_streamers(
+    force_start: bool,
     config: &TpuSwitchConfig,
     exit: &Arc<AtomicBool>,
 ) -> (
@@ -556,7 +557,7 @@ fn start_quic_tpu_streamers(
         heartbeat_interval: _,
     } = config;
 
-    let (tpu_quic_t, key_updater) = if vortexor_receiver_config.is_none() {
+    let (tpu_quic_t, key_updater) = if vortexor_receiver_config.is_none() || force_start {
         // Streamer for TPU
         let SpawnServerResult {
             endpoints: _,
@@ -578,27 +579,28 @@ fn start_quic_tpu_streamers(
         (None, None)
     };
 
-    let (tpu_forwards_quic_t, forwards_key_updater) = if vortexor_receiver_config.is_none() {
-        // Streamer for TPU forward
-        let SpawnServerResult {
-            endpoints: _,
-            thread: tpu_forwards_quic_t,
-            key_updater: forwards_key_updater,
-        } = spawn_server_multi(
-            "solQuicTpuFwd",
-            "quic_streamer_tpu_forwards",
-            clone_udp_sockets(transactions_forwards_quic_sockets),
-            keypair,
-            forwarded_packet_sender.clone().unwrap(),
-            exit.clone(),
-            staked_nodes.clone(),
-            tpu_fwd_quic_server_config.clone(),
-        )
-        .unwrap();
-        (Some(tpu_forwards_quic_t), Some(forwards_key_updater))
-    } else {
-        (None, None)
-    };
+    let (tpu_forwards_quic_t, forwards_key_updater) =
+        if vortexor_receiver_config.is_none() || force_start {
+            // Streamer for TPU forward
+            let SpawnServerResult {
+                endpoints: _,
+                thread: tpu_forwards_quic_t,
+                key_updater: forwards_key_updater,
+            } = spawn_server_multi(
+                "solQuicTpuFwd",
+                "quic_streamer_tpu_forwards",
+                clone_udp_sockets(transactions_forwards_quic_sockets),
+                keypair,
+                forwarded_packet_sender.clone().unwrap(),
+                exit.clone(),
+                staked_nodes.clone(),
+                tpu_fwd_quic_server_config.clone(),
+            )
+            .unwrap();
+            (Some(tpu_forwards_quic_t), Some(forwards_key_updater))
+        } else {
+            (None, None)
+        };
 
     if let Some(key_updater) = key_updater {
         key_notifiers
