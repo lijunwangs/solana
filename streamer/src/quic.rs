@@ -658,6 +658,7 @@ pub fn spawn_server_multi(
             if let Err(e) = runtime.block_on(result.thread) {
                 warn!("error from runtime.block_on: {:?}", e);
             }
+            info!("{thread_name} thread exiting");
         })
         .unwrap();
     let updater = EndpointKeyUpdater {
