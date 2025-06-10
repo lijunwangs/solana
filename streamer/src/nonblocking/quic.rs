@@ -317,13 +317,16 @@ async fn run_server(
         Arc::new(Mutex::new(ConnectionTable::new()));
     let (sender, receiver) = bounded(coalesce_channel_size);
 
-    thread::spawn({
-        let exit = exit.clone();
-        let stats = stats.clone();
-        move || {
-            packet_batch_sender(packet_sender, receiver, exit, stats, coalesce);
-        }
-    });
+    thread::Builder::new()
+        .name("pktBtchSdr".to_string())
+        .spawn({
+            let exit = exit.clone();
+            let stats = stats.clone();
+            move || {
+                packet_batch_sender(packet_sender, receiver, exit, stats, coalesce);
+            }
+        })
+        .unwrap();
 
     let mut accepts = endpoints
         .iter()
