@@ -17,10 +17,10 @@ use {
     },
     agave_banking_stage_ingress_types::BankingPacketBatch,
     core::panic,
-    crossbeam_channel::{Receiver, Sender},
+    crossbeam_channel::{unbounded, Receiver, Sender},
     log::info,
     solana_gossip::{cluster_info::ClusterInfo, contact_info::Error as ContactInforError},
-    solana_perf::packet::PacketBatch,
+    solana_perf::packet::{self, PacketBatch},
     solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair},
     solana_streamer::{
         quic::{spawn_server_multi, QuicServerParams, SpawnServerResult},
@@ -416,6 +416,16 @@ impl TpuSwitch {
 
     /// Starts the native TPU streamers and updates the sub-service exit flag.
     fn start_native_tpu_streamers(&mut self) {
+        if self.config.packet_sender.is_none() {
+            let (packet_sender, packet_receiver) = unbounded();
+            self.config.packet_sender = Some(packet_sender);
+            self.config.packet_receiver = Some(packet_receiver);
+        }
+        if self.config.forwarded_packet_sender.is_none() {
+            // To send forwarded_packet_receiver to the solFetchStgFwRx
+            let (forwarded_packet_sender, _forwarded_packet_receiver) = unbounded();
+            self.config.forwarded_packet_sender = Some(forwarded_packet_sender);
+        }
         let sub_service_exit = Arc::new(AtomicBool::new(false));
         let (tpu_quic_t, tpu_forwards_quic_t) =
             start_quic_tpu_streamers(true, &self.config, &sub_service_exit);
