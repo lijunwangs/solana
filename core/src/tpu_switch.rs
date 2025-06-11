@@ -20,7 +20,7 @@ use {
     crossbeam_channel::{unbounded, Receiver, Sender},
     log::info,
     solana_gossip::{cluster_info::ClusterInfo, contact_info::Error as ContactInforError},
-    solana_perf::packet::{self, PacketBatch},
+    solana_perf::packet::PacketBatch,
     solana_sdk::{quic::QUIC_PORT_OFFSET, signature::Keypair},
     solana_streamer::{
         quic::{spawn_server_multi, QuicServerParams, SpawnServerResult},
