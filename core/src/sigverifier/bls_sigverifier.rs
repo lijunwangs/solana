@@ -124,8 +124,8 @@ mod tests {
         bitvec::prelude::*,
         crossbeam_channel::Receiver,
         solana_bls::Signature,
-        solana_perf::packet::Packet,
-        solana_sdk::hash::Hash,
+        solana_hash::Hash,
+        solana_perf::packet::{Packet, PinnedPacketBatch},
         std::time::Duration,
     };
 
@@ -144,7 +144,7 @@ mod tests {
                 packet
             })
             .collect::<Vec<Packet>>();
-        let packet_batches = vec![PacketBatch::new(packets)];
+        let packet_batches = vec![PinnedPacketBatch::new(packets).into()];
         assert!(verifier.send_packets(packet_batches).is_ok());
         if let Some(receiver) = receiver {
             for msg in messages {
@@ -207,7 +207,7 @@ mod tests {
         let mut verifier = BLSSigVerifier::new(sender);
 
         let packets = vec![Packet::default()];
-        let packet_batches = vec![PacketBatch::new(packets)];
+        let packet_batches = vec![PinnedPacketBatch::new(packets).into()];
         assert!(verifier.send_packets(packet_batches).is_ok());
         let stats = verifier.stats();
         assert_eq!(stats.bls_messages_sent, 0);
