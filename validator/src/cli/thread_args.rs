@@ -310,7 +310,7 @@ impl ThreadArg for RocksdbFlushThreadsArg {
 struct TpuWorkerThreadsArg;
 impl ThreadArg for TpuWorkerThreadsArg {
     const NAME: &'static str = "tpu_worker_threads";
-    const LONG_NAME: &'static str = "tpu-receive-threads";
+    const LONG_NAME: &'static str = "tpu-worker-threads";
     const HELP: &'static str = "Numner of the QUIC server runtime worker threads.";
 
     fn default() -> usize {
