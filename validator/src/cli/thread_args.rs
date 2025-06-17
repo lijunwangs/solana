@@ -23,6 +23,7 @@ pub struct DefaultThreadArgs {
     pub tvu_receive_threads: String,
     pub tvu_retransmit_threads: String,
     pub tvu_sigverify_threads: String,
+    pub tpu_worker_threads: String,
 }
 
 impl Default for DefaultThreadArgs {
@@ -44,6 +45,7 @@ impl Default for DefaultThreadArgs {
             tvu_receive_threads: TvuReceiveThreadsArg::bounded_default().to_string(),
             tvu_retransmit_threads: TvuRetransmitThreadsArg::bounded_default().to_string(),
             tvu_sigverify_threads: TvuShredSigverifyThreadsArg::bounded_default().to_string(),
+            tpu_worker_threads: TpuWorkerThreadsArg::bounded_default().to_string(),
         }
     }
 }
@@ -63,6 +65,7 @@ pub fn thread_args<'a>(defaults: &DefaultThreadArgs) -> Vec<Arg<'_, 'a>> {
         new_thread_arg::<TvuReceiveThreadsArg>(&defaults.tvu_receive_threads),
         new_thread_arg::<TvuRetransmitThreadsArg>(&defaults.tvu_retransmit_threads),
         new_thread_arg::<TvuShredSigverifyThreadsArg>(&defaults.tvu_sigverify_threads),
+        new_thread_arg::<TpuWorkerThreadsArg>(&defaults.tpu_worker_threads),
     ]
 }
 
@@ -91,6 +94,7 @@ pub struct NumThreadConfig {
     pub tvu_receive_threads: NonZeroUsize,
     pub tvu_retransmit_threads: NonZeroUsize,
     pub tvu_sigverify_threads: NonZeroUsize,
+    pub tpu_worker_threads: NonZeroUsize,
 }
 
 pub fn parse_num_threads_args(matches: &ArgMatches) -> NumThreadConfig {
@@ -148,6 +152,7 @@ pub fn parse_num_threads_args(matches: &ArgMatches) -> NumThreadConfig {
             TvuShredSigverifyThreadsArg::NAME,
             NonZeroUsize
         ),
+        tpu_worker_threads: value_t_or_exit!(matches, TpuWorkerThreadsArg::NAME, NonZeroUsize),
     }
 }
 
@@ -299,6 +304,20 @@ impl ThreadArg for RocksdbFlushThreadsArg {
 
     fn default() -> usize {
         solana_ledger::blockstore::default_num_flush_threads().get()
+    }
+}
+
+struct TpuWorkerThreadsArg;
+impl ThreadArg for TpuWorkerThreadsArg {
+    const NAME: &'static str = "tpu_worker_threads";
+    const LONG_NAME: &'static str = "tpu-receive-threads";
+    const HELP: &'static str = "Numner of the QUIC server runtime worker threads.";
+
+    fn default() -> usize {
+        solana_streamer::quic::DEFAULT_WORKER_THREADS
+    }
+    fn min() -> usize {
+        solana_streamer::quic::MINIMUM_WORKER_THREADS
     }
 }
 

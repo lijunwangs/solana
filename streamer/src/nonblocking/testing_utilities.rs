@@ -8,7 +8,7 @@ use {
         quic::{
             QuicServerParams, StreamerStats, DEFAULT_MAX_CONNECTIONS_PER_IPADDR_PER_MINUTE,
             DEFAULT_MAX_STAKED_CONNECTIONS, DEFAULT_MAX_STREAMS_PER_MS,
-            DEFAULT_MAX_UNSTAKED_CONNECTIONS, DEFAULT_TPU_COALESCE,
+            DEFAULT_MAX_UNSTAKED_CONNECTIONS, DEFAULT_TPU_COALESCE, DEFAULT_WORKER_THREADS,
         },
         streamer::StakedNodes,
     },
@@ -137,6 +137,7 @@ pub fn setup_quic_server_with_sockets(
         wait_for_chunk_timeout: DEFAULT_WAIT_FOR_CHUNK_TIMEOUT,
         coalesce: DEFAULT_TPU_COALESCE,
         coalesce_channel_size,
+        worker_threads: DEFAULT_WORKER_THREADS,
     };
     let SpawnNonBlockingServerResult {
         endpoints: _,

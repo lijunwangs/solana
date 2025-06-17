@@ -114,6 +114,7 @@ pub fn execute(
         tvu_receive_threads,
         tvu_retransmit_threads,
         tvu_sigverify_threads,
+        tpu_worker_threads,
     } = cli::thread_args::parse_num_threads_args(matches);
 
     let identity_keypair = keypair_of(matches, "identity").unwrap_or_else(|| {
@@ -1269,6 +1270,7 @@ pub fn execute(
         max_streams_per_ms,
         max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
         coalesce: tpu_coalesce,
+        worker_threads: tpu_worker_threads.into(),
         ..Default::default()
     };
 
@@ -1279,6 +1281,7 @@ pub fn execute(
         max_streams_per_ms,
         max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
         coalesce: tpu_coalesce,
+        worker_threads: tpu_worker_threads.into(),
         ..Default::default()
     };
 
