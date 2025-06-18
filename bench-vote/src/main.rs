@@ -212,7 +212,8 @@ fn main() -> Result<()> {
 
         QuicParams {
             identity_keypair,
-            staked_nodes
+            staked_nodes,
+            connection_pool_size
         }
     });
 
@@ -350,6 +351,7 @@ enum Transporter {
 struct QuicParams {
     identity_keypair: Keypair,
     staked_nodes: Arc<RwLock<StakedNodes>>,
+    connection_pool_size: usize,
 }
 
 fn producer(
@@ -364,7 +366,7 @@ fn producer(
         if let Some(quic_params) = &quic_params {
             Transporter::Cache(Arc::new(ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
-                256,  // connection_pool_size
+                quic_params.connection_pool_size,
                 None, // client_endpoint
                 Some((
                     &quic_params.identity_keypair,
