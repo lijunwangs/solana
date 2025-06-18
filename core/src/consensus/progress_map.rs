@@ -7,7 +7,7 @@ use {
     },
     solana_clock::Slot,
     solana_hash::Hash,
-    solana_ledger::blockstore_processor::{self, ConfirmationProgress, ReplaySlotStats},
+    solana_ledger::blockstore_processor::{ConfirmationProgress, ReplaySlotStats},
     solana_pubkey::Pubkey,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
     solana_vote::vote_account::VoteAccountsHashMap,
@@ -169,11 +169,6 @@ impl ForkProgress {
             num_blocks_on_fork,
             num_dropped_blocks_on_fork,
         );
-
-        // Don't need set ticks for our own leader banks, poh service will do that
-        if bank.collector_id() != validator_identity {
-            blockstore_processor::set_alpenglow_ticks(bank);
-        }
 
         if bank.is_frozen() {
             new_progress.fork_stats.bank_hash = Some(bank.hash());
