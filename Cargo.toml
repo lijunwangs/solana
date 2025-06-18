@@ -133,9 +133,9 @@ members = [
     "unified-scheduler-pool",
     "upload-perf",
     "validator",
+    "verified-packet-receiver",
     "version",
     "vortexor",
-    "vortexor-receiver",
     "vote",
     "watchtower",
     "wen-restart",
@@ -186,6 +186,7 @@ agave-precompiles = { path = "precompiles", version = "=3.0.0" }
 agave-reserved-account-keys = { path = "reserved-account-keys", version = "=3.0.0" }
 agave-thread-manager = { path = "thread-manager", version = "=3.0.0" }
 agave-transaction-view = { path = "transaction-view", version = "=3.0.0" }
+agave-verified-packet-receiver = { path = "verified-packet-receiver", version = "=3.0.0" }
 agave-xdp = { path = "xdp", version = "=3.0.0" }
 ahash = "0.8.11"
 anyhow = "1.0.98"
@@ -553,7 +554,6 @@ solana-unified-scheduler-logic = { path = "unified-scheduler-logic", version = "
 solana-unified-scheduler-pool = { path = "unified-scheduler-pool", version = "=3.0.0" }
 solana-validator-exit = "2.2.1"
 solana-version = { path = "version", version = "=3.0.0" }
-solana-vortexor-receiver = { path = "vortexor-receiver", version = "=3.0.0" }
 solana-vote = { path = "vote", version = "=3.0.0" }
 solana-vote-interface = "2.2.5"
 solana-vote-program = { path = "programs/vote", version = "=3.0.0", default-features = false }

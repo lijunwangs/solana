@@ -5994,7 +5994,7 @@ dependencies = [
  "solana-unified-scheduler-pool",
  "solana-validator-exit",
  "solana-version",
- "solana-vortexor-receiver",
+ "agave-verified-packet-receiver",
  "solana-vote",
  "solana-vote-program",
  "solana-wen-restart",
@@ -8790,7 +8790,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-vortexor-receiver"
+name = "agave-verified-packet-receiver"
 version = "3.0.0"
 dependencies = [
  "solana-perf",

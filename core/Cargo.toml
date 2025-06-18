@@ -44,6 +44,7 @@ frozen-abi = [
 agave-banking-stage-ingress-types = { workspace = true }
 agave-feature-set = { workspace = true }
 agave-transaction-view = { workspace = true }
+agave-verified-packet-receiver = { workspace = true }
 ahash = { workspace = true }
 anyhow = { workspace = true }
 arrayvec = { workspace = true }
@@ -159,7 +160,6 @@ solana-turbine = { workspace = true }
 solana-unified-scheduler-pool = { workspace = true }
 solana-validator-exit = { workspace = true }
 solana-version = { workspace = true }
-solana-vortexor-receiver = { workspace = true }
 solana-vote = { workspace = true }
 solana-vote-program = { workspace = true }
 solana-wen-restart = { workspace = true }

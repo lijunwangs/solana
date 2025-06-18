@@ -1,7 +1,7 @@
 [package]
-name = "solana-vortexor-receiver"
-description = "Solana TPU Vortexor Receiver"
-documentation = "https://docs.rs/solana-vortexor-receiver"
+name = "agave-verified-packet-receiver"
+description = "Agave Verified Packet Receiver Receiver"
+documentation = "https://docs.rs/agave-verified-packet-receiver"
 publish = true
 version = { workspace = true }
 authors = { workspace = true }
@@ -15,7 +15,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [lib]
 crate-type = ["lib"]
-name = "solana_vortexor_receiver"
+name = "agave_verified_packet_receiver"
 
 [dependencies]
 solana-perf = { workspace = true }
