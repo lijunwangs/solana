@@ -150,6 +150,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "agave-verified-packet-receiver"
+version = "3.0.0"
+dependencies = [
+ "solana-perf",
+ "solana-streamer",
+]
+
+[[package]]
 name = "agave-xdp"
 version = "3.0.0"
 dependencies = [
@@ -5885,6 +5893,7 @@ dependencies = [
  "agave-banking-stage-ingress-types",
  "agave-feature-set",
  "agave-transaction-view",
+ "agave-verified-packet-receiver",
  "ahash 0.8.11",
  "anyhow",
  "arrayvec",
@@ -5994,7 +6003,6 @@ dependencies = [
  "solana-unified-scheduler-pool",
  "solana-validator-exit",
  "solana-version",
- "agave-verified-packet-receiver",
  "solana-vote",
  "solana-vote-program",
  "solana-wen-restart",
@@ -8787,14 +8795,6 @@ dependencies = [
  "serde_derive",
  "solana-sanitize",
  "solana-serde-varint",
-]
-
-[[package]]
-name = "agave-verified-packet-receiver"
-version = "3.0.0"
-dependencies = [
- "solana-perf",
- "solana-streamer",
 ]
 
 [[package]]
