@@ -107,7 +107,7 @@ fn main() -> Result<()> {
                 .long("max-connections-per-peer")
                 .value_name("NUM")
                 .takes_value(true)
-                .help("Maximum concurrent client connections per peer allwowed at the server side."),
+                .help("Maximum concurrent client connections per peer allowed on the server side."),
         )
         .arg(
             Arg::with_name("connection-pool-size")
