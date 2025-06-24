@@ -110,6 +110,13 @@ fn main() -> Result<()> {
                 .help("Maximum concurrent client connections per peer allowed on the server side."),
         )
         .arg(
+            Arg::with_name("max-connections-per-ipaddr-per-min")
+                .long("max-connections-per-ipaddr-per-min")
+                .value_name("NUM")
+                .takes_value(true)
+                .help("Maximum client connections per ipaddr per minute allowed on the server side."),
+        )
+        .arg(
             Arg::with_name("connection-pool-size")
                 .long("connection-pool-size")
                 .value_name("NUM")
@@ -174,6 +181,8 @@ fn main() -> Result<()> {
         value_t!(matches, "max-connections", usize).unwrap_or(DEFAULT_MAX_STAKED_CONNECTIONS);
     let max_connections_per_peer: usize = value_t!(matches, "max-connections-per-peer", usize)
         .unwrap_or(DEFAULT_MAX_QUIC_CONNECTIONS_PER_PEER);
+    let max_connections_per_ipaddr_per_min: usize =
+        value_t!(matches, "max-connections-per-ipaddr-per-min", usize).unwrap_or(1024); // Default value for max connections per ipaddr per minute
     let connection_pool_size: usize =
         value_t!(matches, "connection-pool-size", usize).unwrap_or(256);
 
@@ -235,7 +244,9 @@ fn main() -> Result<()> {
 
         if let Some(quic_params) = &quic_params {
             let quic_server_params = QuicServerParams {
-                max_connections_per_ipaddr_per_min: 8192,
+                max_connections_per_ipaddr_per_min: max_connections_per_ipaddr_per_min
+                    .try_into()
+                    .unwrap(),
                 max_connections_per_peer,
                 max_staked_connections: max_connections,
                 max_unstaked_connections: 0,
