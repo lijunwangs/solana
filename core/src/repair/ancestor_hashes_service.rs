@@ -642,7 +642,7 @@ impl AncestorHashesService {
                     .unwrap()
                     .root_bank()
                     .feature_set
-                    .is_active(&solana_feature_set::secp256k1_program_enabled::id())
+                    .is_active(&agave_feature_set::secp256k1_program_enabled::id())
                 {
                     return;
                 }
