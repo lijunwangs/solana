@@ -1453,6 +1453,10 @@ impl ConnectionTable {
         CancellationToken,
         Arc<ConnectionStreamCounter>,
     )> {
+        debug!(
+            "Adding connection for key {:?} port {} peer_type {:?} last_update {}",
+            key, port, peer_type, last_update
+        );
         let connection_entry = self.table.entry(key).or_default();
         let has_connection_capacity = connection_entry
             .len()
