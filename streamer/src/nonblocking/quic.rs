@@ -1479,7 +1479,7 @@ impl ConnectionTable {
             Some((last_update, cancel, stream_counter))
         } else {
             debug!(
-                "Connection table for {:?} is full, dropping connection: len: {}",
+                "Connection table for {:?} is full, dropping connection: len: {}, max_connections_per_peer: {max_connections_per_peer}",
                 key,
                 connection_entry.len()
             );
