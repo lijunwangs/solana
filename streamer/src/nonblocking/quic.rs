@@ -1478,6 +1478,11 @@ impl ConnectionTable {
             self.total_size += 1;
             Some((last_update, cancel, stream_counter))
         } else {
+            debug!(
+                "Connection table for {:?} is full, dropping connection: len: {}",
+                key,
+                connection_entry.len()
+            );
             if let Some(connection) = connection {
                 connection.close(
                     CONNECTION_CLOSE_CODE_TOO_MANY.into(),
@@ -1513,6 +1518,10 @@ impl ConnectionTable {
             }
             let connections_removed = old_size.saturating_sub(new_size);
             self.total_size = self.total_size.saturating_sub(connections_removed);
+            debug!(
+                "Removed {} connections for key {:?} port {} stable_id {}",
+                connections_removed, key, port, stable_id
+            );
             connections_removed
         } else {
             0
