@@ -3142,7 +3142,6 @@ fn test_cli_program_v4() {
     assert!(process_command(&config).is_ok());
     info!("zzzzzz initial deploy");
 
-
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
