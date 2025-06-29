@@ -267,6 +267,11 @@ impl QuicClient {
         stats: &ClientStats,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Result<Arc<Connection>, QuicError> {
+        debug!(
+            "QuicClient::_send_buffer, data len: {}, addr: {}",
+            data.len(),
+            self.addr
+        );
         let mut measure_send_packet = Measure::start("send_packet_us");
         let mut measure_prepare_connection = Measure::start("prepare_connection");
         let mut connection_try_count = 0;
@@ -398,6 +403,13 @@ impl QuicClient {
                 }
                 Err(err) => match err {
                     QuicError::ConnectionError(_) => {
+                        debug!(
+                            "Connection error sending to {} with id {}, error {:?} thread: {:?}",
+                            self.addr,
+                            connection.stable_id(),
+                            err,
+                            thread::current().id(),
+                        );
                         last_error = Some(err);
                     }
                     _ => {
