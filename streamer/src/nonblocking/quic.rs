@@ -1454,8 +1454,8 @@ impl ConnectionTable {
         Arc<ConnectionStreamCounter>,
     )> {
         debug!(
-            "Adding connection for key {:?} port {} peer_type {:?} last_update {} max_connections_per_peer: {max_connections_per_peer} remote: {:?}",
-            key, port, peer_type, last_update, connection.as_ref().map(|c| c.remote_address())
+            "Adding connection for key {:?} port {} table: {:p} peer_type {:?} last_update {} max_connections_per_peer: {max_connections_per_peer} remote: {:?}",
+            key, port, self, peer_type, last_update, connection.as_ref().map(|c| c.remote_address())
         );
         let connection_entry = self.table.entry(key).or_default();
         let has_connection_capacity = connection_entry
