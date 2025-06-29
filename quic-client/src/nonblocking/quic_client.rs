@@ -230,6 +230,17 @@ pub struct QuicClient {
 }
 
 impl QuicClient {
+    /// Explicitly close the connection. Must be called manually if cleanup is needed.
+    pub async fn close(&self) {
+        let mut conn_guard = self.connection.lock().await;
+        if let Some(conn) = conn_guard.take() {
+            info!("Closing connection to {}", self.addr);
+            conn.connection.close(0u32.into(), b"QuicClient dropped");
+        }
+    }
+}
+
+impl QuicClient {
     pub fn new(endpoint: Arc<QuicLazyInitializedEndpoint>, addr: SocketAddr) -> Self {
         Self {
             endpoint,
@@ -547,5 +558,9 @@ impl ClientConnection for QuicClientConnection {
                 e.into()
             })
             .await
+    }
+
+    async fn close(&self) {
+        self.client.close().await;
     }
 }
