@@ -3086,6 +3086,7 @@ fn test_cli_program_deploy_with_args(compute_unit_price: Option<u64>, use_rpc: b
 
 #[test]
 fn test_cli_program_v4() {
+    solana_logger::setup();
     let mut noop_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     noop_path.push("tests");
     noop_path.push("fixtures");
