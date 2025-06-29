@@ -179,4 +179,19 @@ impl ClientConnection for QuicClientConnection {
         RUNTIME.block_on(self.inner.send_data(buffer))?;
         Ok(())
     }
+
+    fn close(&self) {
+        RUNTIME.block_on(self.inner.close());
+    }
+}
+
+/// Implement the Drop trait to ensure that the connection is closed when the client connection is dropped
+/// as when we increase the connection idle timeout, it would be a good citizen to close the connection
+/// to let the server release the resources sooner. It will be better for the client as well because
+/// it will be less likely to run into the server's connection limit.
+impl Drop for QuicClientConnection {
+    fn drop(&mut self) {
+        // Ensure that the connection is closed when the client connection is dropped
+        self.close();
+    }
 }
