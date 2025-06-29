@@ -1483,9 +1483,10 @@ impl ConnectionTable {
             Some((last_update, cancel, stream_counter))
         } else {
             debug!(
-                "Connection table for {:?} is full, dropping connection: len: {}, max_connections_per_peer: {max_connections_per_peer}",
+                "Connection table for {:?} is full, dropping connection: len: {}, max_connections_per_peer: {max_connections_per_peer} at table: {:p}",
                 key,
-                connection_entry.len()
+                connection_entry.len(),
+                self
             );
             if let Some(connection) = connection {
                 connection.close(
