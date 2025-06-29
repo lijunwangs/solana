@@ -192,6 +192,13 @@ impl ClientConnection for QuicClientConnection {
 impl Drop for QuicClientConnection {
     fn drop(&mut self) {
         // Ensure that the connection is closed when the client connection is dropped
+        println!("Dropping QuicClientConnection for {}", self.server_addr());
         self.close();
     }
+}
+
+pub(crate) fn close_quic_connection(connection: Arc<QuicClient>) {
+    // Close the connection and release resources
+    info!("Closed QUIC connection to {}", connection.server_addr());
+    RUNTIME.block_on(connection.close());
 }
