@@ -1523,8 +1523,8 @@ impl ConnectionTable {
             let connections_removed = old_size.saturating_sub(new_size);
             self.total_size = self.total_size.saturating_sub(connections_removed);
             debug!(
-                "Removed {} connections for key {:?} port {} stable_id {}",
-                connections_removed, key, port, stable_id
+                "Removed {} connections for key {:?} port {} stable_id {} from {:p}",
+                connections_removed, key, port, stable_id, self
             );
             connections_removed
         } else {
