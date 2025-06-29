@@ -285,6 +285,14 @@ impl QuicClient {
                 match maybe_conn {
                     Some(conn) => {
                         if conn.connection.stable_id() == last_connection_id {
+                            debug!(
+                                "Reusing connection to {} with id {}, try_count {}, last_connection_id: {}, last_error: {:?}",
+                                self.addr,
+                                conn.connection.stable_id(),
+                                connection_try_count,
+                                last_connection_id,
+                                last_error,
+                            );
                             // this is the problematic connection we had used before, create a new one
                             let conn = conn.make_connection_0rtt(self.addr, stats).await;
                             match conn {
@@ -314,6 +322,13 @@ impl QuicClient {
                         }
                     }
                     None => {
+                        debug!(
+                            "Creating new connection to {} with try_count {}, last_connection_id: {}, last_error: {:?}",
+                            self.addr,
+                            connection_try_count,
+                            last_connection_id,
+                            last_error,
+                        );
                         let conn = QuicNewConnection::make_connection(
                             self.endpoint.clone(),
                             self.addr,
