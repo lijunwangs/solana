@@ -57,6 +57,12 @@ pub struct ConnectionCache<
     sender: Sender<(usize, SocketAddr)>,
 }
 
+impl<P, M, C> Drop for ConnectionCache<P, M, C> {
+    fn drop(&mut self) {
+        info!("Dropping ConnectionCache at {:p}", self.name);
+    }
+}
+
 impl<P, M, C> ConnectionCache<P, M, C>
 where
     P: ConnectionPool<NewConnectionConfig = C>,
