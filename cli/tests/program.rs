@@ -3114,6 +3114,7 @@ fn test_cli_program_v4() {
         &buffer_keypair,
     ];
     config.json_rpc_url = test_validator.rpc_url();
+    config.use_tpu_client = true;
     config.command = CliCommand::Airdrop {
         pubkey: None,
         lamports: 10000000,
