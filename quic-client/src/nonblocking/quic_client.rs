@@ -234,8 +234,23 @@ impl QuicClient {
     pub async fn close(&self) {
         let mut conn_guard = self.connection.lock().await;
         if let Some(conn) = conn_guard.take() {
-            info!("Closing connection to {} connection_id: {:?}", self.addr, conn.connection.stable_id());
+            info!(
+                "Closing connection to {} connection_id: {:?}",
+                self.addr,
+                conn.connection.stable_id()
+            );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
+            // Wait for the connection to close gracefully
+            if let Err(e) =
+                timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, conn.connection.closed()).await
+            {
+                warn!(
+                    "Failed to close connection to {} within timeout: {:?}",
+                    self.addr, e
+                );
+            } else {
+                info!("Connection to {} closed gracefully", self.addr);
+            }
         }
     }
 }
