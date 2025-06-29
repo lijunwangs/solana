@@ -5,6 +5,7 @@
 use {
     agave_feature_set::enable_alt_bn128_syscall,
     assert_matches::assert_matches,
+    log::*,
     serde_json::Value,
     solana_account::{state_traits::StateMut, ReadableAccount},
     solana_borsh::v1::try_from_slice_unchecked,
