@@ -234,7 +234,7 @@ impl QuicClient {
     pub async fn close(&self) {
         let mut conn_guard = self.connection.lock().await;
         if let Some(conn) = conn_guard.take() {
-            info!("Closing connection to {}", self.addr);
+            info!("Closing connection to {} connection_id: {:?}", self.addr, conn.connection.stable_id());
             conn.connection.close(0u32.into(), b"QuicClient dropped");
         }
     }
