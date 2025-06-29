@@ -287,7 +287,8 @@ async fn run_server(
         TotalConnectionRateLimiter::new(TOTAL_CONNECTIONS_PER_SECOND);
 
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
-    debug!("spawn quic server");
+    debug!("spawn quic server at port {:?}", endpoints[0].local_addr());
+    let port = endpoints[0].local_addr().unwrap();
     let mut last_datapoint = Instant::now();
     let unstaked_connection_table: Arc<Mutex<ConnectionTable>> =
         Arc::new(Mutex::new(ConnectionTable::new()));
@@ -404,6 +405,11 @@ async fn run_server(
             let connecting = incoming.accept();
             match connecting {
                 Ok(connecting) => {
+                    debug!(
+                        "Incoming::accept(): accepted connection from {:?} on port: {:?}",
+                        connecting.remote_address(),
+                        port
+                    );
                     tokio::spawn(setup_connection(
                         connecting,
                         client_connection_tracker,
