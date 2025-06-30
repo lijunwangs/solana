@@ -3121,13 +3121,12 @@ fn test_cli_program_v4() {
         lamports: 10000000,
     };
     // keep using rpc_client and the runtime
-    config.rpc_client = Some(rpc_client.clone());
-    Arc::new(RpcClient::new_with_timeouts_and_commitment(
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
         config.json_rpc_url.to_string(),
         config.rpc_timeout,
         config.commitment,
         config.confirm_transaction_initial_timeout,
-    ));
+    )));
     process_command(&config).unwrap();
 
     info!("zzzzzz airdrop 1");
