@@ -50,7 +50,10 @@ impl QuicLazyInitializedEndpoint {
     pub async fn close(&self) {
         if self.client_endpoint.is_none() {
             if let Some(endpoint) = self.endpoint.get() {
-                info!("Closing QUIC endpoint with address: {:?}", endpoint.local_addr());
+                info!(
+                    "Closing QUIC endpoint with address: {:?}",
+                    endpoint.local_addr()
+                );
                 endpoint.wait_idle().await;
                 endpoint.close(0u32.into(), b"QuicLazyInitializedEndpoint closed");
             } else {
@@ -62,7 +65,7 @@ impl QuicLazyInitializedEndpoint {
 
 #[derive(Error, Debug)]
 pub enum QuicError {
-#[error(transparent)]
+    #[error(transparent)]
     WriteError(#[from] WriteError),
     #[error(transparent)]
     ConnectionError(#[from] ConnectionError),
@@ -250,8 +253,7 @@ impl QuicClient {
         if let Some(conn) = conn_guard.take() {
             info!(
                 "Closing connection to {} connection_id: {:?}",
-                self.addr,
-                conn.connection
+                self.addr, conn.connection
             );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
             conn.connection.closed().await;
