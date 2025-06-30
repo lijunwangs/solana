@@ -47,10 +47,11 @@ pub struct QuicLazyInitializedEndpoint {
 }
 
 impl QuicLazyInitializedEndpoint {
-    pub fn close(&self) {
+    pub async fn close(&self) {
         if self.client_endpoint.is_none() {
             if let Some(endpoint) = self.endpoint.get() {
                 info!("Closing QUIC endpoint");
+                endpoint.wait_idle().await;
                 endpoint.close(0u32.into(), b"QuicLazyInitializedEndpoint closed");
             } else {
                 warn!("Attempted to close QUIC endpoint, but it was not initialized");
@@ -256,7 +257,7 @@ impl QuicClient {
 
             // if the endpoint is created exclusively for this client,
             // we should close it as well
-            self.endpoint.close();
+            self.endpoint.close().await;
         }
     }
 }
