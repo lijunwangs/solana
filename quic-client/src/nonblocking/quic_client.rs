@@ -50,7 +50,7 @@ impl QuicLazyInitializedEndpoint {
     pub async fn close(&self) {
         if self.client_endpoint.is_none() {
             if let Some(endpoint) = self.endpoint.get() {
-                info!("Closing QUIC endpoint");
+                info!("Closing QUIC endpoint with address: {:?}", endpoint.local_addr());
                 endpoint.wait_idle().await;
                 endpoint.close(0u32.into(), b"QuicLazyInitializedEndpoint closed");
             } else {
