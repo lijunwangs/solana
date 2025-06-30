@@ -43,6 +43,7 @@ use {
         io::{Read, Seek, SeekFrom},
         path::{Path, PathBuf},
         str::FromStr,
+        sync::Arc,
     },
     test_case::test_case,
 };
@@ -3100,7 +3101,7 @@ fn test_cli_program_v4() {
         .start_with_mint_address(mint_pubkey, SocketAddrSpace::Unspecified)
         .expect("validator start failed");
     let rpc_client =
-        RpcClient::new_with_commitment(test_validator.rpc_url(), CommitmentConfig::confirmed());
+        Arc::new(RpcClient::new_with_commitment(test_validator.rpc_url(), CommitmentConfig::confirmed()));
 
     let payer_keypair = Keypair::new();
     let upgrade_authority = Keypair::new();
@@ -3119,6 +3120,7 @@ fn test_cli_program_v4() {
         pubkey: None,
         lamports: 10000000,
     };
+    config.rpc_client = Some(rpc_client.clone());
     process_command(&config).unwrap();
 
     info!("zzzzzz airdrop 1");
