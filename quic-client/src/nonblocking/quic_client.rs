@@ -62,7 +62,7 @@ impl QuicLazyInitializedEndpoint {
 
 #[derive(Error, Debug)]
 pub enum QuicError {
-    #[error(transparent)]
+#[error(transparent)]
     WriteError(#[from] WriteError),
     #[error(transparent)]
     ConnectionError(#[from] ConnectionError),
@@ -251,7 +251,7 @@ impl QuicClient {
             info!(
                 "Closing connection to {} connection_id: {:?}",
                 self.addr,
-                conn.connection.stable_id()
+                conn.connection
             );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
 
