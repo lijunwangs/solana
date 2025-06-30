@@ -3122,7 +3122,7 @@ fn test_cli_program_v4() {
         pubkey: None,
         lamports: 10000000,
     };
-    config.rpc_client = Some(rpc_client.clone());
+    // config.rpc_client = Some(rpc_client.clone());
     process_command(&config).unwrap();
 
     info!("zzzzzz airdrop 1");
