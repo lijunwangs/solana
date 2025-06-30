@@ -195,7 +195,7 @@ pub struct RpcClient {
 
 impl Drop for RpcClient {
     fn drop(&mut self) {
-        debug!("RpcClient dropping the runtime: {:?}", self.runtime);
+        info!("RpcClient dropping the runtime: {:?}", self.runtime);
         self.runtime.take().expect("runtime").shutdown_background();
     }
 }

@@ -607,7 +607,7 @@ pub async fn send_and_confirm_transactions_in_parallel_v2<T: Signers + ?Sized>(
             ));
         }
     }
-    debug!("Dropping tpu_client...");
+    info!("Dropping tpu_client...");
     drop(tpu_client); // Ensure the tpu_client is dropped to close any connections
 
     block_data_task.abort();
