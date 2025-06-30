@@ -34,9 +34,13 @@ use {
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
         thread,
+        time::Duration,
     },
     thiserror::Error,
-    tokio::{sync::OnceCell, time::{sleep, timeout}},
+    tokio::{
+        sync::OnceCell,
+        time::{sleep, timeout},
+    },
 };
 
 /// A lazy-initialized Quic Endpoint
@@ -240,7 +244,7 @@ impl QuicClient {
                 conn.connection.stable_id()
             );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
-            sleep(duration::from_millis(500)).await; // Give time for the connection to close gracefully
+            sleep(Duration::from_millis(500)).await; // Give time for the connection to close gracefully
         }
     }
 }
