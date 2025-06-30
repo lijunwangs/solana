@@ -36,7 +36,7 @@ use {
         thread,
     },
     thiserror::Error,
-    tokio::{sync::OnceCell, time::timeout},
+    tokio::{sync::OnceCell, time::{sleep, timeout}},
 };
 
 /// A lazy-initialized Quic Endpoint
@@ -240,17 +240,7 @@ impl QuicClient {
                 conn.connection.stable_id()
             );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
-            // Wait for the connection to close gracefully
-            if let Err(e) =
-                timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, conn.connection.closed()).await
-            {
-                warn!(
-                    "Failed to close connection to {} within timeout: {:?}",
-                    self.addr, e
-                );
-            } else {
-                info!("Connection to {} closed gracefully", self.addr);
-            }
+            sleep(duration::from_millis(500)).await; // Give time for the connection to close gracefully
         }
     }
 }
