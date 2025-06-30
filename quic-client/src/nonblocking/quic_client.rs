@@ -34,13 +34,9 @@ use {
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::Ordering, Arc},
         thread,
-        time::Duration,
     },
     thiserror::Error,
-    tokio::{
-        sync::OnceCell,
-        time::{sleep, timeout},
-    },
+    tokio::{sync::OnceCell, time::timeout},
 };
 
 /// A lazy-initialized Quic Endpoint
@@ -48,6 +44,19 @@ pub struct QuicLazyInitializedEndpoint {
     endpoint: OnceCell<Arc<Endpoint>>,
     client_certificate: Arc<QuicClientCertificate>,
     client_endpoint: Option<Endpoint>,
+}
+
+impl QuicLazyInitializedEndpoint {
+    pub fn close(&self) {
+        if self.client_endpoint.is_none() {
+            if let Some(endpoint) = self.endpoint.get() {
+                info!("Closing QUIC endpoint");
+                endpoint.close(0u32.into(), b"QuicLazyInitializedEndpoint closed");
+            } else {
+                warn!("Attempted to close QUIC endpoint, but it was not initialized");
+            }
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -244,7 +253,10 @@ impl QuicClient {
                 conn.connection.stable_id()
             );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
-            sleep(Duration::from_millis(500)).await; // Give time for the connection to close gracefully
+
+            // if the endpoint is created exclusively for this client,
+            // we should close it as well
+            self.endpoint.close();
         }
     }
 }
