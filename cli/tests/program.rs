@@ -3100,8 +3100,10 @@ fn test_cli_program_v4() {
     let test_validator = test_validator_genesis(mint_keypair)
         .start_with_mint_address(mint_pubkey, SocketAddrSpace::Unspecified)
         .expect("validator start failed");
-    let rpc_client =
-        Arc::new(RpcClient::new_with_commitment(test_validator.rpc_url(), CommitmentConfig::confirmed()));
+    let rpc_client = Arc::new(RpcClient::new_with_commitment(
+        test_validator.rpc_url(),
+        CommitmentConfig::confirmed(),
+    ));
 
     let payer_keypair = Keypair::new();
     let upgrade_authority = Keypair::new();
@@ -3198,7 +3200,12 @@ fn test_cli_program_v4() {
         path_to_elf: Some(noop_path.to_str().unwrap().to_string()),
         upload_range: None..None,
     });
-    assert!(process_command(&config).is_ok());
+    let result = process_command(&config);
+    info!(
+        "zzzzzzz two-step redeploy with buffer, result: {:?}",
+        result
+    );
+    assert!(result.is_ok());
 
     info!("zzzzzz two-step redeploy with buffer");
 
