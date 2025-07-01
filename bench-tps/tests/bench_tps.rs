@@ -146,6 +146,8 @@ fn test_bench_tps_test_validator(config: Config) {
         .expect("Should build Quic Tpu Client."),
     );
 
+    info!("zzzzzz Created TpuClient: {:?}", test_validator.tpu());
+
     let lamports_per_account = 1000;
 
     let keypair_count = config.tx_count * config.keypair_multiplier;
