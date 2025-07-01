@@ -192,7 +192,7 @@ impl ClientConnection for QuicClientConnection {
 impl Drop for QuicClientConnection {
     fn drop(&mut self) {
         // Ensure that the connection is closed when the client connection is dropped
-        println!("Dropping QuicClientConnection for {}", self.server_addr());
+        info!("Dropping QuicClientConnection for {}", self.server_addr());
         self.close();
     }
 }
