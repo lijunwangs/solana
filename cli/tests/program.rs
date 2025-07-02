@@ -3153,6 +3153,7 @@ fn test_cli_program_v4() {
         lamports: 1000,
     };
     process_command(&config).unwrap();
+
     // Initial deployment
     config.output_format = OutputFormat::JsonCompact;
     config.command = CliCommand::ProgramV4(ProgramV4CliCommand::Deploy {
