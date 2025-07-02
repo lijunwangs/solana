@@ -3114,7 +3114,6 @@ fn test_cli_program_deploy_with_args(compute_unit_price: Option<u64>, use_rpc: b
 
 #[test]
 fn test_cli_program_v4() {
-    solana_logger::setup();
     let mut noop_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     noop_path.push("tests");
     noop_path.push("fixtures");
@@ -3154,7 +3153,6 @@ fn test_cli_program_v4() {
         lamports: 1000,
     };
     process_command(&config).unwrap();
-
     // Initial deployment
     config.output_format = OutputFormat::JsonCompact;
     config.command = CliCommand::ProgramV4(ProgramV4CliCommand::Deploy {
@@ -3167,7 +3165,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3183,7 +3180,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3199,7 +3195,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3218,7 +3213,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-
     let buffer_account = rpc_client.get_account(&buffer_keypair.pubkey()).unwrap();
     assert_eq!(buffer_account.owner, loader_v4::id());
     assert!(buffer_account.executable);
