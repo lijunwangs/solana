@@ -17,7 +17,6 @@ use {
         nonblocking::{self, rpc_client::get_rpc_request_str},
         rpc_sender::*,
     },
-    log::*,
     serde::Serialize,
     serde_json::Value,
     solana_account::{Account, ReadableAccount},
@@ -195,7 +194,6 @@ pub struct RpcClient {
 
 impl Drop for RpcClient {
     fn drop(&mut self) {
-        info!("RpcClient dropping the runtime: {:?}", self.runtime);
         self.runtime.take().expect("runtime").shutdown_background();
     }
 }
