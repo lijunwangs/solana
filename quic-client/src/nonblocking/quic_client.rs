@@ -256,7 +256,10 @@ impl QuicClient {
                 "Closing connection to {} connection_id: {:?}",
                 self.addr, conn.connection
             );
-            conn.connection.close(CONNECTION_CLOSE_CODE_APPLICATION_CLOSE.into(), CONNECTION_CLOSE_REASON_APPLICATION_CLOSE);
+            conn.connection.close(
+                CONNECTION_CLOSE_CODE_APPLICATION_CLOSE.into(),
+                CONNECTION_CLOSE_REASON_APPLICATION_CLOSE,
+            );
             conn.connection.closed().await;
             //tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
