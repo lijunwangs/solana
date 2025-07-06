@@ -158,6 +158,7 @@ fn test_bench_tps_test_validator(config: Config) {
     } else {
         None
     };
+
     let _total = do_bench_tps(client, config, keypairs, nonce_keypairs);
 
     #[cfg(not(debug_assertions))]
