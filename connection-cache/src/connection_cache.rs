@@ -677,9 +677,6 @@ mod tests {
         fn send_data_batch_async(&self, _buffers: Vec<Vec<u8>>) -> TransportResult<()> {
             unimplemented!()
         }
-        fn close(&self) {
-            // No-op for mock
-        }
     }
 
     #[async_trait]
@@ -692,9 +689,6 @@ mod tests {
         }
         async fn send_data_batch(&self, _buffers: &[Vec<u8>]) -> TransportResult<()> {
             unimplemented!()
-        }
-        async fn close(&self) {
-            // No-op for mock
         }
     }
 

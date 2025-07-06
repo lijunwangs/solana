@@ -616,8 +616,4 @@ impl ClientConnection for QuicClientConnection {
             })
             .await
     }
-
-    async fn close(&self) {
-        self.client.close().await;
-    }
 }
