@@ -1,7 +1,6 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 use {
-    log::info,
     serial_test::serial,
     solana_account::{Account, AccountSharedData},
     solana_bench_tps::{

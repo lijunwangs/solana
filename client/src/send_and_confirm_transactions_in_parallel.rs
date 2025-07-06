@@ -6,7 +6,6 @@ use {
     bincode::serialize,
     dashmap::DashMap,
     futures_util::future::join_all,
-    log::*,
     solana_hash::Hash,
     solana_message::Message,
     solana_quic_client::{QuicConfig, QuicConnectionManager, QuicPool},
