@@ -50,14 +50,12 @@ impl QuicLazyInitializedEndpoint {
     pub async fn close(&self) {
         if self.client_endpoint.is_none() {
             if let Some(endpoint) = self.endpoint.get() {
-                info!(
+                debug!(
                     "Closing QUIC endpoint with address: {:?}",
                     endpoint.local_addr()
                 );
                 endpoint.wait_idle().await;
                 endpoint.close(0u32.into(), b"QuicLazyInitializedEndpoint closed");
-            } else {
-                warn!("Attempted to close QUIC endpoint, but it was not initialized");
             }
         }
     }
@@ -251,7 +249,7 @@ impl QuicClient {
     pub async fn close(&self) {
         let mut conn_guard = self.connection.lock().await;
         if let Some(conn) = conn_guard.take() {
-            info!(
+            debug!(
                 "Closing connection to {} connection_id: {:?}",
                 self.addr, conn.connection
             );
@@ -261,7 +259,7 @@ impl QuicClient {
 
             // If the endpoint is created exclusively for this client,
             // we should close it as well
-            self.endpoint.close().await;
+            //self.endpoint.close().await;
         }
     }
 }
