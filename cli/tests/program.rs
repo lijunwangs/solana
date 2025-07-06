@@ -3192,13 +3192,11 @@ fn test_cli_program_v4() {
     )));
     process_command(&config).unwrap();
 
-    info!("zzzzzz airdrop 1");
     config.command = CliCommand::Airdrop {
         pubkey: Some(program_keypair.pubkey()),
         lamports: 1000,
     };
     process_command(&config).unwrap();
-    info!("zzzzzz airdrop 2");
 
     // Initial deployment
     config.output_format = OutputFormat::JsonCompact;
@@ -3212,7 +3210,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-    info!("zzzzzz initial deploy");
 
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
@@ -3230,8 +3227,6 @@ fn test_cli_program_v4() {
     });
     assert!(process_command(&config).is_ok());
 
-    info!("zzzzzz redeploy without buffer");
-
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3247,8 +3242,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-
-    info!("zzzzzz redeploy with buffer");
 
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
@@ -3268,13 +3261,7 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     let result = process_command(&config);
-    info!(
-        "zzzzzzz two-step redeploy with buffer, result: {:?}",
-        result
-    );
     assert!(result.is_ok());
-
-    info!("zzzzzz two-step redeploy with buffer");
 
     let buffer_account = rpc_client.get_account(&buffer_keypair.pubkey()).unwrap();
     assert_eq!(buffer_account.owner, loader_v4::id());
@@ -3289,7 +3276,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-    info!("zzzzzz two-step redeploy with buffer, second step");
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3305,7 +3291,6 @@ fn test_cli_program_v4() {
         new_authority_signer_index: 2,
     });
     assert!(process_command(&config).is_ok());
-    info!("zzzzzz transfer authority");
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3318,7 +3303,6 @@ fn test_cli_program_v4() {
         close_program_entirely: true,
     });
     assert!(process_command(&config).is_ok());
-    info!("zzzzzz close program");
     let _error = rpc_client
         .get_account(&program_keypair.pubkey())
         .unwrap_err();
@@ -3334,7 +3318,6 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
-    info!("zzzzzz deploy at closed address");
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3347,7 +3330,6 @@ fn test_cli_program_v4() {
         next_version_signer_index: 2,
     });
     assert!(process_command(&config).is_ok());
-    info!("zzzzzz finalize program");
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
