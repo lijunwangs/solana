@@ -180,9 +180,6 @@ impl ClientConnection for QuicClientConnection {
         Ok(())
     }
 
-    fn close(&self) {
-        RUNTIME.block_on(self.inner.close());
-    }
 }
 
 pub(crate) fn close_quic_connection(connection: Arc<QuicClient>) {
