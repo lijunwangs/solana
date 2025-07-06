@@ -46,21 +46,6 @@ pub struct QuicLazyInitializedEndpoint {
     client_endpoint: Option<Endpoint>,
 }
 
-impl QuicLazyInitializedEndpoint {
-    pub async fn close(&self) {
-        if self.client_endpoint.is_none() {
-            if let Some(endpoint) = self.endpoint.get() {
-                debug!(
-                    "Closing QUIC endpoint with address: {:?}",
-                    endpoint.local_addr()
-                );
-                endpoint.wait_idle().await;
-                endpoint.close(0u32.into(), b"QuicLazyInitializedEndpoint closed");
-            }
-        }
-    }
-}
-
 #[derive(Error, Debug)]
 pub enum QuicError {
     #[error(transparent)]
