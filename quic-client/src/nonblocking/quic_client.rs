@@ -255,7 +255,7 @@ impl QuicClient {
             );
             conn.connection.close(0u32.into(), b"QuicClient dropped");
             conn.connection.closed().await;
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            //tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
             // If the endpoint is created exclusively for this client,
             // we should close it as well
