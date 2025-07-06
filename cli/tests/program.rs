@@ -47,15 +47,6 @@ use {
     test_case::test_case,
 };
 
-fn setup_rpc_client(config: &mut CliConfig) {
-    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
-        config.json_rpc_url.to_string(),
-        config.rpc_timeout,
-        config.commitment,
-        config.confirm_transaction_initial_timeout,
-    )));
-}
-
 fn test_validator_genesis(mint_keypair: Keypair) -> TestValidatorGenesis {
     let mut genesis = TestValidatorGenesis::default();
     genesis
@@ -1578,7 +1569,12 @@ fn test_cli_program_migrate_program() {
         lamports: 100 * minimum_balance_for_programdata + minimum_balance_for_program,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Deploy the upgradeable program
@@ -1666,7 +1662,12 @@ fn test_cli_program_write_buffer() {
         lamports: 100 * minimum_balance_for_buffer,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Write a buffer with default params
@@ -2053,7 +2054,12 @@ fn test_cli_program_write_buffer_feature(enable_feature: bool) {
         lamports: 100 * minimum_balance_for_buffer,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Write a buffer with default params
@@ -2142,7 +2148,12 @@ fn test_cli_program_set_buffer_authority() {
         lamports: 100 * minimum_balance_for_buffer,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Write a buffer
@@ -2316,7 +2327,12 @@ fn test_cli_program_mismatch_buffer_authority() {
         lamports: 100 * minimum_balance_for_buffer,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Write a buffer
@@ -2454,7 +2470,12 @@ fn test_cli_program_deploy_with_offline_signing(use_offline_signer_as_fee_payer:
     };
     config.signers = vec![&online_signer];
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
     config.command = CliCommand::Airdrop {
         pubkey: None,
@@ -2642,7 +2663,12 @@ fn test_cli_program_show() {
         lamports: 100 * minimum_balance_for_buffer,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Write a buffer
@@ -2841,7 +2867,12 @@ fn test_cli_program_dump() {
         lamports: 100 * minimum_balance_for_buffer,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Write a buffer
@@ -2988,7 +3019,12 @@ fn test_cli_program_deploy_with_args(compute_unit_price: Option<u64>, use_rpc: b
         lamports: 100 * minimum_balance_for_programdata + minimum_balance_for_program,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     // Deploy the upgradeable program with specified program_id
@@ -3114,6 +3150,7 @@ fn test_cli_program_deploy_with_args(compute_unit_price: Option<u64>, use_rpc: b
 
 #[test]
 fn test_cli_program_v4() {
+    solana_logger::setup();
     let mut noop_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     noop_path.push("tests");
     noop_path.push("fixtures");
@@ -3140,12 +3177,18 @@ fn test_cli_program_v4() {
         &buffer_keypair,
     ];
     config.json_rpc_url = test_validator.rpc_url();
+    config.use_tpu_client = true;
     config.command = CliCommand::Airdrop {
         pubkey: None,
         lamports: 10000000,
     };
     // keep using rpc_client and the runtime
-    setup_rpc_client(&mut config);
+    config.rpc_client = Some(Arc::new(RpcClient::new_with_timeouts_and_commitment(
+        config.json_rpc_url.to_string(),
+        config.rpc_timeout,
+        config.commitment,
+        config.confirm_transaction_initial_timeout,
+    )));
     process_command(&config).unwrap();
 
     config.command = CliCommand::Airdrop {
@@ -3166,6 +3209,7 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
+
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3181,6 +3225,7 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
+
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3196,6 +3241,7 @@ fn test_cli_program_v4() {
         upload_range: None..None,
     });
     assert!(process_command(&config).is_ok());
+
     let program_account = rpc_client.get_account(&program_keypair.pubkey()).unwrap();
     assert_eq!(program_account.owner, loader_v4::id());
     assert!(program_account.executable);
@@ -3213,7 +3259,9 @@ fn test_cli_program_v4() {
         path_to_elf: Some(noop_path.to_str().unwrap().to_string()),
         upload_range: None..None,
     });
-    assert!(process_command(&config).is_ok());
+    let result = process_command(&config);
+    assert!(result.is_ok());
+
     let buffer_account = rpc_client.get_account(&buffer_keypair.pubkey()).unwrap();
     assert_eq!(buffer_account.owner, loader_v4::id());
     assert!(buffer_account.executable);
