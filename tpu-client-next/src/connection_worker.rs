@@ -230,7 +230,7 @@ impl ConnectionWorker {
                         self.connection = ConnectionState::Retry(retries_attempt.saturating_add(1));
                     }
                     Err(_) => {
-                        warn!(
+                        debug!(
                             "Connection to {} timed out after {:?}",
                             self.peer, self.handshake_timeout
                         );
