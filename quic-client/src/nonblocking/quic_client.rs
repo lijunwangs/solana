@@ -277,11 +277,6 @@ impl QuicClient {
         stats: &ClientStats,
         connection_stats: Arc<ConnectionCacheStats>,
     ) -> Result<Arc<Connection>, QuicError> {
-        debug!(
-            "QuicClient::_send_buffer, data len: {}, addr: {}",
-            data.len(),
-            self.addr
-        );
         let mut measure_send_packet = Measure::start("send_packet_us");
         let mut measure_prepare_connection = Measure::start("prepare_connection");
         let mut connection_try_count = 0;
@@ -295,14 +290,6 @@ impl QuicClient {
                 match maybe_conn {
                     Some(conn) => {
                         if conn.connection.stable_id() == last_connection_id {
-                            debug!(
-                                "Reusing connection to {} with id {}, try_count {}, last_connection_id: {}, last_error: {:?}",
-                                self.addr,
-                                conn.connection.stable_id(),
-                                connection_try_count,
-                                last_connection_id,
-                                last_error,
-                            );
                             // this is the problematic connection we had used before, create a new one
                             let conn = conn.make_connection_0rtt(self.addr, stats).await;
                             match conn {
@@ -332,13 +319,6 @@ impl QuicClient {
                         }
                     }
                     None => {
-                        debug!(
-                            "Creating new connection to {} with try_count {}, last_connection_id: {}, last_error: {:?}",
-                            self.addr,
-                            connection_try_count,
-                            last_connection_id,
-                            last_error,
-                        );
                         let conn = QuicNewConnection::make_connection(
                             self.endpoint.clone(),
                             self.addr,
@@ -428,13 +408,6 @@ impl QuicClient {
                 }
                 Err(err) => match err {
                     QuicError::ConnectionError(_) => {
-                        debug!(
-                            "Connection error sending to {} with id {}, error {:?} thread: {:?}",
-                            self.addr,
-                            connection.stable_id(),
-                            err,
-                            thread::current().id(),
-                        );
                         last_error = Some(err);
                     }
                     _ => {
