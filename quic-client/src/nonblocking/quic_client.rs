@@ -246,11 +246,6 @@ impl QuicClient {
                 CONNECTION_CLOSE_REASON_APPLICATION_CLOSE,
             );
             conn.connection.closed().await;
-            //tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-            // If the endpoint is created exclusively for this client,
-            // we should close it as well
-            //self.endpoint.close().await;
         }
     }
 }
