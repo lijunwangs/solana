@@ -89,7 +89,7 @@ pub(crate) fn configure_server(
     let quic_server_config = QuicServerConfig::try_from(server_tls_config)?;
 
     let mut server_config = ServerConfig::with_crypto(Arc::new(quic_server_config));
-    server_config.max_incoming(1 << 20); // 1M connections
+    server_config.max_incoming(1 << 18); // 256K
     let config = Arc::get_mut(&mut server_config.transport).unwrap();
 
     // QUIC_MAX_CONCURRENT_STREAMS doubled, which was found to improve reliability
