@@ -26,10 +26,10 @@ use {
     solana_perf::packet::{PacketBatch, PacketBatchRecycler, PACKETS_PER_BATCH},
     solana_pubkey::Pubkey,
     solana_quic_definitions::{
-        QUIC_CONNECTION_HANDSHAKE_TIMEOUT, QUIC_MAX_STAKED_CONCURRENT_STREAMS,
-        QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO, QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
-        QUIC_MIN_STAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
-        QUIC_TOTAL_STAKED_CONCURRENT_STREAMS, QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
+        QUIC_MAX_STAKED_CONCURRENT_STREAMS, QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO,
+        QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_CONCURRENT_STREAMS,
+        QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO, QUIC_TOTAL_STAKED_CONCURRENT_STREAMS,
+        QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
     },
     solana_signature::Signature,
     solana_time_utils as timing,
@@ -736,7 +736,7 @@ async fn setup_connection(
 ) {
     const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
     let from = connecting.remote_address();
-    let res = timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, connecting).await;
+    let res = timeout(Duration::from_secs(2), connecting).await;
     stats
         .outstanding_incoming_connection_attempts
         .fetch_sub(1, Ordering::Relaxed);
