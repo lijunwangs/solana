@@ -38,7 +38,8 @@ use {
     solana_gossip::cluster_info::ClusterInfo,
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::Blockstore, blockstore_processor::TransactionStatusSender,
+        blockstore::{Blockstore, CompletedBlockSender},
+        blockstore_processor::TransactionStatusSender,
         entry_notifier_service::EntryNotifierSender,
     },
     solana_perf::data_budget::DataBudget,
@@ -153,6 +154,7 @@ impl Tpu {
         client: ForwardingClientOption,
         alpenglow_vote_sender: AlpenglowVoteSender,
         turbine_quic_endpoint_sender: AsyncSender<(SocketAddr, Bytes)>,
+        completed_block_sender: CompletedBlockSender,
         keypair: &Keypair,
         log_messages_bytes_limit: Option<usize>,
         staked_nodes: &Arc<RwLock<StakedNodes>>,
@@ -402,6 +404,7 @@ impl Tpu {
             shred_version,
             turbine_quic_endpoint_sender,
             xdp_sender,
+            completed_block_sender,
         );
 
         let mut key_notifiers = key_notifiers.write().unwrap();

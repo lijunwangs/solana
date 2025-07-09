@@ -6,7 +6,7 @@ use {
     solana_entry::entry::Entry,
     solana_hash::Hash,
     solana_ledger::{
-        blockstore::Blockstore,
+        blockstore::{Blockstore, CompletedBlock, CompletedBlockSender},
         shred::{self, get_data_shred_bytes_per_batch_typical, ProcessShredsStats},
     },
     solana_poh::poh_recorder::WorkingBankEntry,
@@ -190,6 +190,20 @@ pub(super) fn get_chained_merkle_root_from_parent(
         slot: parent,
         index,
     })
+}
+
+/// Set the block id on the bank and send it for consideration in voting
+pub(super) fn set_block_id_and_send(
+    completed_block_sender: &CompletedBlockSender,
+    bank: Arc<Bank>,
+    block_id: Hash,
+) -> Result<()> {
+    bank.set_block_id(Some(block_id));
+    completed_block_sender.send(CompletedBlock {
+        slot: bank.slot(),
+        bank,
+    })?;
+    Ok(())
 }
 
 #[cfg(test)]

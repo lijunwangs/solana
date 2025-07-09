@@ -36,8 +36,10 @@ use {
     },
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::Blockstore, blockstore_cleanup_service::BlockstoreCleanupService,
-        blockstore_processor::TransactionStatusSender, entry_notifier_service::EntryNotifierSender,
+        blockstore::{Blockstore, CompletedBlockReceiver, CompletedBlockSender},
+        blockstore_cleanup_service::BlockstoreCleanupService,
+        blockstore_processor::TransactionStatusSender,
+        entry_notifier_service::EntryNotifierSender,
         leader_schedule_cache::LeaderScheduleCache,
     },
     solana_poh::poh_recorder::PohRecorder,
@@ -186,6 +188,8 @@ impl Tvu {
         replay_highest_frozen: Arc<ReplayHighestFrozen>,
         leader_window_notifier: Arc<LeaderWindowNotifier>,
         voting_service_additional_listeners: Option<&Vec<SocketAddr>>,
+        completed_block_sender: CompletedBlockSender,
+        completed_block_receiver: CompletedBlockReceiver,
     ) -> Result<Self, String> {
         let in_wen_restart = wen_restart_repair_slots.is_some();
 
@@ -327,6 +331,7 @@ impl Tvu {
             dumped_slots_sender,
             alpenglow_vote_sender,
             certificate_sender,
+            completed_block_sender,
         };
 
         let replay_receivers = ReplayReceivers {
@@ -337,6 +342,7 @@ impl Tvu {
             gossip_verified_vote_hash_receiver,
             popular_pruned_forks_receiver,
             alpenglow_vote_receiver,
+            completed_block_receiver,
         };
 
         let replay_stage_config = ReplayStageConfig {
@@ -570,6 +576,7 @@ pub mod tests {
                 DEFAULT_TPU_CONNECTION_POOL_SIZE,
             )
         };
+        let (completed_block_sender, completed_block_receiver) = unbounded();
 
         let tvu = Tvu::new(
             &vote_keypair.pubkey(),
@@ -637,6 +644,8 @@ pub mod tests {
             Arc::new(ReplayHighestFrozen::default()),
             Arc::new(LeaderWindowNotifier::default()),
             None,
+            completed_block_sender,
+            completed_block_receiver,
         )
         .expect("assume success");
         if enable_wen_restart {

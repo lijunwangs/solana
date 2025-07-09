@@ -24,7 +24,7 @@ use {
     },
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::{Blockstore, PurgeType},
+        blockstore::{Blockstore, CompletedBlockReceiver, PurgeType},
         leader_schedule_cache::LeaderScheduleCache,
     },
     solana_net_utils::sockets::{bind_in_range_with_config, SocketConfiguration},
@@ -419,6 +419,7 @@ struct SimulatorLoop {
     leader_schedule_cache: Arc<LeaderScheduleCache>,
     retransmit_slots_sender: Sender<Slot>,
     retracer: Arc<BankingTracer>,
+    _completed_block_receiver: CompletedBlockReceiver,
 }
 
 impl SimulatorLoop {
@@ -787,6 +788,7 @@ impl BankingSimulator {
 
         let (replay_vote_sender, _replay_vote_receiver) = unbounded();
         let (retransmit_slots_sender, retransmit_slots_receiver) = unbounded();
+        let (completed_block_sender, completed_block_receiver) = unbounded();
         let shred_version = compute_shred_version(
             &genesis_config.hash(),
             Some(&bank_forks.read().unwrap().root_bank().hard_forks()),
@@ -821,6 +823,7 @@ impl BankingSimulator {
             shred_version,
             sender,
             None,
+            completed_block_sender,
         );
 
         info!("Start banking stage!...");
@@ -894,6 +897,7 @@ impl BankingSimulator {
             leader_schedule_cache,
             retransmit_slots_sender,
             retracer,
+            _completed_block_receiver: completed_block_receiver,
         };
 
         let simulator_threads = SimulatorThreads {

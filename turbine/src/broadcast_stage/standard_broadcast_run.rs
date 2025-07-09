@@ -10,7 +10,7 @@ use {
     solana_hash::Hash,
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore,
+        blockstore::{self, CompletedBlockSender},
         shred::{shred_code, ProcessShredsStats, ReedSolomonCache, Shred, ShredType, Shredder},
     },
     solana_time_utils::AtomicInterval,
@@ -166,11 +166,13 @@ impl StandardBroadcastRun {
     ) -> Result<()> {
         let (bsend, brecv) = unbounded();
         let (ssend, srecv) = unbounded();
+        let (cbsend, _cbrecv) = unbounded();
         self.process_receive_results(
             keypair,
             blockstore,
             &ssend,
             &bsend,
+            &cbsend,
             receive_results,
             &mut ProcessShredsStats::default(),
         )?;
@@ -192,6 +194,7 @@ impl StandardBroadcastRun {
         blockstore: &Blockstore,
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         blockstore_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
+        completed_block_sender: &CompletedBlockSender,
         receive_results: ReceiveResults,
         process_stats: &mut ProcessShredsStats,
     ) -> Result<()> {
@@ -330,6 +333,14 @@ impl StandardBroadcastRun {
         if last_tick_height == bank.max_tick_height() {
             self.report_and_reset_stats(false);
             self.completed = true;
+
+            // Populate the block id and send for voting
+            // The block id is the merkle root of the last FEC set which is now the chained merkle root
+            broadcast_utils::set_block_id_and_send(
+                completed_block_sender,
+                bank.clone(),
+                self.chained_merkle_root,
+            )?;
         }
 
         Ok(())
@@ -447,6 +458,7 @@ impl BroadcastRun for StandardBroadcastRun {
         receiver: &Receiver<WorkingBankEntry>,
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         blockstore_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
+        completed_block_sender: &CompletedBlockSender,
     ) -> Result<()> {
         let mut process_stats = ProcessShredsStats::default();
         let receive_results = broadcast_utils::recv_slot_entries(
@@ -461,6 +473,7 @@ impl BroadcastRun for StandardBroadcastRun {
             blockstore,
             socket_sender,
             blockstore_sender,
+            completed_block_sender,
             receive_results,
             &mut process_stats,
         )
@@ -735,6 +748,7 @@ mod test {
             setup(num_shreds_per_slot);
         let (bsend, brecv) = unbounded();
         let (ssend, _srecv) = unbounded();
+        let (cbsend, _) = unbounded();
         let mut last_tick_height = 0;
         let mut standard_broadcast_run = StandardBroadcastRun::new(0);
         let mut process_ticks = |num_ticks| {
@@ -751,6 +765,7 @@ mod test {
                     &blockstore,
                     &ssend,
                     &bsend,
+                    &cbsend,
                     receive_results,
                     &mut ProcessShredsStats::default(),
                 )

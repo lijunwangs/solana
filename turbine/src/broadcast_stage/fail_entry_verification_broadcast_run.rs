@@ -3,7 +3,10 @@ use {
     crate::cluster_nodes::ClusterNodesCache,
     solana_hash::Hash,
     solana_keypair::Keypair,
-    solana_ledger::shred::{ProcessShredsStats, ReedSolomonCache, Shredder},
+    solana_ledger::{
+        blockstore::CompletedBlockSender,
+        shred::{ProcessShredsStats, ReedSolomonCache, Shredder},
+    },
     std::{thread::sleep, time::Duration},
     tokio::sync::mpsc::Sender as AsyncSender,
 };
@@ -52,6 +55,7 @@ impl BroadcastRun for FailEntryVerificationBroadcastRun {
         receiver: &Receiver<WorkingBankEntry>,
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         blockstore_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
+        _completed_block_sender: &CompletedBlockSender,
     ) -> Result<()> {
         // 1) Pull entries from banking stage
         let mut stats = ProcessShredsStats::default();
