@@ -556,9 +556,16 @@ impl VotingLoop {
         // in order to perform cleanup. In the future we will look to deprecate OC and remove
         // these code paths.
         if let Some(config) = bank_notification_sender {
+            let dependency_work = config
+                .dependency_tracker
+                .as_ref()
+                .map(|s| s.get_current_declared_work());
             config
                 .sender
-                .send(BankNotification::OptimisticallyConfirmed(new_root))
+                .send((
+                    BankNotification::OptimisticallyConfirmed(new_root),
+                    dependency_work,
+                ))
                 .unwrap();
         }
 
