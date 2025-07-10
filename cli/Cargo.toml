@@ -41,7 +41,7 @@ serde_json = { workspace = true }
 solana-account = "=2.2.1"
 solana-account-decoder = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
-solana-bls = { workspace = true, features = ["solana-signer-derive"] }
+solana-bls-signatures = { workspace = true, features = ["solana-signer-derive"] }
 solana-borsh = { workspace = true }
 solana-bpf-loader-program = { workspace = true }
 solana-clap-utils = { workspace = true }

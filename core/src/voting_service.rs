@@ -346,7 +346,7 @@ mod tests {
             bls_message::{BLSMessage, VoteMessage},
             vote::Vote,
         },
-        solana_bls::Signature as BLSSignature,
+        solana_bls_signatures::Signature as BLSSignature,
         solana_gossip::{cluster_info::ClusterInfo, contact_info::ContactInfo},
         solana_hash::Hash,
         solana_keypair::Keypair,

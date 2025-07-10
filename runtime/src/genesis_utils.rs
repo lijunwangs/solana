@@ -3,7 +3,7 @@ use {
     alpenglow_vote::state::VoteState as AlpenglowVoteState,
     log::*,
     solana_account::{Account, AccountSharedData},
-    solana_bls::{keypair::Keypair as BLSKeypair, Pubkey as BLSPubkey},
+    solana_bls_signatures::{Keypair as BLSKeypair, Pubkey as BLSPubkey},
     solana_feature_gate_interface::{self as feature, Feature},
     solana_fee_calculator::FeeRateGovernor,
     solana_genesis_config::{ClusterType, GenesisConfig},

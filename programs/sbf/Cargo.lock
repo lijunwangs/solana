@@ -356,7 +356,7 @@ checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
 [[package]]
 name = "alpenglow-vote"
 version = "0.1.0"
-source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=e5df52d#e5df52d304301aa85628155c9f0535cb416e8800"
+source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=cdae90a#cdae90a3c3f57f56bfa6f4c7e05d5b77b83926f1"
 dependencies = [
  "bincode",
  "bitflags 2.9.0",
@@ -369,7 +369,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "solana-account",
- "solana-bls",
+ "solana-bls-signatures",
  "solana-hash",
  "solana-program",
  "solana-signature",
@@ -5841,9 +5841,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-bls"
-version = "0.1.1"
-source = "git+https://github.com/anza-xyz/solana-sdk?branch=bls#9e1431b3e83310bb118c47404265d905acea2dce"
+name = "solana-bls-signatures"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af089f712fb5cbef2d73ac7ffee9cad05ada6cd1fd5c812338df040bcd3c410b"
 dependencies = [
  "base64 0.22.1",
  "blst",
@@ -5854,6 +5855,7 @@ dependencies = [
  "group",
  "rand 0.8.5",
  "serde",
+ "serde_json",
  "serde_with",
  "solana-signature",
  "solana-signer",
@@ -6326,7 +6328,7 @@ dependencies = [
  "solana-address-lookup-table-interface",
  "solana-bincode",
  "solana-bloom",
- "solana-bls",
+ "solana-bls-signatures",
  "solana-builtins-default-costs",
  "solana-client",
  "solana-clock",
@@ -8060,7 +8062,7 @@ dependencies = [
  "solana-account-info",
  "solana-accounts-db",
  "solana-address-lookup-table-interface",
- "solana-bls",
+ "solana-bls-signatures",
  "solana-bpf-loader-program",
  "solana-bucket-map",
  "solana-build-alpenglow-vote",
@@ -9120,10 +9122,8 @@ checksum = "64c8ec8e657aecfc187522fc67495142c12f35e55ddeca8698edbb738b8dbd8c"
 dependencies = [
  "ed25519-dalek",
  "five8",
- "serde",
- "serde-big-array",
+ "rand 0.8.5",
  "serde_derive",
- "solana-sanitize",
 ]
 
 [[package]]
@@ -9534,7 +9534,7 @@ dependencies = [
  "serde_json",
  "solana-account",
  "solana-accounts-db",
- "solana-bls",
+ "solana-bls-signatures",
  "solana-cli-output",
  "solana-clock",
  "solana-cluster-type",
@@ -9963,7 +9963,7 @@ dependencies = [
  "serde_derive",
  "solana-account",
  "solana-bincode",
- "solana-bls",
+ "solana-bls-signatures",
  "solana-clock",
  "solana-hash",
  "solana-instruction",

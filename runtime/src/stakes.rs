@@ -559,7 +559,7 @@ pub(crate) mod tests {
         alpenglow_vote::state::VoteState as AlpenglowVoteState,
         rayon::ThreadPoolBuilder,
         solana_account::WritableAccount,
-        solana_bls::keypair::Keypair as BLSKeypair,
+        solana_bls_signatures::keypair::Keypair as BLSKeypair,
         solana_pubkey::Pubkey,
         solana_rent::Rent,
         solana_stake_program::stake_state,

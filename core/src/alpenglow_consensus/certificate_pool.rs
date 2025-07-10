@@ -660,7 +660,7 @@ mod tests {
         },
         alpenglow_vote::bls_message::CertificateMessage,
         itertools::Itertools,
-        solana_bls::{keypair::Keypair as BLSKeypair, Signature as BLSSignature},
+        solana_bls_signatures::{keypair::Keypair as BLSKeypair, Signature as BLSSignature},
         solana_clock::Slot,
         solana_hash::Hash,
         solana_runtime::{

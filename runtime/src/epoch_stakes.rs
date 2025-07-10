@@ -1,7 +1,7 @@
 use {
     crate::stakes::SerdeStakesToStakeFormat,
     serde::{Deserialize, Serialize},
-    solana_bls::Pubkey as BLSPubkey,
+    solana_bls_signatures::Pubkey as BLSPubkey,
     solana_clock::Epoch,
     solana_pubkey::Pubkey,
     solana_vote::vote_account::VoteAccountsHashMap,
@@ -225,7 +225,7 @@ impl VersionedEpochStakes {
 pub(crate) mod tests {
     use {
         super::*, alpenglow_vote::state::VoteState as AlpenglowVoteState,
-        solana_account::AccountSharedData, solana_bls::keypair::Keypair as BLSKeypair,
+        solana_account::AccountSharedData, solana_bls_signatures::keypair::Keypair as BLSKeypair,
         solana_vote::vote_account::VoteAccount,
         solana_vote_program::vote_state::create_account_with_authorized, std::iter,
         test_case::test_case,
