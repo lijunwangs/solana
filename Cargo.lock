@@ -9058,6 +9058,7 @@ version = "3.0.0"
 dependencies = [
  "agave-feature-set",
  "agave-reserved-account-keys",
+ "alpenglow-vote",
  "anyhow",
  "assert_matches",
  "bincode",
@@ -9246,6 +9247,7 @@ dependencies = [
  "serial_test",
  "solana-account",
  "solana-accounts-db",
+ "solana-bls-signatures",
  "solana-build-alpenglow-vote",
  "solana-client",
  "solana-client-traits",

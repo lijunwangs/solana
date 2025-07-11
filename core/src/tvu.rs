@@ -53,7 +53,7 @@ use {
         commitment::BlockCommitmentCache,
         prioritization_fee_cache::PrioritizationFeeCache,
         snapshot_controller::SnapshotController,
-        vote_sender_types::{AlpenglowVoteReceiver, AlpenglowVoteSender, ReplayVoteSender},
+        vote_sender_types::{AlpenglowVoteSender, BLSVerifiedMessageReceiver, ReplayVoteSender},
     },
     solana_streamer::evicting_sender::EvictingSender,
     solana_turbine::{retransmit_stage::RetransmitStage, xdp::XdpSender},
@@ -164,7 +164,7 @@ impl Tvu {
         bank_notification_sender: Option<BankNotificationSenderConfig>,
         duplicate_confirmed_slots_receiver: DuplicateConfirmedSlotsReceiver,
         alpenglow_vote_sender: AlpenglowVoteSender,
-        alpenglow_vote_receiver: AlpenglowVoteReceiver,
+        bls_verified_message_receiver: BLSVerifiedMessageReceiver,
         tvu_config: TvuConfig,
         max_slots: &Arc<MaxSlots>,
         block_metadata_notifier: Option<BlockMetadataNotifierArc>,
@@ -341,7 +341,7 @@ impl Tvu {
             duplicate_confirmed_slots_receiver,
             gossip_verified_vote_hash_receiver,
             popular_pruned_forks_receiver,
-            alpenglow_vote_receiver,
+            bls_verified_message_receiver,
             completed_block_receiver,
         };
 

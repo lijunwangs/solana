@@ -7010,6 +7010,7 @@ dependencies = [
  "agave-feature-set",
  "agave-reserved-account-keys",
  "anyhow",
+ "alpenglow-vote",
  "assert_matches",
  "bincode",
  "bitflags 2.9.1",

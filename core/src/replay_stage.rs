@@ -3,7 +3,6 @@ use {
     crate::{
         alpenglow_consensus::{
             block_creation_loop::{LeaderWindowNotifier, ReplayHighestFrozen},
-            vote_certificate::LegacyVoteCertificate,
             vote_history::VoteHistory,
             vote_history_storage::VoteHistoryStorage,
             voting_loop::{GenerateVoteTxResult, VotingLoop, VotingLoopConfig},
@@ -41,6 +40,7 @@ use {
         voting_service::VoteOp,
         window_service::DuplicateSlotReceiver,
     },
+    alpenglow_vote::bls_message::CertificateMessage,
     crossbeam_channel::{Receiver, RecvTimeoutError, Sender},
     rayon::{
         iter::{IntoParallelIterator, ParallelIterator},
@@ -80,7 +80,7 @@ use {
         installed_scheduler_pool::BankWithScheduler,
         prioritization_fee_cache::PrioritizationFeeCache,
         snapshot_controller::SnapshotController,
-        vote_sender_types::{AlpenglowVoteReceiver, AlpenglowVoteSender, ReplayVoteSender},
+        vote_sender_types::{AlpenglowVoteSender, BLSVerifiedMessageReceiver, ReplayVoteSender},
     },
     solana_signer::Signer,
     solana_time_utils::timestamp,
@@ -298,7 +298,7 @@ pub struct ReplaySenders {
     pub block_metadata_notifier: Option<BlockMetadataNotifierArc>,
     pub dumped_slots_sender: Sender<Vec<(u64, Hash)>>,
     pub alpenglow_vote_sender: AlpenglowVoteSender,
-    pub certificate_sender: Sender<(CertificateId, LegacyVoteCertificate)>,
+    pub certificate_sender: Sender<(CertificateId, CertificateMessage)>,
     pub completed_block_sender: CompletedBlockSender,
 }
 
@@ -309,7 +309,7 @@ pub struct ReplayReceivers {
     pub duplicate_confirmed_slots_receiver: Receiver<Vec<(u64, Hash)>>,
     pub gossip_verified_vote_hash_receiver: Receiver<(Pubkey, u64, Hash)>,
     pub popular_pruned_forks_receiver: Receiver<Vec<u64>>,
-    pub alpenglow_vote_receiver: AlpenglowVoteReceiver,
+    pub bls_verified_message_receiver: BLSVerifiedMessageReceiver,
     pub completed_block_receiver: CompletedBlockReceiver,
 }
 
@@ -624,7 +624,7 @@ impl ReplayStage {
             duplicate_confirmed_slots_receiver,
             gossip_verified_vote_hash_receiver,
             popular_pruned_forks_receiver,
-            alpenglow_vote_receiver,
+            bls_verified_message_receiver,
             completed_block_receiver,
         } = receivers;
 
@@ -690,7 +690,7 @@ impl ReplayStage {
                 leader_window_notifier,
                 certificate_sender,
                 completed_block_receiver: completed_block_receiver.clone(),
-                vote_receiver: alpenglow_vote_receiver,
+                vote_receiver: bls_verified_message_receiver,
             };
             Some(VotingLoop::new(voting_loop_config))
         } else {
