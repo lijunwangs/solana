@@ -3,10 +3,7 @@ use {
     crate::{
         alpenglow_consensus::{
             block_creation_loop::{LeaderWindowNotifier, ReplayHighestFrozen},
-            vote_history::VoteHistory,
-            vote_history_storage::VoteHistoryStorage,
             voting_loop::{GenerateVoteTxResult, VotingLoop, VotingLoopConfig},
-            CertificateId,
         },
         banking_stage::update_bank_forks_and_poh_recorder_for_new_tpu_bank,
         banking_trace::BankingTracer,
@@ -87,6 +84,9 @@ use {
     solana_timings::ExecuteTimings,
     solana_transaction::Transaction,
     solana_vote::vote_transaction::VoteTransaction,
+    solana_votor::{
+        vote_history::VoteHistory, vote_history_storage::VoteHistoryStorage, CertificateId,
+    },
     std::{
         collections::{HashMap, HashSet},
         num::{NonZeroUsize, Saturating},
@@ -4678,9 +4678,6 @@ pub(crate) mod tests {
     use {
         super::*,
         crate::{
-            alpenglow_consensus::vote_history_storage::{
-                NullVoteHistoryStorage, VoteHistoryStorage,
-            },
             consensus::{
                 progress_map::{ValidatorStakeInfo, RETRANSMIT_BASE_DELAY_MS},
                 tower_storage::{FileTowerStorage, NullTowerStorage},
@@ -4729,6 +4726,7 @@ pub(crate) mod tests {
         solana_transaction_status::VersionedTransactionWithStatusMeta,
         solana_vote::vote_transaction,
         solana_vote_program::vote_state::{self, TowerSync, VoteStateVersions},
+        solana_votor::vote_history_storage::{NullVoteHistoryStorage, VoteHistoryStorage},
         std::{
             fs::remove_dir_all,
             iter,

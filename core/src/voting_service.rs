@@ -1,6 +1,5 @@
 use {
     crate::{
-        alpenglow_consensus::vote_history_storage::{SavedVoteHistoryVersions, VoteHistoryStorage},
         consensus::tower_storage::{SavedTowerVersions, TowerStorage},
         next_leader::upcoming_leader_tpu_vote_sockets,
         staked_validators_cache::StakedValidatorsCache,
@@ -17,6 +16,7 @@ use {
     solana_runtime::bank_forks::BankForks,
     solana_transaction::Transaction,
     solana_transaction_error::TransportError,
+    solana_votor::vote_history_storage::{SavedVoteHistoryVersions, VoteHistoryStorage},
     std::{
         net::SocketAddr,
         sync::{Arc, RwLock},
@@ -338,10 +338,7 @@ impl VotingService {
 mod tests {
     use {
         super::*,
-        crate::{
-            alpenglow_consensus::vote_history_storage::{NullVoteHistoryStorage, SavedVoteHistory},
-            consensus::tower_storage::NullTowerStorage,
-        },
+        crate::consensus::tower_storage::NullTowerStorage,
         alpenglow_vote::{
             bls_message::{BLSMessage, VoteMessage},
             vote::Vote,
@@ -365,6 +362,7 @@ mod tests {
         },
         solana_signer::Signer,
         solana_streamer::{packet::Packet, recvmmsg::recv_mmsg, socket::SocketAddrSpace},
+        solana_votor::vote_history_storage::{NullVoteHistoryStorage, SavedVoteHistory},
         std::{
             net::SocketAddr,
             sync::{atomic::AtomicBool, Arc, RwLock},

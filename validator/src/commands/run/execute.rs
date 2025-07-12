@@ -28,7 +28,6 @@ use {
     },
     solana_clock::{Slot, DEFAULT_SLOTS_PER_EPOCH},
     solana_core::{
-        alpenglow_consensus::vote_history_storage,
         banking_trace::DISABLED_BAKING_TRACE_DIR,
         consensus::tower_storage,
         repair::repair_handler::RepairHandlerType,
@@ -72,6 +71,7 @@ use {
         xdp::{set_cpu_affinity, XdpConfig},
     },
     solana_validator_exit::Exit,
+    solana_votor::vote_history_storage,
     std::{
         collections::HashSet,
         fs::{self, File},

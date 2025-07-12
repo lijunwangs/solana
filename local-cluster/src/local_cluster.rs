@@ -13,7 +13,6 @@ use {
     solana_clock::{Slot, DEFAULT_DEV_SLOTS_PER_EPOCH, DEFAULT_TICKS_PER_SLOT},
     solana_commitment_config::CommitmentConfig,
     solana_core::{
-        alpenglow_consensus::vote_history_storage::FileVoteHistoryStorage,
         consensus::tower_storage::FileTowerStorage,
         validator::{Validator, ValidatorConfig, ValidatorStartProgress, ValidatorTpuConfig},
     },
@@ -57,6 +56,7 @@ use {
         vote_instruction,
         vote_state::{self, VoteInit},
     },
+    solana_votor::vote_history_storage::FileVoteHistoryStorage,
     std::{
         collections::HashMap,
         io::{Error, Result},

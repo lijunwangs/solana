@@ -3,11 +3,7 @@
 
 use {
     crate::{
-        alpenglow_consensus::{
-            block_creation_loop::{LeaderWindowNotifier, ReplayHighestFrozen},
-            vote_history::VoteHistory,
-            vote_history_storage::VoteHistoryStorage,
-        },
+        alpenglow_consensus::block_creation_loop::{LeaderWindowNotifier, ReplayHighestFrozen},
         banking_trace::BankingTracer,
         cluster_info_vote_listener::{
             DuplicateConfirmedSlotsReceiver, GossipVerifiedVoteHashReceiver, VerifiedVoteReceiver,
@@ -57,6 +53,7 @@ use {
     },
     solana_streamer::evicting_sender::EvictingSender,
     solana_turbine::{retransmit_stage::RetransmitStage, xdp::XdpSender},
+    solana_votor::{vote_history::VoteHistory, vote_history_storage::VoteHistoryStorage},
     std::{
         collections::HashSet,
         net::{SocketAddr, UdpSocket},
@@ -487,7 +484,6 @@ pub mod tests {
     use {
         super::*,
         crate::{
-            alpenglow_consensus::vote_history_storage::FileVoteHistoryStorage,
             consensus::tower_storage::FileTowerStorage,
             repair::quic_endpoint::RepairQuicAsyncSenders,
         },
@@ -506,6 +502,7 @@ pub mod tests {
         solana_signer::Signer,
         solana_streamer::socket::SocketAddrSpace,
         solana_tpu_client::tpu_client::{DEFAULT_TPU_CONNECTION_POOL_SIZE, DEFAULT_VOTE_USE_QUIC},
+        solana_votor::vote_history_storage::FileVoteHistoryStorage,
         std::sync::atomic::{AtomicU64, Ordering},
     };
 

@@ -4,12 +4,8 @@ pub use solana_perf::report_target_features;
 use {
     crate::{
         admin_rpc_post_init::{AdminRpcRequestMetadataPostInit, KeyUpdaterType, KeyUpdaters},
-        alpenglow_consensus::{
-            block_creation_loop::{
-                self, BlockCreationLoopConfig, LeaderWindowNotifier, ReplayHighestFrozen,
-            },
-            vote_history::{VoteHistory, VoteHistoryError},
-            vote_history_storage::{NullVoteHistoryStorage, VoteHistoryStorage},
+        alpenglow_consensus::block_creation_loop::{
+            self, BlockCreationLoopConfig, LeaderWindowNotifier, ReplayHighestFrozen,
         },
         banking_trace::{self, BankingTracer, TraceError},
         cluster_info_vote_listener::VoteTracker,
@@ -140,6 +136,10 @@ use {
     solana_unified_scheduler_pool::DefaultSchedulerPool,
     solana_validator_exit::Exit,
     solana_vote_program::vote_state,
+    solana_votor::{
+        vote_history::{VoteHistory, VoteHistoryError},
+        vote_history_storage::{NullVoteHistoryStorage, VoteHistoryStorage},
+    },
     solana_wen_restart::wen_restart::{wait_for_wen_restart, WenRestartConfig},
     std::{
         borrow::Cow,
@@ -2082,7 +2082,7 @@ fn post_process_restored_tower(
 }
 
 fn post_process_restored_vote_history(
-    restored_vote_history: crate::alpenglow_consensus::vote_history_storage::Result<VoteHistory>,
+    restored_vote_history: solana_votor::vote_history_storage::Result<VoteHistory>,
     validator_identity: &Pubkey,
     config: &ValidatorConfig,
     bank_forks: &BankForks,
