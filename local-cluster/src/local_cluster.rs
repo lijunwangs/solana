@@ -61,7 +61,7 @@ use {
         collections::HashMap,
         io::{Error, Result},
         iter,
-        net::{IpAddr, Ipv4Addr, SocketAddr},
+        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         path::{Path, PathBuf},
         sync::{Arc, RwLock},
         time::Duration,
@@ -763,6 +763,25 @@ impl LocalCluster {
 
             std::thread::sleep(Duration::from_millis(400));
         }
+    }
+
+    pub fn check_for_new_notarized_votes(
+        &self,
+        num_new_notarized_votes: usize,
+        test_name: &str,
+        socket_addr_space: SocketAddrSpace,
+        vote_listener_addr: UdpSocket,
+    ) {
+        let alive_node_contact_infos = self.discover_nodes(socket_addr_space, test_name);
+        info!("{} looking for new notarized votes on all nodes", test_name);
+        cluster_tests::check_for_new_notarized_votes(
+            num_new_notarized_votes,
+            &alive_node_contact_infos,
+            &self.connection_cache,
+            test_name,
+            vote_listener_addr,
+        );
+        info!("{} done waiting for notarized votes", test_name);
     }
 
     /// Attempt to send and confirm tx "attempts" times
