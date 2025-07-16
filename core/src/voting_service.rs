@@ -16,7 +16,7 @@ use {
     solana_runtime::bank_forks::BankForks,
     solana_transaction::Transaction,
     solana_transaction_error::TransportError,
-    solana_votor::{vote_history_storage::VoteHistoryStorage, voting_loop::BLSOp},
+    solana_votor::{vote_history_storage::VoteHistoryStorage, voting_utils::BLSOp},
     std::{
         net::SocketAddr,
         sync::{Arc, RwLock},
