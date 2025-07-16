@@ -4,10 +4,8 @@ pub use solana_perf::report_target_features;
 use {
     crate::{
         admin_rpc_post_init::{AdminRpcRequestMetadataPostInit, KeyUpdaterType, KeyUpdaters},
-        alpenglow_consensus::block_creation_loop::{
-            self, BlockCreationLoopConfig, LeaderWindowNotifier, ReplayHighestFrozen,
-        },
         banking_trace::{self, BankingTracer, TraceError},
+        block_creation_loop::{self, BlockCreationLoopConfig, ReplayHighestFrozen},
         cluster_info_vote_listener::VoteTracker,
         completed_data_sets_service::CompletedDataSetsService,
         consensus::{
@@ -139,6 +137,7 @@ use {
     solana_votor::{
         vote_history::{VoteHistory, VoteHistoryError},
         vote_history_storage::{NullVoteHistoryStorage, VoteHistoryStorage},
+        voting_loop::LeaderWindowNotifier,
     },
     solana_wen_restart::wen_restart::{wait_for_wen_restart, WenRestartConfig},
     std::{
@@ -1360,7 +1359,6 @@ impl Validator {
         let leader_window_notifier = Arc::new(LeaderWindowNotifier::default());
         let block_creation_loop_config = BlockCreationLoopConfig {
             exit: exit.clone(),
-            wait_for_vote_to_start_leader,
             bank_forks: bank_forks.clone(),
             blockstore: blockstore.clone(),
             cluster_info: cluster_info.clone(),

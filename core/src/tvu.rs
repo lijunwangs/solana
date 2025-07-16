@@ -3,8 +3,8 @@
 
 use {
     crate::{
-        alpenglow_consensus::block_creation_loop::{LeaderWindowNotifier, ReplayHighestFrozen},
         banking_trace::BankingTracer,
+        block_creation_loop::ReplayHighestFrozen,
         cluster_info_vote_listener::{
             DuplicateConfirmedSlotsReceiver, GossipVerifiedVoteHashReceiver, VerifiedVoteReceiver,
             VoteTracker,
@@ -53,7 +53,10 @@ use {
     },
     solana_streamer::evicting_sender::EvictingSender,
     solana_turbine::{retransmit_stage::RetransmitStage, xdp::XdpSender},
-    solana_votor::{vote_history::VoteHistory, vote_history_storage::VoteHistoryStorage},
+    solana_votor::{
+        vote_history::VoteHistory, vote_history_storage::VoteHistoryStorage,
+        voting_loop::LeaderWindowNotifier,
+    },
     std::{
         collections::HashSet,
         net::{SocketAddr, UdpSocket},
@@ -310,6 +313,7 @@ impl Tvu {
         let (cost_update_sender, cost_update_receiver) = unbounded();
         let (drop_bank_sender, drop_bank_receiver) = unbounded();
         let (voting_sender, voting_receiver) = unbounded();
+        let (bls_sender, bls_receiver) = unbounded();
 
         let replay_senders = ReplaySenders {
             rpc_subscriptions,
@@ -323,6 +327,7 @@ impl Tvu {
             cluster_slots_update_sender,
             cost_update_sender,
             voting_sender,
+            bls_sender,
             drop_bank_sender,
             block_metadata_notifier,
             dumped_slots_sender,
@@ -372,6 +377,7 @@ impl Tvu {
 
         let voting_service = VotingService::new(
             voting_receiver,
+            bls_receiver,
             cluster_info.clone(),
             poh_recorder.clone(),
             tower_storage,

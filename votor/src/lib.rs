@@ -2,8 +2,20 @@
 use {alpenglow_vote::vote::Vote, solana_clock::Slot, solana_hash::Hash, std::time::Duration};
 
 pub mod certificate_pool;
+pub mod commitment;
+pub mod root_utils;
 pub mod vote_history;
 pub mod vote_history_storage;
+pub mod voting_loop;
+
+#[macro_use]
+extern crate log;
+
+extern crate serde_derive;
+
+#[cfg_attr(feature = "frozen-abi", macro_use)]
+#[cfg(feature = "frozen-abi")]
+extern crate solana_frozen_abi_macro;
 
 // Core consensus types and constants
 pub type Stake = u64;
