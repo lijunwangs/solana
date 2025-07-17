@@ -47,7 +47,7 @@ use {
     solana_keypair::Keypair,
     solana_ledger::{
         block_error::BlockError,
-        blockstore::{Blockstore, CompletedBlock, CompletedBlockReceiver, CompletedBlockSender},
+        blockstore::Blockstore,
         blockstore_processor::{
             self, BlockstoreProcessorError, ConfirmationProgress, ExecuteBatchesInternalMetrics,
             ReplaySlotStats, TransactionStatusSender,
@@ -80,6 +80,7 @@ use {
     solana_transaction::Transaction,
     solana_vote::vote_transaction::VoteTransaction,
     solana_votor::{
+        event::{CompletedBlock, CompletedBlockReceiver, CompletedBlockSender},
         root_utils,
         vote_history::VoteHistory,
         vote_history_storage::VoteHistoryStorage,

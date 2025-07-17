@@ -10,6 +10,7 @@ use {
     solana_signature::Signature,
     solana_signer::Signer,
     solana_system_transaction as system_transaction,
+    solana_votor::event::CompletedBlockSender,
     std::collections::HashSet,
 };
 

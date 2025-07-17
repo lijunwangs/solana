@@ -5,8 +5,8 @@ use {
     solana_hash::Hash,
     solana_keypair::Keypair,
     solana_ledger::shred::{self, ProcessShredsStats, ReedSolomonCache, Shredder},
+    solana_votor::event::CompletedBlockSender,
 };
-
 #[derive(Clone)]
 pub(super) struct BroadcastFakeShredsRun {
     last_blockhash: Hash,

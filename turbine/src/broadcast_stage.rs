@@ -22,7 +22,7 @@ use {
     },
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::{Blockstore, CompletedBlockSender},
+        blockstore::Blockstore,
         shred::{self, Shred},
     },
     solana_measure::measure::Measure,
@@ -35,6 +35,7 @@ use {
         socket::SocketAddrSpace,
     },
     solana_time_utils::{timestamp, AtomicInterval},
+    solana_votor::event::CompletedBlockSender,
     static_assertions::const_assert_eq,
     std::{
         collections::{HashMap, HashSet},

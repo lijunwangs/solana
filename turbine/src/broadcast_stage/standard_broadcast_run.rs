@@ -10,10 +10,11 @@ use {
     solana_hash::Hash,
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::{self, CompletedBlockSender},
+        blockstore::{self},
         shred::{shred_code, ProcessShredsStats, ReedSolomonCache, Shred, ShredType, Shredder},
     },
     solana_time_utils::AtomicInterval,
+    solana_votor::event::CompletedBlockSender,
     std::{borrow::Cow, sync::RwLock},
     tokio::sync::mpsc::Sender as AsyncSender,
 };

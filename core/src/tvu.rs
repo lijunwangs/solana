@@ -32,10 +32,8 @@ use {
     },
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::{Blockstore, CompletedBlockReceiver, CompletedBlockSender},
-        blockstore_cleanup_service::BlockstoreCleanupService,
-        blockstore_processor::TransactionStatusSender,
-        entry_notifier_service::EntryNotifierSender,
+        blockstore::Blockstore, blockstore_cleanup_service::BlockstoreCleanupService,
+        blockstore_processor::TransactionStatusSender, entry_notifier_service::EntryNotifierSender,
         leader_schedule_cache::LeaderScheduleCache,
     },
     solana_poh::poh_recorder::PohRecorder,
@@ -54,7 +52,9 @@ use {
     solana_streamer::evicting_sender::EvictingSender,
     solana_turbine::{retransmit_stage::RetransmitStage, xdp::XdpSender},
     solana_votor::{
-        vote_history::VoteHistory, vote_history_storage::VoteHistoryStorage,
+        event::{CompletedBlockReceiver, CompletedBlockSender},
+        vote_history::VoteHistory,
+        vote_history_storage::VoteHistoryStorage,
         voting_loop::LeaderWindowNotifier,
     },
     std::{

@@ -21,10 +21,7 @@ use {
         bank::{Bank, NewBankOptions},
         bank_forks::BankForks,
     },
-    solana_votor::{
-        block_timeout,
-        voting_loop::{LeaderWindowInfo, LeaderWindowNotifier},
-    },
+    solana_votor::{block_timeout, event::LeaderWindowInfo, voting_loop::LeaderWindowNotifier},
     std::{
         sync::{
             atomic::{AtomicBool, Ordering},

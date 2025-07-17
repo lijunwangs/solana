@@ -24,7 +24,7 @@ use {
     },
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::{Blockstore, CompletedBlockReceiver, PurgeType},
+        blockstore::{Blockstore, PurgeType},
         leader_schedule_cache::LeaderScheduleCache,
     },
     solana_net_utils::sockets::{bind_in_range_with_config, SocketConfiguration},
@@ -44,6 +44,7 @@ use {
     solana_signer::Signer,
     solana_streamer::socket::SocketAddrSpace,
     solana_turbine::broadcast_stage::{BroadcastStage, BroadcastStageType},
+    solana_votor::event::CompletedBlockReceiver,
     std::{
         collections::BTreeMap,
         fmt::Display,

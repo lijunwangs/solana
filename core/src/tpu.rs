@@ -38,8 +38,7 @@ use {
     solana_gossip::cluster_info::ClusterInfo,
     solana_keypair::Keypair,
     solana_ledger::{
-        blockstore::{Blockstore, CompletedBlockSender},
-        blockstore_processor::TransactionStatusSender,
+        blockstore::Blockstore, blockstore_processor::TransactionStatusSender,
         entry_notifier_service::EntryNotifierSender,
     },
     solana_perf::data_budget::DataBudget,
@@ -68,6 +67,7 @@ use {
         broadcast_stage::{BroadcastStage, BroadcastStageType},
         xdp::XdpSender,
     },
+    solana_votor::event::CompletedBlockSender,
     std::{
         collections::HashMap,
         net::{SocketAddr, UdpSocket},

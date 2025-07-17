@@ -6,11 +6,12 @@ use {
     solana_entry::entry::Entry,
     solana_hash::Hash,
     solana_ledger::{
-        blockstore::{Blockstore, CompletedBlock, CompletedBlockSender},
+        blockstore::Blockstore,
         shred::{self, get_data_shred_bytes_per_batch_typical, ProcessShredsStats},
     },
     solana_poh::poh_recorder::WorkingBankEntry,
     solana_runtime::bank::Bank,
+    solana_votor::event::{CompletedBlock, CompletedBlockSender},
     std::{
         sync::Arc,
         time::{Duration, Instant},

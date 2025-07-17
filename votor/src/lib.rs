@@ -3,6 +3,7 @@ use {alpenglow_vote::vote::Vote, solana_clock::Slot, solana_hash::Hash, std::tim
 
 pub mod certificate_pool;
 pub mod commitment;
+pub mod event;
 pub mod root_utils;
 pub mod vote_history;
 pub mod vote_history_storage;

@@ -3,10 +3,8 @@ use {
     crate::cluster_nodes::ClusterNodesCache,
     solana_hash::Hash,
     solana_keypair::Keypair,
-    solana_ledger::{
-        blockstore::CompletedBlockSender,
-        shred::{ProcessShredsStats, ReedSolomonCache, Shredder},
-    },
+    solana_ledger::shred::{ProcessShredsStats, ReedSolomonCache, Shredder},
+    solana_votor::event::CompletedBlockSender,
     std::{thread::sleep, time::Duration},
     tokio::sync::mpsc::Sender as AsyncSender,
 };
