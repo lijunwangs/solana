@@ -18,7 +18,7 @@ use {
     solana_keypair::Keypair,
     solana_measure::measure::Measure,
     solana_pubkey::Pubkey,
-    solana_runtime::bank::Bank,
+    solana_runtime::{bank::Bank, root_bank_cache::RootBankCache},
     solana_signer::Signer,
     solana_transaction::Transaction,
     std::{collections::HashMap, sync::Arc},
@@ -72,6 +72,7 @@ pub struct VotingContext {
     pub bls_sender: Sender<BLSOp>,
     pub commitment_sender: Sender<AlpenglowCommitmentAggregationData>,
     pub wait_to_vote_slot: Option<u64>,
+    pub root_bank_cache: RootBankCache,
 }
 
 pub fn get_bls_keypair(
