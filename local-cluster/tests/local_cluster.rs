@@ -2638,6 +2638,7 @@ fn test_restart_tower_rollback() {
 #[test]
 #[serial]
 fn test_run_test_load_program_accounts_partition_root() {
+    solana_logger::setup();
     run_test_load_program_accounts_partition(CommitmentConfig::finalized());
 }
 
@@ -2648,6 +2649,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
         num_slots_per_validator,
         num_slots_per_validator,
     ]);
+    info!("vvvvvvvv 1");
 
     let (update_client_sender, update_client_receiver) = unbounded();
     let (scan_client_sender, scan_client_receiver) = unbounded();
@@ -2660,6 +2662,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
         update_client_receiver,
         scan_client_receiver,
     );
+    info!("vvvvvvvv 2");
 
     let on_partition_start = |cluster: &mut LocalCluster, _: &mut ()| {
         let update_client = cluster
@@ -2673,6 +2676,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
     };
 
     let on_partition_before_resolved = |_: &mut LocalCluster, _: &mut ()| {};
+    info!("vvvvvvvv 3");
 
     let on_partition_resolved = |cluster: &mut LocalCluster, _: &mut ()| {
         cluster.check_for_new_roots(
@@ -2685,6 +2689,7 @@ fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig) {
         t_scan.join().unwrap();
     };
 
+    info!("vvvvvvvv 4");
     run_cluster_partition(
         &partitions,
         Some((leader_schedule, validator_keys)),
