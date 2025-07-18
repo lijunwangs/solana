@@ -380,6 +380,7 @@ pub fn run_cluster_partition<C>(
         SocketAddrSpace::Unspecified,
         &cluster.connection_cache,
     );
+    info!("PARTITION_TEST Discover validators");
 
     let cluster_nodes = discover_validators(
         &cluster.entry_point_info.gossip().unwrap(),
