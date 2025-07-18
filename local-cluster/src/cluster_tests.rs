@@ -66,6 +66,7 @@ pub fn spend_and_verify_all_nodes<S: ::std::hash::BuildHasher + Sync + Send>(
     socket_addr_space: SocketAddrSpace,
     connection_cache: &Arc<ConnectionCache>,
 ) {
+     info!("PARTITION_TEST spend_and_verify_all_nodes discovering validators");
     let cluster_nodes = discover_validators(
         &entry_point_info.gossip().unwrap(),
         nodes,
@@ -79,6 +80,7 @@ pub fn spend_and_verify_all_nodes<S: ::std::hash::BuildHasher + Sync + Send>(
         if ignore_nodes.contains(ingress_node.pubkey()) {
             return;
         }
+        info!("PARTITION_TEST spend_and_verify_all_nodes node: {}", ingress_node.pubkey());
         let random_keypair = Keypair::new();
         let client = new_tpu_quic_client(ingress_node, connection_cache.clone()).unwrap();
         let bal = client
@@ -95,6 +97,7 @@ pub fn spend_and_verify_all_nodes<S: ::std::hash::BuildHasher + Sync + Send>(
             .unwrap();
         let mut transaction =
             system_transaction::transfer(funding_keypair, &random_keypair.pubkey(), 1, blockhash);
+        info!("PARTITION_TEST sending transaction to node: {}", ingress_node.pubkey());
         LocalCluster::send_transaction_with_retries(
             &client,
             &[funding_keypair],
@@ -102,10 +105,15 @@ pub fn spend_and_verify_all_nodes<S: ::std::hash::BuildHasher + Sync + Send>(
             10,
         )
         .unwrap();
+        info!("PARTITION_TEST verifying transaction on node: {}", ingress_node.pubkey());
         for validator in &cluster_nodes {
             if ignore_nodes.contains(validator.pubkey()) {
                 continue;
             }
+            info!(
+                "PARTITION_TEST verifying transaction on validator: {} for transaction against node: {}",
+                validator.pubkey(), ingress_node.pubkey()
+            );
             let client = new_tpu_quic_client(ingress_node, connection_cache.clone()).unwrap();
             LocalCluster::poll_for_processed_transaction(&client, &transaction)
                 .unwrap()
