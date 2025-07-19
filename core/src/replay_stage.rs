@@ -84,8 +84,8 @@ use {
         root_utils,
         vote_history::VoteHistory,
         vote_history_storage::VoteHistoryStorage,
-        voting_loop::{log_leader_change, LeaderWindowNotifier, VotingLoop, VotingLoopConfig},
         voting_utils::{BLSOp, GenerateVoteTxResult},
+        votor::{LeaderWindowNotifier, Votor, VotorConfig},
         CertificateId,
     },
     std::{
@@ -561,7 +561,7 @@ impl ReplayLoopTiming {
 
 pub struct ReplayStage {
     t_replay: JoinHandle<()>,
-    voting_loop: Option<VotingLoop>,
+    votor: Votor,
     commitment_service: AggregateCommitmentService,
 }
 
@@ -642,6 +642,31 @@ impl ReplayStage {
             );
 
         // Alpenglow specific objects
+        let votor_config = VotorConfig {
+            exit: exit.clone(),
+            vote_account,
+            wait_to_vote_slot,
+            wait_for_vote_to_start_leader,
+            vote_history,
+            vote_history_storage,
+            authorized_voter_keypairs: authorized_voter_keypairs.clone(),
+            blockstore: blockstore.clone(),
+            bank_forks: bank_forks.clone(),
+            cluster_info: cluster_info.clone(),
+            leader_schedule_cache: leader_schedule_cache.clone(),
+            rpc_subscriptions: rpc_subscriptions.clone(),
+            snapshot_controller: snapshot_controller.clone(),
+            bls_sender: bls_sender.clone(),
+            commitment_sender: commitment_sender.clone(),
+            drop_bank_sender: drop_bank_sender.clone(),
+            bank_notification_sender: bank_notification_sender.clone(),
+            leader_window_notifier,
+            certificate_sender,
+            completed_block_receiver: completed_block_receiver.clone(),
+            bls_receiver: bls_verified_message_receiver,
+        };
+        let votor = Votor::new(votor_config);
+
         let mut first_alpenglow_slot = bank_forks
             .read()
             .unwrap()
@@ -662,6 +687,7 @@ impl ReplayStage {
                     &poh_recorder,
                     &mut is_alpenglow_migration_complete,
                 );
+                votor.start_migration();
             }
         }
         let mut highest_frozen_slot = bank_forks
@@ -671,42 +697,7 @@ impl ReplayStage {
             .map_or(0, |hfs| hfs.slot());
         *replay_highest_frozen.highest_frozen_slot.lock().unwrap() = highest_frozen_slot;
 
-        let voting_loop = if is_alpenglow_migration_complete {
-            info!("Starting alpenglow voting loop");
-            let voting_loop_config = VotingLoopConfig {
-                exit: exit.clone(),
-                vote_account,
-                wait_to_vote_slot,
-                wait_for_vote_to_start_leader,
-                vote_history,
-                vote_history_storage,
-                authorized_voter_keypairs: authorized_voter_keypairs.clone(),
-                blockstore: blockstore.clone(),
-                bank_forks: bank_forks.clone(),
-                cluster_info: cluster_info.clone(),
-                leader_schedule_cache: leader_schedule_cache.clone(),
-                rpc_subscriptions: rpc_subscriptions.clone(),
-                snapshot_controller: snapshot_controller.clone(),
-                bls_sender: bls_sender.clone(),
-                commitment_sender: commitment_sender.clone(),
-                drop_bank_sender: drop_bank_sender.clone(),
-                bank_notification_sender: bank_notification_sender.clone(),
-                leader_window_notifier,
-                certificate_sender,
-                completed_block_receiver: completed_block_receiver.clone(),
-                vote_receiver: bls_verified_message_receiver,
-            };
-            Some(VotingLoop::new(voting_loop_config))
-        } else {
-            None
-        };
-
         let run_replay = move || {
-            // TODO(ashwin): Once we have the proper migration, we don't need this as the voting loop will be created
-            // but not running. This is a hack so that the senders are not dropped
-            let _ = &bls_sender;
-            let _ = &commitment_sender;
-
             let verify_recyclers = VerifyRecyclers::default();
             let _exit = Finalizer::new(exit.clone());
             let mut identity_keypair = cluster_info.keypair().clone();
@@ -1111,7 +1102,7 @@ impl ReplayStage {
                         if let Some(votable_leader) =
                             leader_schedule_cache.slot_leader_at(vote_bank.slot(), Some(vote_bank))
                         {
-                            log_leader_change(
+                            Self::log_leader_change(
                                 &my_pubkey,
                                 vote_bank.slot(),
                                 &mut current_leader,
@@ -1325,7 +1316,7 @@ impl ReplayStage {
 
                         let poh_bank = poh_recorder.read().unwrap().bank();
                         if let Some(bank) = poh_bank {
-                            log_leader_change(
+                            Self::log_leader_change(
                                 &my_pubkey,
                                 bank.slot(),
                                 &mut current_leader,
@@ -1369,7 +1360,7 @@ impl ReplayStage {
 
         Ok(Self {
             t_replay,
-            voting_loop,
+            votor,
             commitment_service,
         })
     }
@@ -2131,6 +2122,30 @@ impl ReplayStage {
                 SlotStateUpdate::Duplicate(duplicate_state),
             );
         }
+    }
+
+    fn log_leader_change(
+        my_pubkey: &Pubkey,
+        bank_slot: Slot,
+        current_leader: &mut Option<Pubkey>,
+        new_leader: &Pubkey,
+    ) {
+        if let Some(ref current_leader) = current_leader {
+            if current_leader != new_leader {
+                let msg = if current_leader == my_pubkey {
+                    ". I am no longer the leader"
+                } else if new_leader == my_pubkey {
+                    ". I am now the leader"
+                } else {
+                    ""
+                };
+                info!(
+                    "LEADER CHANGE at slot: {} leader: {}{}",
+                    bank_slot, new_leader, msg
+                );
+            }
+        }
+        current_leader.replace(new_leader.to_owned());
     }
 
     fn check_propagation_for_start_leader(
@@ -3469,17 +3484,21 @@ impl ReplayStage {
                     }
                 }
 
-                let (is_leader_block, block_id) = if bank.collector_id() != my_pubkey {
-                    // If the block does not have at least DATA_SHREDS_PER_FEC_BLOCK correctly retransmitted
-                    // shreds in the last FEC set, mark it dead. No reason to perform this check on our leader block.
-                    match blockstore.check_last_fec_set_and_get_block_id(
-                        bank.slot(),
-                        bank.hash(),
-                        false,
-                        &bank.feature_set,
-                    ) {
-                        Ok(block_id) => (false, block_id),
-                        Err(result_err) => {
+                // If the block does not have at least DATA_SHREDS_PER_FEC_BLOCK correctly retransmitted
+                // shreds in the last FEC set, mark it dead.
+                let is_leader_block = bank.collector_id() == my_pubkey;
+                let block_id = match blockstore.check_last_fec_set_and_get_block_id(
+                    bank.slot(),
+                    bank.hash(),
+                    false,
+                    &bank.feature_set,
+                ) {
+                    Ok(block_id) => block_id,
+                    Err(result_err) => {
+                        if is_leader_block {
+                            // Our leader block has not finished shredding
+                            None
+                        } else {
                             let root = bank_forks.read().unwrap().root();
                             Self::mark_dead_slot(
                                 blockstore,
@@ -3497,18 +3516,11 @@ impl ReplayStage {
                             continue;
                         }
                     }
-                } else {
-                    (true, None)
                 };
-                bank.set_block_id(block_id);
-                // Freeze the bank before sending to any auxiliary threads
-                // that may expect to be operating on a frozen bank
-                bank.freeze();
-                datapoint_info!(
-                    "bank_frozen",
-                    ("slot", bank_slot, i64),
-                    ("hash", bank.hash().to_string(), String),
-                );
+
+                if bank.block_id().is_none() {
+                    bank.set_block_id(block_id);
+                }
 
                 let r_replay_stats = replay_stats.read().unwrap();
                 let replay_progress = bank_progress.replay_progress.clone();
@@ -3600,6 +3612,12 @@ impl ReplayStage {
                     }
                 }
 
+                // For leader banks:
+                // 1) Replay finishes before shredding, broadcast_stage will take care off
+                //      notifying votor
+                // 2) Shredding finishes before replay, we notify here
+                //
+                // For non leader banks (2) is always true, so notify here
                 if *is_alpenglow_migration_complete && bank.block_id().is_some() {
                     // Leader blocks will not have a block id, broadcast stage will
                     // take care of notifying the voting loop
@@ -4598,9 +4616,7 @@ impl ReplayStage {
 
     pub fn join(self) -> thread::Result<()> {
         self.commitment_service.join()?;
-        if let Some(voting_loop) = self.voting_loop {
-            voting_loop.join()?;
-        }
+        self.votor.join()?;
         self.t_replay.join().map(|_| ())
     }
 }
