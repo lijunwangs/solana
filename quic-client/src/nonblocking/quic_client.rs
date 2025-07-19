@@ -373,8 +373,8 @@ impl QuicClient {
                     stats
                         .prepare_connection_us
                         .fetch_add(measure_prepare_connection.as_us(), Ordering::Relaxed);
-                    trace!(
-                        "Succcessfully sent to {} with id {}, thread: {:?}, data len: {}, send_packet_us: {} prepare_connection_us: {}",
+                    debug!(
+                        "PARTITION_TEST Succcessfully sent to {} with id {}, thread: {:?}, data len: {}, send_packet_us: {} prepare_connection_us: {}",
                         self.addr,
                         connection.stable_id(),
                         thread::current().id(),
