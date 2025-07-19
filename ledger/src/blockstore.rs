@@ -3081,6 +3081,7 @@ impl Blockstore {
         signature: Signature,
         confirmed_unrooted_slots: &HashSet<Slot>,
     ) -> Result<(Option<(Slot, TransactionStatusMeta)>, u64)> {
+        info!("PARTITION_TEST: get_transaction_status_with_counter({signature})");
         let mut counter = 0;
         let (lock, _) = self.ensure_lowest_cleanup_slot();
         let first_available_block = self.get_first_available_block()?;

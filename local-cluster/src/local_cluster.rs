@@ -744,6 +744,7 @@ impl LocalCluster {
         // case. But the method defined below does work although it has only been tested
         // in LocalCluster integration tests
         for attempt in 1..=attempts {
+            info!("PARTITION_TEST sending transaction: {:?}", transaction.signatures[0]);
             client.send_transaction_to_upcoming_leaders(transaction)?;
             if Self::poll_for_processed_transaction(client, transaction)?.is_some() {
                 return Ok(());
