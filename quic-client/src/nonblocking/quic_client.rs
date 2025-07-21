@@ -245,12 +245,6 @@ impl QuicClient {
                 CONNECTION_CLOSE_CODE_APPLICATION_CLOSE.into(),
                 CONNECTION_CLOSE_REASON_APPLICATION_CLOSE,
             );
-            let result = conn.connection.closed().await;
-            trace!(
-                "Closed connection to {} connection_id: {:?} result: {result:?}",
-                self.addr,
-                conn.connection
-            );
         }
     }
 }
