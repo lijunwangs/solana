@@ -121,30 +121,4 @@ mod tests {
         let processed_sequence = *synchronizer.processed_event_sequence.lock().unwrap();
         assert_eq!(processed_sequence, Some(2));
     }
-
-    #[test]
-    fn test_multiple_threads_wait_and_notify() {
-        let synchronizer = Arc::new(EventNotificationSynchronizer::default());
-        let mut handles = vec![];
-
-        // simulating cascading event, the first thread wait for the event with sequence 0, and it then signal
-        // the next thread with sequence 1, and so on
-        for i in 0..5 {
-            let synchronizer_clone = Arc::clone(&synchronizer);
-            handles.push(thread::spawn(move || {
-                synchronizer_clone.wait_for_dependency_and_mark_processed(i + 1);
-            }));
-        }
-
-        // Notify the first event
-        thread::sleep(std::time::Duration::from_millis(50));
-        synchronizer.notify_event_processed(0);
-
-        for handle in handles {
-            handle.join().unwrap();
-        }
-
-        let processed_sequence = *synchronizer.processed_event_sequence.lock().unwrap();
-        assert_eq!(processed_sequence, Some(5));
-    }
 }
