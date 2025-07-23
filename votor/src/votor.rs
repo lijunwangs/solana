@@ -44,7 +44,7 @@ use {
     crate::{
         certificate_pool_service::{CertificatePoolContext, CertificatePoolService},
         commitment::AlpenglowCommitmentAggregationData,
-        event::{CompletedBlockReceiver, LeaderWindowInfo},
+        event::{LeaderWindowInfo, VotorEventReceiver, VotorEventSender},
         event_handler::{EventHandler, EventHandlerContext},
         root_utils::RootContext,
         skip_timer::SkipTimerService,
@@ -114,9 +114,10 @@ pub struct VotorConfig {
     pub bank_notification_sender: Option<BankNotificationSenderConfig>,
     pub leader_window_notifier: Arc<LeaderWindowNotifier>,
     pub certificate_sender: Sender<(CertificateId, CertificateMessage)>,
+    pub event_sender: VotorEventSender,
 
     // Receivers
-    pub completed_block_receiver: CompletedBlockReceiver,
+    pub event_receiver: VotorEventReceiver,
     pub bls_receiver: BLSVerifiedMessageReceiver,
 }
 
@@ -163,7 +164,8 @@ impl Votor {
             bank_notification_sender,
             leader_window_notifier,
             certificate_sender,
-            completed_block_receiver,
+            event_sender,
+            event_receiver,
             bls_receiver,
         } = config;
 
@@ -174,7 +176,6 @@ impl Votor {
         let has_new_vote_been_rooted = !wait_for_vote_to_start_leader;
 
         // These should not backup, TODO: add metrics for length
-        let (event_sender, event_receiver) = bounded(1000);
         let (skip_timeout_sender, skip_timeout_receiver) = bounded(1000);
         let (own_vote_sender, own_vote_receiver) = bounded(1000);
 
@@ -214,7 +215,6 @@ impl Votor {
         let event_handler_context = EventHandlerContext {
             exit: exit.clone(),
             start: start.clone(),
-            completed_block_receiver,
             event_receiver,
             skip_timeout_receiver,
             skip_timer,

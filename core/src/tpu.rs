@@ -67,7 +67,7 @@ use {
         broadcast_stage::{BroadcastStage, BroadcastStageType},
         xdp::XdpSender,
     },
-    solana_votor::event::CompletedBlockSender,
+    solana_votor::event::VotorEventSender,
     std::{
         collections::HashMap,
         net::{SocketAddr, UdpSocket},
@@ -157,7 +157,7 @@ impl Tpu {
         alpenglow_vote_sender: AlpenglowVoteSender,
         bls_verified_message_sender: BLSVerifiedMessageSender,
         turbine_quic_endpoint_sender: AsyncSender<(SocketAddr, Bytes)>,
-        completed_block_sender: CompletedBlockSender,
+        votor_event_sender: VotorEventSender,
         keypair: &Keypair,
         log_messages_bytes_limit: Option<usize>,
         staked_nodes: &Arc<RwLock<StakedNodes>>,
@@ -409,7 +409,7 @@ impl Tpu {
             shred_version,
             turbine_quic_endpoint_sender,
             xdp_sender,
-            completed_block_sender,
+            votor_event_sender,
         );
 
         let mut key_notifiers = key_notifiers.write().unwrap();

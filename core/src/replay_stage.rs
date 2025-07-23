@@ -80,7 +80,7 @@ use {
     solana_transaction::Transaction,
     solana_vote::vote_transaction::VoteTransaction,
     solana_votor::{
-        event::{CompletedBlock, CompletedBlockReceiver, CompletedBlockSender},
+        event::{CompletedBlock, VotorEvent, VotorEventReceiver, VotorEventSender},
         root_utils,
         vote_history::VoteHistory,
         vote_history_storage::VoteHistoryStorage,
@@ -301,7 +301,7 @@ pub struct ReplaySenders {
     pub dumped_slots_sender: Sender<Vec<(u64, Hash)>>,
     pub alpenglow_vote_sender: AlpenglowVoteSender,
     pub certificate_sender: Sender<(CertificateId, CertificateMessage)>,
-    pub completed_block_sender: CompletedBlockSender,
+    pub votor_event_sender: VotorEventSender,
 }
 
 pub struct ReplayReceivers {
@@ -312,7 +312,7 @@ pub struct ReplayReceivers {
     pub gossip_verified_vote_hash_receiver: Receiver<(Pubkey, u64, Hash)>,
     pub popular_pruned_forks_receiver: Receiver<Vec<u64>>,
     pub bls_verified_message_receiver: BLSVerifiedMessageReceiver,
-    pub completed_block_receiver: CompletedBlockReceiver,
+    pub votor_event_receiver: VotorEventReceiver,
 }
 
 /// Timing information for the ReplayStage main processing loop
@@ -617,7 +617,7 @@ impl ReplayStage {
             dumped_slots_sender,
             alpenglow_vote_sender,
             certificate_sender,
-            completed_block_sender,
+            votor_event_sender,
         } = senders;
 
         let ReplayReceivers {
@@ -628,7 +628,7 @@ impl ReplayStage {
             gossip_verified_vote_hash_receiver,
             popular_pruned_forks_receiver,
             bls_verified_message_receiver,
-            completed_block_receiver,
+            votor_event_receiver,
         } = receivers;
 
         trace!("replay stage");
@@ -662,7 +662,8 @@ impl ReplayStage {
             bank_notification_sender: bank_notification_sender.clone(),
             leader_window_notifier,
             certificate_sender,
-            completed_block_receiver: completed_block_receiver.clone(),
+            event_sender: votor_event_sender.clone(),
+            event_receiver: votor_event_receiver.clone(),
             bls_receiver: bls_verified_message_receiver,
         };
         let votor = Votor::new(votor_config);
@@ -861,7 +862,7 @@ impl ReplayStage {
                     first_alpenglow_slot,
                     (!is_alpenglow_migration_complete).then_some(&mut tbft_structs),
                     &mut is_alpenglow_migration_complete,
-                    &completed_block_sender,
+                    &votor_event_sender,
                 );
                 let did_complete_bank = !new_frozen_slots.is_empty();
                 if is_alpenglow_migration_complete {
@@ -886,7 +887,7 @@ impl ReplayStage {
                 let start_leader_time = if !is_alpenglow_migration_complete {
                     // TODO(ashwin): This will be moved to the event coordinator once we figure out
                     // migration
-                    for _ in completed_block_receiver.try_iter() {}
+                    for _ in votor_event_receiver.try_iter() {}
 
                     // Process cluster-agreed versions of duplicate slots for which we potentially
                     // have the wrong version. Our version was dead or pruned.
@@ -3387,7 +3388,7 @@ impl ReplayStage {
         poh_recorder: &RwLock<PohRecorder>,
         is_alpenglow_migration_complete: &mut bool,
         mut tbft_structs: Option<&mut TowerBFTStructures>,
-        completed_block_sender: &CompletedBlockSender,
+        votor_event_sender: &VotorEventSender,
     ) -> Vec<Slot> {
         // TODO: See if processing of blockstore replay results and bank completion can be made thread safe.
         let mut tx_count = 0;
@@ -3613,7 +3614,7 @@ impl ReplayStage {
                 }
 
                 // For leader banks:
-                // 1) Replay finishes before shredding, broadcast_stage will take care off
+                // 1) Replay finishes before shredding, broadcast_stage will take care of
                 //      notifying votor
                 // 2) Shredding finishes before replay, we notify here
                 //
@@ -3621,10 +3622,10 @@ impl ReplayStage {
                 if *is_alpenglow_migration_complete && bank.block_id().is_some() {
                     // Leader blocks will not have a block id, broadcast stage will
                     // take care of notifying the voting loop
-                    let _ = completed_block_sender.send(CompletedBlock {
+                    let _ = votor_event_sender.send(VotorEvent::Block(CompletedBlock {
                         slot: bank.slot(),
                         bank: bank.clone_without_scheduler(),
-                    });
+                    }));
                 }
 
                 if let Some(sender) = bank_notification_sender {
@@ -3728,7 +3729,7 @@ impl ReplayStage {
         first_alpenglow_slot: Option<Slot>,
         tbft_structs: Option<&mut TowerBFTStructures>,
         is_alpenglow_migration_complete: &mut bool,
-        completed_block_sender: &CompletedBlockSender,
+        votor_event_sender: &VotorEventSender,
     ) -> Vec<Slot> /* completed slots */ {
         let active_bank_slots = bank_forks.read().unwrap().active_bank_slots();
         let num_active_banks = active_bank_slots.len();
@@ -3804,7 +3805,7 @@ impl ReplayStage {
             poh_recorder,
             is_alpenglow_migration_complete,
             tbft_structs,
-            completed_block_sender,
+            votor_event_sender,
         )
     }
 
