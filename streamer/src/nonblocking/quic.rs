@@ -13,10 +13,15 @@ use {
     bytes::{BufMut, Bytes, BytesMut},
     crossbeam_channel::{bounded, Receiver, Sender, TrySendError},
     futures::{stream::FuturesUnordered, Future, StreamExt as _},
+    governor::{
+        clock::{Clock, QuantaClock, QuantaInstant, Reference},
+        Quota, RateLimiter,
+    },
     indexmap::map::{Entry, IndexMap},
     percentage::Percentage,
     quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime, VarInt},
     quinn_proto::VarIntBoundsExceeded,
+    //quanta::Instant as QuantaInstant,
     rand::{thread_rng, Rng},
     smallvec::SmallVec,
     solana_keypair::Keypair,
@@ -39,6 +44,7 @@ use {
         fmt,
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
+        num::NonZeroU32,
         pin::Pin,
         // CAUTION: be careful not to introduce any awaits while holding an RwLock.
         sync::{
@@ -61,7 +67,7 @@ use {
         select,
         sync::{Mutex, MutexGuard},
         task::JoinHandle,
-        time::{sleep, timeout},
+        time::{sleep, sleep_until, timeout, Instant as TokioInstant},
     },
     tokio_util::sync::CancellationToken,
 };
@@ -89,6 +95,9 @@ const CONNECTION_CLOSE_REASON_INVALID_STREAM: &[u8] = b"invalid_stream";
 /// the default staked and unstaked connection limits. Might be adjusted
 /// later.
 const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
+
+// Rate limiting accepts per second to reduce contention on the endpoint mutex
+const TOTAL_ACCEPT_PER_SECOND: u64 = 50000;
 
 /// The threshold of the size of the connection rate limiter map. When
 /// the map size is above this, we will trigger a cleanup of older
@@ -268,6 +277,15 @@ impl ClientConnectionTracker {
     }
 }
 
+fn quanta_to_tokio(
+    qi: QuantaInstant,
+    base_q: QuantaInstant,
+    base_tokio: TokioInstant,
+) -> TokioInstant {
+    let duration_since_base = qi.duration_since(base_q);
+    base_tokio + duration_since_base.into()
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn run_server(
     name: &'static str,
@@ -292,6 +310,16 @@ async fn run_server(
     let overall_connection_rate_limiter = Arc::new(TotalConnectionRateLimiter::new(
         TOTAL_CONNECTIONS_PER_SECOND,
     ));
+
+    let clock = QuantaClock::default();
+    let accept_rate_limiter = RateLimiter::direct_with_clock(
+        Quota::per_second(
+            NonZeroU32::new(u32::try_from(TOTAL_ACCEPT_PER_SECOND).unwrap()).unwrap(),
+        ),
+        &clock,
+    );
+    let base_q: QuantaInstant = clock.now();
+    let base_tokio = TokioInstant::now();
 
     const WAIT_FOR_CONNECTION_TIMEOUT: Duration = Duration::from_secs(1);
     debug!("spawn quic server");
@@ -330,6 +358,11 @@ async fn run_server(
         .collect::<FuturesUnordered<_>>();
 
     while !exit.load(Ordering::Relaxed) {
+        if let Err(not_unitl) = accept_rate_limiter.check() {
+            let wait_until = quanta_to_tokio(not_unitl.earliest_possible(), base_q, base_tokio);
+            sleep_until(wait_until).await;
+        }
+
         let timeout_connection = select! {
             ready = accepts.next() => {
                 if let Some((connecting, i)) = ready {

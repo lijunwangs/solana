@@ -1,5 +1,8 @@
 use {
-    governor::{DefaultDirectRateLimiter, DefaultKeyedRateLimiter, Quota, RateLimiter},
+    governor::{
+        clock::QuantaInstant, DefaultDirectRateLimiter, DefaultKeyedRateLimiter, NotUntil, Quota,
+        RateLimiter,
+    },
     std::{net::IpAddr, num::NonZeroU32},
 };
 
@@ -70,6 +73,11 @@ impl TotalConnectionRateLimiter {
         } else {
             false // Request blocked
         }
+    }
+
+    /// Check if a connection is allowed.
+    pub fn check(&self) -> std::result::Result<(), NotUntil<QuantaInstant>> {
+        self.limiter.check()
     }
 }
 
