@@ -72,7 +72,10 @@ use {
         installed_scheduler_pool::BankWithScheduler,
         prioritization_fee_cache::PrioritizationFeeCache,
         snapshot_controller::SnapshotController,
-        vote_sender_types::{AlpenglowVoteSender, BLSVerifiedMessageReceiver, ReplayVoteSender},
+        vote_sender_types::{
+            AlpenglowVoteSender, BLSVerifiedMessageReceiver, BLSVerifiedMessageSender,
+            ReplayVoteSender,
+        },
     },
     solana_signer::Signer,
     solana_time_utils::timestamp,
@@ -302,6 +305,7 @@ pub struct ReplaySenders {
     pub alpenglow_vote_sender: AlpenglowVoteSender,
     pub certificate_sender: Sender<(CertificateId, CertificateMessage)>,
     pub votor_event_sender: VotorEventSender,
+    pub own_vote_sender: BLSVerifiedMessageSender,
 }
 
 pub struct ReplayReceivers {
@@ -618,6 +622,7 @@ impl ReplayStage {
             alpenglow_vote_sender,
             certificate_sender,
             votor_event_sender,
+            own_vote_sender,
         } = senders;
 
         let ReplayReceivers {
@@ -664,6 +669,7 @@ impl ReplayStage {
             certificate_sender,
             event_sender: votor_event_sender.clone(),
             event_receiver: votor_event_receiver.clone(),
+            own_vote_sender,
             bls_receiver: bls_verified_message_receiver,
         };
         let votor = Votor::new(votor_config);

@@ -54,7 +54,7 @@ use {
         CertificateId,
     },
     alpenglow_vote::bls_message::CertificateMessage,
-    crossbeam_channel::{bounded, Sender},
+    crossbeam_channel::Sender,
     solana_clock::Slot,
     solana_gossip::cluster_info::ClusterInfo,
     solana_keypair::Keypair,
@@ -65,9 +65,11 @@ use {
         rpc_subscriptions::RpcSubscriptions,
     },
     solana_runtime::{
-        bank_forks::BankForks, installed_scheduler_pool::BankWithScheduler,
-        root_bank_cache::RootBankCache, snapshot_controller::SnapshotController,
-        vote_sender_types::BLSVerifiedMessageReceiver,
+        bank_forks::BankForks,
+        installed_scheduler_pool::BankWithScheduler,
+        root_bank_cache::RootBankCache,
+        snapshot_controller::SnapshotController,
+        vote_sender_types::{BLSVerifiedMessageReceiver, BLSVerifiedMessageSender},
     },
     solana_signer::Signer,
     std::{
@@ -115,6 +117,7 @@ pub struct VotorConfig {
     pub leader_window_notifier: Arc<LeaderWindowNotifier>,
     pub certificate_sender: Sender<(CertificateId, CertificateMessage)>,
     pub event_sender: VotorEventSender,
+    pub own_vote_sender: BLSVerifiedMessageSender,
 
     // Receivers
     pub event_receiver: VotorEventReceiver,
@@ -166,6 +169,7 @@ impl Votor {
             certificate_sender,
             event_sender,
             event_receiver,
+            own_vote_sender,
             bls_receiver,
         } = config;
 
@@ -174,10 +178,6 @@ impl Votor {
         let identity_keypair = cluster_info.keypair().clone();
         let my_pubkey = identity_keypair.pubkey();
         let has_new_vote_been_rooted = !wait_for_vote_to_start_leader;
-
-        // These should not backup, TODO: add metrics for length
-        let (skip_timeout_sender, skip_timeout_receiver) = bounded(1000);
-        let (own_vote_sender, own_vote_receiver) = bounded(1000);
 
         let shared_context = SharedContext {
             blockstore: blockstore.clone(),
@@ -210,13 +210,12 @@ impl Votor {
         };
 
         let (skip_timer_service, skip_timer) =
-            SkipTimerService::new(exit.clone(), 100, skip_timeout_sender);
+            SkipTimerService::new(exit.clone(), 100, event_sender.clone());
 
         let event_handler_context = EventHandlerContext {
             exit: exit.clone(),
             start: start.clone(),
             event_receiver,
-            skip_timeout_receiver,
             skip_timer,
             shared_context,
             voting_context,
@@ -231,7 +230,6 @@ impl Votor {
             blockstore,
             root_bank_cache: RootBankCache::new(bank_forks.clone()),
             leader_schedule_cache,
-            own_vote_receiver,
             bls_receiver,
             bls_sender,
             event_sender,
