@@ -14,7 +14,7 @@ use {
     },
     solana_runtime::{
         bank::{Bank, KeyedRewardsAndNumPartitions},
-        event_notification_synchronizer::EventNotificationSynchronizer,
+        dependency_tracker::DependencyTracker,
     },
     solana_svm::transaction_commit_result::CommittedTransaction,
     solana_transaction_status::{
@@ -64,7 +64,7 @@ impl TransactionStatusService {
         transaction_notifier: Option<TransactionNotifierArc>,
         blockstore: Arc<Blockstore>,
         enable_extended_tx_metadata_storage: bool,
-        event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+        event_notification_synchronizer: Option<Arc<DependencyTracker>>,
         exit: Arc<AtomicBool>,
     ) -> Self {
         let transaction_status_receiver = Arc::new(write_transaction_status_receiver);
@@ -126,7 +126,7 @@ impl TransactionStatusService {
         transaction_notifier: Option<TransactionNotifierArc>,
         blockstore: &Blockstore,
         enable_extended_tx_metadata_storage: bool,
-        event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+        dependency_tracker: Option<Arc<DependencyTracker>>,
     ) -> Result<()> {
         match transaction_status_message {
             TransactionStatusMessage::Batch((
@@ -255,11 +255,11 @@ impl TransactionStatusService {
                     blockstore.write_batch(status_and_memos_batch)?;
                 }
 
-                if let Some(event_notification_synchronizer) =
-                    event_notification_synchronizer.as_ref()
+                if let Some(dependency_tracker) =
+                    dependency_tracker.as_ref()
                 {
                     if let Some(event_sequence) = event_sequence {
-                        event_notification_synchronizer.notify_event_processed(event_sequence);
+                        dependency_tracker.mark_this_and_all_previous_work_processed(event_sequence);
                     }
                 }
             }
@@ -623,7 +623,7 @@ pub(crate) mod tests {
 
         let test_notifier = Arc::new(TestTransactionNotifier::new());
 
-        let event_notification_synchronizer = Arc::new(EventNotificationSynchronizer::default());
+        let event_notification_synchronizer = Arc::new(DependencyTracker::default());
         let exit = Arc::new(AtomicBool::new(false));
         let transaction_status_service = TransactionStatusService::new(
             transaction_status_receiver,

@@ -33,7 +33,7 @@ use {
         bank_forks::{BankForks, SetRootError},
         bank_utils,
         commitment::VOTE_THRESHOLD_SIZE,
-        event_notification_synchronizer::EventNotificationSynchronizer,
+        dependency_tracker::DependencyTracker,
         installed_scheduler_pool::BankWithScheduler,
         prioritization_fee_cache::PrioritizationFeeCache,
         runtime_config::RuntimeConfig,
@@ -2182,7 +2182,7 @@ pub struct TransactionStatusBatch {
 #[derive(Clone, Debug)]
 pub struct TransactionStatusSender {
     pub sender: Sender<TransactionStatusMessage>,
-    pub event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+    pub event_notification_synchronizer: Option<Arc<DependencyTracker>>,
 }
 
 impl TransactionStatusSender {
@@ -2199,7 +2199,7 @@ impl TransactionStatusSender {
         let event_sequence = self
             .event_notification_synchronizer
             .as_ref()
-            .map(|synchronizer| synchronizer.get_new_event_sequence());
+            .map(|synchronizer| synchronizer.declare_work());
 
         if let Err(e) = self.sender.send(TransactionStatusMessage::Batch((
             TransactionStatusBatch {

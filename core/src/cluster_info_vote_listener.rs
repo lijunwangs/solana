@@ -542,15 +542,15 @@ impl ClusterInfoVoteListener {
                     new_optimistic_confirmed_slots.push((slot, hash));
                     // Notify subscribers about new optimistic confirmation
                     if let Some(sender) = bank_notification_sender {
-                        let event_sequence = sender
-                            .event_notification_synchronizer
+                        let dependency_work = sender
+                            .dependency_tracker
                             .as_ref()
-                            .map(|s| s.get_new_event_sequence());
+                            .map(|s| s.get_current_declared_work());
                         sender
                             .sender
                             .send((
                                 BankNotification::OptimisticallyConfirmed(slot),
-                                event_sequence,
+                                dependency_work,
                             ))
                             .unwrap_or_else(|err| {
                                 warn!("bank_notification_sender failed: {err:?}")

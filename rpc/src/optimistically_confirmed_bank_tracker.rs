@@ -15,7 +15,8 @@ use {
     solana_rpc_client_api::response::{SlotTransactionStats, SlotUpdate},
     solana_runtime::{
         bank::Bank, bank_forks::BankForks,
-        event_notification_synchronizer::EventNotificationSynchronizer,
+        dependency_tracker
+        ::DependencyTracker,
         prioritization_fee_cache::PrioritizationFeeCache,
     },
     solana_time_utils::timestamp,
@@ -85,7 +86,8 @@ pub type BankNotificationSender = Sender<BankNotificationWithEventSequence>;
 pub struct BankNotificationSenderConfig {
     pub sender: BankNotificationSender,
     pub should_send_parents: bool,
-    pub event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+    pub dependency_tracker
+    : Option<Arc<DependencyTracker>>,
 }
 
 pub type SlotNotificationReceiver = Receiver<SlotNotification>;
@@ -104,7 +106,8 @@ impl OptimisticallyConfirmedBankTracker {
         subscriptions: Arc<RpcSubscriptions>,
         slot_notification_subscribers: Option<Arc<RwLock<Vec<SlotNotificationSender>>>>,
         prioritization_fee_cache: Arc<PrioritizationFeeCache>,
-        event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+        dependency_tracker
+        : Option<Arc<DependencyTracker>>,
     ) -> Self {
         let mut pending_optimistically_confirmed_banks = HashSet::new();
         let mut last_notified_confirmed_slot: Slot = 0;
@@ -128,7 +131,8 @@ impl OptimisticallyConfirmedBankTracker {
                     &mut newest_root_slot,
                     &slot_notification_subscribers,
                     &prioritization_fee_cache,
-                    &event_notification_synchronizer,
+                    &dependency_tracker
+                    ,
                 ) {
                     break;
                 }
@@ -149,7 +153,8 @@ impl OptimisticallyConfirmedBankTracker {
         newest_root_slot: &mut Slot,
         slot_notification_subscribers: &Option<Arc<RwLock<Vec<SlotNotificationSender>>>>,
         prioritization_fee_cache: &PrioritizationFeeCache,
-        event_notification_synchronizer: &Option<Arc<EventNotificationSynchronizer>>,
+        dependency_tracker
+        : &Option<Arc<DependencyTracker>>,
     ) -> Result<(), RecvTimeoutError> {
         let notification = receiver.recv_timeout(Duration::from_secs(1))?;
         Self::process_notification(
@@ -163,7 +168,8 @@ impl OptimisticallyConfirmedBankTracker {
             newest_root_slot,
             slot_notification_subscribers,
             prioritization_fee_cache,
-            event_notification_synchronizer,
+            dependency_tracker
+            ,
         );
         Ok(())
     }
@@ -271,7 +277,7 @@ impl OptimisticallyConfirmedBankTracker {
 
     #[allow(clippy::too_many_arguments)]
     pub fn process_notification(
-        (notification, event_sequence): BankNotificationWithEventSequence,
+        (notification, dependency_work): BankNotificationWithEventSequence,
         bank_forks: &RwLock<BankForks>,
         optimistically_confirmed_bank: &RwLock<OptimisticallyConfirmedBank>,
         subscriptions: &RpcSubscriptions,
@@ -281,13 +287,13 @@ impl OptimisticallyConfirmedBankTracker {
         newest_root_slot: &mut Slot,
         slot_notification_subscribers: &Option<Arc<RwLock<Vec<SlotNotificationSender>>>>,
         prioritization_fee_cache: &PrioritizationFeeCache,
-        event_notification_synchronizer: &Option<Arc<EventNotificationSynchronizer>>,
+        dependency_tracker: &Option<Arc<DependencyTracker>>,
     ) {
-        debug!("received bank notification: {notification:?} event: {event_sequence:?}");
+        debug!("received bank notification: {notification:?} event: {dependency_work:?}");
 
-        if let Some(synchronizer) = event_notification_synchronizer.as_ref() {
-            if let Some(event_sequence) = event_sequence {
-                synchronizer.wait_for_dependency_and_mark_processed(event_sequence);
+        if let Some(tracker) = dependency_tracker.as_ref() {
+            if let Some(dependency_work) = dependency_work {
+                tracker.wait_for_dependency(dependency_work);
             }
         }
         match notification {
@@ -417,7 +423,8 @@ mod tests {
         crossbeam_channel::unbounded,
         solana_ledger::genesis_utils::{create_genesis_config, GenesisConfigInfo},
         solana_pubkey::Pubkey,
-        solana_runtime::{commitment::BlockCommitmentCache, event_notification_synchronizer},
+        solana_runtime::{commitment::BlockCommitmentCache, dependency_tracker
+        },
         std::sync::atomic::AtomicU64,
     };
 
@@ -717,11 +724,14 @@ mod tests {
     #[test]
     fn test_event_synchronization() {
         let exit = Arc::new(AtomicBool::new(false));
-        let event_notification_synchronizer: Arc<EventNotificationSynchronizer> =
-            Arc::new(event_notification_synchronizer::EventNotificationSynchronizer::default());
-        let event_sequence_1 = 345;
-        let event_sequence_2 = 678;
-        let synchronizer_clone = event_notification_synchronizer.clone();
+        let dependency_tracker
+        : Arc<DependencyTracker> =
+            Arc::new(dependency_tracker
+                ::DependencyTracker::default());
+        let work_sequence_1 = 345;
+        let work_sequence_2 = 678;
+        let tracker_clone = dependency_tracker
+        .clone();
         let handle = thread::spawn(move || {
             let GenesisConfigInfo { genesis_config, .. } = create_genesis_config(100);
             let bank = Bank::new_for_tests(&genesis_config);
@@ -757,7 +767,7 @@ mod tests {
             OptimisticallyConfirmedBankTracker::process_notification(
                 (
                     BankNotification::OptimisticallyConfirmed(1),
-                    Some(event_sequence_1), /* no event sequence */
+                    Some(work_sequence_1), /* dependency work sequence */
                 ),
                 &bank_forks,
                 &optimistically_confirmed_bank,
@@ -768,7 +778,7 @@ mod tests {
                 &mut newest_root_slot,
                 &None,
                 &PrioritizationFeeCache::default(),
-                &Some(synchronizer_clone.clone()),
+                &Some(tracker_clone.clone()),
             );
 
             assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 0);
@@ -782,7 +792,7 @@ mod tests {
             OptimisticallyConfirmedBankTracker::process_notification(
                 (
                     BankNotification::Frozen(bank1),
-                    Some(event_sequence_2), /* no event sequence */
+                    Some(work_sequence_2), /* dependency work sequence */
                 ),
                 &bank_forks,
                 &optimistically_confirmed_bank,
@@ -793,7 +803,7 @@ mod tests {
                 &mut newest_root_slot,
                 &None,
                 &PrioritizationFeeCache::default(),
-                &Some(synchronizer_clone),
+                &Some(tracker_clone),
             );
 
             assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 1);
@@ -801,8 +811,10 @@ mod tests {
             assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
         });
 
-        event_notification_synchronizer.notify_event_processed(event_sequence_1);
-        event_notification_synchronizer.notify_event_processed(event_sequence_2);
+        dependency_tracker
+        .mark_this_and_all_previous_work_processed(work_sequence_1);
+        dependency_tracker
+        .mark_this_and_all_previous_work_processed(work_sequence_2);
 
         handle.join().unwrap();
     }

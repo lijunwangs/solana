@@ -106,7 +106,7 @@ use {
         bank::Bank,
         bank_forks::BankForks,
         commitment::BlockCommitmentCache,
-        event_notification_synchronizer::EventNotificationSynchronizer,
+        dependency_tracker::DependencyTracker,
         prioritization_fee_cache::PrioritizationFeeCache,
         runtime_config::RuntimeConfig,
         snapshot_archive_info::SnapshotArchiveInfoGetter,
@@ -770,7 +770,7 @@ impl Validator {
             },
         ));
 
-        let event_notification_synchronizer = Arc::new(EventNotificationSynchronizer::default());
+        let event_notification_synchronizer = Arc::new(DependencyTracker::default());
 
         let (
             bank_forks,
@@ -1257,7 +1257,7 @@ impl Validator {
                     None
                 };
 
-            let event_notification_synchronizer = transaction_status_sender
+            let dependency_tracker = transaction_status_sender
                 .is_some()
                 .then_some(event_notification_synchronizer);
             let optimistically_confirmed_bank_tracker =
@@ -1269,12 +1269,12 @@ impl Validator {
                     rpc_subscriptions.clone(),
                     confirmed_bank_subscribers,
                     prioritization_fee_cache.clone(),
-                    event_notification_synchronizer.clone(),
+                    dependency_tracker.clone(),
                 ));
             let bank_notification_sender_config = Some(BankNotificationSenderConfig {
                 sender: bank_notification_sender,
                 should_send_parents: geyser_plugin_service.is_some(),
-                event_notification_synchronizer,
+                dependency_tracker,
             });
             (
                 Some(json_rpc_service),
@@ -2054,7 +2054,7 @@ fn load_blockstore(
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
     transaction_notifier: Option<TransactionNotifierArc>,
     entry_notifier: Option<EntryNotifierArc>,
-    event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+    event_notification_synchronizer: Option<Arc<DependencyTracker>>,
 ) -> Result<
     (
         Arc<RwLock<BankForks>>,
@@ -2534,7 +2534,7 @@ fn initialize_rpc_transaction_history_services(
     enable_rpc_transaction_history: bool,
     enable_extended_tx_metadata_storage: bool,
     transaction_notifier: Option<TransactionNotifierArc>,
-    event_notification_synchronizer: Option<Arc<EventNotificationSynchronizer>>,
+    event_notification_synchronizer: Option<Arc<DependencyTracker>>,
 ) -> TransactionHistoryServices {
     let max_complete_transaction_status_slot = Arc::new(AtomicU64::new(blockstore.max_root()));
     let (transaction_status_sender, transaction_status_receiver) = unbounded();
