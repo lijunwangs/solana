@@ -14,9 +14,7 @@ use {
     solana_clock::Slot,
     solana_rpc_client_api::response::{SlotTransactionStats, SlotUpdate},
     solana_runtime::{
-        bank::Bank, bank_forks::BankForks,
-        dependency_tracker
-        ::DependencyTracker,
+        bank::Bank, bank_forks::BankForks, dependency_tracker::DependencyTracker,
         prioritization_fee_cache::PrioritizationFeeCache,
     },
     solana_time_utils::timestamp,
@@ -86,8 +84,7 @@ pub type BankNotificationSender = Sender<BankNotificationWithEventSequence>;
 pub struct BankNotificationSenderConfig {
     pub sender: BankNotificationSender,
     pub should_send_parents: bool,
-    pub dependency_tracker
-    : Option<Arc<DependencyTracker>>,
+    pub dependency_tracker: Option<Arc<DependencyTracker>>,
 }
 
 pub type SlotNotificationReceiver = Receiver<SlotNotification>;
@@ -106,8 +103,7 @@ impl OptimisticallyConfirmedBankTracker {
         subscriptions: Arc<RpcSubscriptions>,
         slot_notification_subscribers: Option<Arc<RwLock<Vec<SlotNotificationSender>>>>,
         prioritization_fee_cache: Arc<PrioritizationFeeCache>,
-        dependency_tracker
-        : Option<Arc<DependencyTracker>>,
+        dependency_tracker: Option<Arc<DependencyTracker>>,
     ) -> Self {
         let mut pending_optimistically_confirmed_banks = HashSet::new();
         let mut last_notified_confirmed_slot: Slot = 0;
@@ -131,8 +127,7 @@ impl OptimisticallyConfirmedBankTracker {
                     &mut newest_root_slot,
                     &slot_notification_subscribers,
                     &prioritization_fee_cache,
-                    &dependency_tracker
-                    ,
+                    &dependency_tracker,
                 ) {
                     break;
                 }
@@ -153,8 +148,7 @@ impl OptimisticallyConfirmedBankTracker {
         newest_root_slot: &mut Slot,
         slot_notification_subscribers: &Option<Arc<RwLock<Vec<SlotNotificationSender>>>>,
         prioritization_fee_cache: &PrioritizationFeeCache,
-        dependency_tracker
-        : &Option<Arc<DependencyTracker>>,
+        dependency_tracker: &Option<Arc<DependencyTracker>>,
     ) -> Result<(), RecvTimeoutError> {
         let notification = receiver.recv_timeout(Duration::from_secs(1))?;
         Self::process_notification(
@@ -168,8 +162,7 @@ impl OptimisticallyConfirmedBankTracker {
             newest_root_slot,
             slot_notification_subscribers,
             prioritization_fee_cache,
-            dependency_tracker
-            ,
+            dependency_tracker,
         );
         Ok(())
     }
@@ -423,8 +416,7 @@ mod tests {
         crossbeam_channel::unbounded,
         solana_ledger::genesis_utils::{create_genesis_config, GenesisConfigInfo},
         solana_pubkey::Pubkey,
-        solana_runtime::{commitment::BlockCommitmentCache, dependency_tracker
-        },
+        solana_runtime::{commitment::BlockCommitmentCache, dependency_tracker},
         std::sync::atomic::AtomicU64,
     };
 
@@ -724,14 +716,11 @@ mod tests {
     #[test]
     fn test_event_synchronization() {
         let exit = Arc::new(AtomicBool::new(false));
-        let dependency_tracker
-        : Arc<DependencyTracker> =
-            Arc::new(dependency_tracker
-                ::DependencyTracker::default());
+        let dependency_tracker: Arc<DependencyTracker> =
+            Arc::new(dependency_tracker::DependencyTracker::default());
         let work_sequence_1 = 345;
         let work_sequence_2 = 678;
-        let tracker_clone = dependency_tracker
-        .clone();
+        let tracker_clone = dependency_tracker.clone();
         let handle = thread::spawn(move || {
             let GenesisConfigInfo { genesis_config, .. } = create_genesis_config(100);
             let bank = Bank::new_for_tests(&genesis_config);
@@ -811,10 +800,8 @@ mod tests {
             assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
         });
 
-        dependency_tracker
-        .mark_this_and_all_previous_work_processed(work_sequence_1);
-        dependency_tracker
-        .mark_this_and_all_previous_work_processed(work_sequence_2);
+        dependency_tracker.mark_this_and_all_previous_work_processed(work_sequence_1);
+        dependency_tracker.mark_this_and_all_previous_work_processed(work_sequence_2);
 
         handle.join().unwrap();
     }

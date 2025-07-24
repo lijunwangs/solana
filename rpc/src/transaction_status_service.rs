@@ -255,11 +255,10 @@ impl TransactionStatusService {
                     blockstore.write_batch(status_and_memos_batch)?;
                 }
 
-                if let Some(dependency_tracker) =
-                    dependency_tracker.as_ref()
-                {
+                if let Some(dependency_tracker) = dependency_tracker.as_ref() {
                     if let Some(event_sequence) = event_sequence {
-                        dependency_tracker.mark_this_and_all_previous_work_processed(event_sequence);
+                        dependency_tracker
+                            .mark_this_and_all_previous_work_processed(event_sequence);
                     }
                 }
             }
