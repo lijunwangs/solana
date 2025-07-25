@@ -4,9 +4,9 @@ use std::sync::{atomic::AtomicU64, Condvar, Mutex};
 
 #[derive(Debug, Default)]
 pub struct DependencyTracker {
-    /// The current event sequence number
+    /// The current work sequence number
     work_sequence: AtomicU64,
-    /// The processed work sequence number, if it is None, no event has been processed
+    /// The processed work sequence number, if it is None, no work has been processed
     processed_work_sequence: Mutex<Option<u64>>,
     condvar: Condvar,
 }
@@ -16,7 +16,7 @@ fn less_than(a: &Option<u64>, b: u64) -> bool {
 }
 
 impl DependencyTracker {
-    /// Get the next event sequence number.
+    /// Acquire the next work sequence number.
     /// The sequence starts from 0 and increments by 1 each time it is called.
     pub fn declare_work(&self) -> u64 {
         self.work_sequence
@@ -26,12 +26,12 @@ impl DependencyTracker {
 
     /// Notify all waiting threads that a work has occurred with the given sequence number.
     /// This function will update the work sequence and notify all waiting threads only if the work
-    /// sequence is greater than the work sequence. Notify an event of sequence number 's' will
+    /// sequence is greater than the work sequence. Notify a work of sequence number 's' will
     /// implicitly imply that all work with sequence number less than 's' have been processed.
     pub fn mark_this_and_all_previous_work_processed(&self, sequence: u64) {
-        let mut event_sequence = self.processed_work_sequence.lock().unwrap();
-        if less_than(&event_sequence, sequence) {
-            *event_sequence = Some(sequence);
+        let mut work_sequence = self.processed_work_sequence.lock().unwrap();
+        if less_than(&work_sequence, sequence) {
+            *work_sequence = Some(sequence);
             self.condvar.notify_all();
         }
     }
@@ -56,7 +56,8 @@ impl DependencyTracker {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, std::{sync::Arc, thread}
+        super::*,
+        std::{sync::Arc, thread},
     };
 
     #[test]
@@ -68,7 +69,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_new_event_sequence() {
+    fn test_get_new_work_sequence() {
         let dependency_tracker = DependencyTracker::default();
         assert_eq!(dependency_tracker.declare_work(), 1);
         assert_eq!(dependency_tracker.declare_work(), 2);
@@ -76,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn test_notify_event_processed() {
+    fn test_notify_work_processed() {
         let dependency_tracker = DependencyTracker::default();
         dependency_tracker.mark_this_and_all_previous_work_processed(1);
 
@@ -98,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn test_wait_and_notify_event_processed() {
+    fn test_wait_and_notify_work_processed() {
         let dependency_tracker = Arc::new(DependencyTracker::default());
         let tracker_clone = Arc::clone(&dependency_tracker);
 
