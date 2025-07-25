@@ -5,9 +5,7 @@ use {
             parent_ready_tracker::ParentReadyTracker,
             stats::CertificatePoolStats,
             vote_certificate::{CertificateError, VoteCertificate},
-            vote_pool::{
-                DuplicateBlockVotePool, SimpleVotePool, VotePool, VotePoolType, VotedBlockKey,
-            },
+            vote_pool::{DuplicateBlockVotePool, SimpleVotePool, VotePool, VotePoolType},
         },
         conflicting_types,
         event::VotorEvent,
@@ -96,7 +94,7 @@ pub struct CertificatePool {
     /// - All slots from the parent have a Skip certificate
     pub parent_ready_tracker: ParentReadyTracker,
     /// Highest block that has a NotarizeFallback certificate, for use in producing our leader window
-    highest_notarized_fallback: Option<(Slot, Hash, Hash)>,
+    highest_notarized_fallback: Option<(Slot, Hash)>,
     /// Highest slot that has a Finalized variant certificate, for use in notifying RPC
     highest_finalized_slot: Option<Slot>,
     // Cached epoch_schedule
@@ -121,11 +119,7 @@ impl CertificatePool {
     ) -> Self {
         // To account for genesis and snapshots we allow default block id until
         // block id can be serialized  as part of the snapshot
-        let root_block = (
-            bank.slot(),
-            bank.block_id().unwrap_or_default(),
-            bank.hash(),
-        );
+        let root_block = (bank.slot(), bank.block_id().unwrap_or_default());
         let parent_ready_tracker = ParentReadyTracker::new(my_pubkey, root_block);
 
         let mut pool = Self {
@@ -178,7 +172,7 @@ impl CertificatePool {
         &mut self,
         slot: Slot,
         vote_type: VoteType,
-        voted_block_key: Option<VotedBlockKey>,
+        block_id: Option<Hash>,
         transaction: &VoteMessage,
         validator_vote_key: &Pubkey,
         validator_stake: Stake,
@@ -193,7 +187,7 @@ impl CertificatePool {
             }
             VotePoolType::DuplicateBlockVotePool(pool) => pool.add_vote(
                 validator_vote_key,
-                voted_block_key.expect("Duplicate block pool expects a voted block key"),
+                block_id.expect("Duplicate block pool expects a block id"),
                 transaction,
                 validator_stake,
             ),
@@ -212,7 +206,7 @@ impl CertificatePool {
     fn update_certificates(
         &mut self,
         vote: &Vote,
-        voted_block_key: Option<VotedBlockKey>,
+        block_id: Option<Hash>,
         events: &mut Vec<VotorEvent>,
         total_stake: Stake,
     ) -> Result<Vec<Arc<CertificateMessage>>, AddVoteError> {
@@ -231,7 +225,7 @@ impl CertificatePool {
                     Some(match self.vote_pools
                         .get(&(slot, *vote_type))? {
                             VotePoolType::SimpleVotePool(pool) => pool.total_stake(),
-                            VotePoolType::DuplicateBlockVotePool(pool) => pool.total_stake_by_voted_block_key(voted_block_key.as_ref().expect("Duplicate block pool for {vote_type:?} expects a voted block key for certificate {cert_id:?}")),
+                            VotePoolType::DuplicateBlockVotePool(pool) => pool.total_stake_by_block_id(block_id.as_ref().expect("Duplicate block pool for {vote_type:?} expects a block id for certificate {cert_id:?}")),
                         })
                 })
                 .sum::<Stake>();
@@ -243,7 +237,7 @@ impl CertificatePool {
                 if let Some(vote_pool) = self.vote_pools.get(&(slot, *vote_type)) {
                 match vote_pool {
                     VotePoolType::SimpleVotePool(pool) => pool.add_to_certificate(&mut vote_certificate),
-                    VotePoolType::DuplicateBlockVotePool(pool) => pool.add_to_certificate(voted_block_key.as_ref().expect("Duplicate block pool for {vote_type:?} expects a voted block key for certificate {cert_id:?}"), &mut vote_certificate),
+                    VotePoolType::DuplicateBlockVotePool(pool) => pool.add_to_certificate(block_id.as_ref().expect("Duplicate block pool for {vote_type:?} expects a block id for certificate {cert_id:?}"), &mut vote_certificate),
                 };
             }
             });
@@ -279,7 +273,7 @@ impl CertificatePool {
         slot: Slot,
         vote_type: VoteType,
         validator_vote_key: &Pubkey,
-        voted_block_key: &Option<VotedBlockKey>,
+        block_id: &Option<Hash>,
     ) -> Option<VoteType> {
         for conflicting_type in conflicting_types(vote_type) {
             if let Some(pool) = self.vote_pools.get(&(slot, *conflicting_type)) {
@@ -293,13 +287,10 @@ impl CertificatePool {
                     // TODO: This can be made much cleaner/safer if VoteType carried the bank hash, block id so we
                     // could check which exact VoteType(blockid, bankhash) was the source of the conflict.
                     VotePoolType::DuplicateBlockVotePool(pool) => {
-                        if let Some(voted_block_key) = &voted_block_key {
+                        if let Some(block_id) = &block_id {
                             // Reject votes for the same block with a conflicting type, i.e.
                             // a NotarizeFallback vote for the same block as a Notarize vote.
-                            pool.has_prev_validator_vote_for_block(
-                                validator_vote_key,
-                                voted_block_key,
-                            )
+                            pool.has_prev_validator_vote_for_block(validator_vote_key, block_id)
                         } else {
                             pool.has_prev_validator_vote(validator_vote_key)
                         }
@@ -321,21 +312,21 @@ impl CertificatePool {
     ) {
         self.completed_certificates.insert(cert_id, cert);
         match cert_id {
-            CertificateId::NotarizeFallback(slot, block_id, bank_hash) => {
+            CertificateId::NotarizeFallback(slot, block_id) => {
                 self.parent_ready_tracker
-                    .add_new_notar_fallback((slot, block_id, bank_hash), events);
+                    .add_new_notar_fallback((slot, block_id), events);
                 if self
                     .highest_notarized_fallback
-                    .is_none_or(|(s, _, _)| s < slot)
+                    .is_none_or(|(s, _)| s < slot)
                 {
-                    self.highest_notarized_fallback = Some((slot, block_id, bank_hash));
+                    self.highest_notarized_fallback = Some((slot, block_id));
                 }
             }
             CertificateId::Skip(slot) => self.parent_ready_tracker.add_new_skip(slot, events),
-            CertificateId::Notarize(slot, block_id, bank_hash) => {
-                events.push(VotorEvent::BlockNotarized((slot, block_id, bank_hash)));
+            CertificateId::Notarize(slot, block_id) => {
+                events.push(VotorEvent::BlockNotarized((slot, block_id)));
                 if self.is_finalized(slot) {
-                    events.push(VotorEvent::Finalized((slot, block_id, bank_hash)));
+                    events.push(VotorEvent::Finalized((slot, block_id)));
                 }
             }
             CertificateId::Finalize(slot) => {
@@ -346,8 +337,8 @@ impl CertificatePool {
                     self.highest_finalized_slot = Some(slot);
                 }
             }
-            CertificateId::FinalizeFast(slot, block_id, bank_hash) => {
-                events.push(VotorEvent::Finalized((slot, block_id, bank_hash)));
+            CertificateId::FinalizeFast(slot, block_id) => {
+                events.push(VotorEvent::Finalized((slot, block_id)));
                 if self.highest_finalized_slot.is_none_or(|s| s < slot) {
                     self.highest_finalized_slot = Some(slot);
                 }
@@ -440,20 +431,15 @@ impl CertificatePool {
             return Err(AddVoteError::SlotInFuture);
         }
 
-        let voted_block_key = vote.block_id().map(|block_id| {
+        let block_id = vote.block_id().map(|block_id| {
             if !matches!(vote, Vote::Notarize(_) | Vote::NotarizeFallback(_)) {
                 panic!("expected Notarize or NotarizeFallback vote");
             }
-            VotedBlockKey {
-                block_id: *block_id,
-                bank_hash: *vote
-                    .replayed_bank_hash()
-                    .expect("replayed_bank_hash should be Some for Notarize and NotarizeFallback"),
-            }
+            *block_id
         });
         let vote_type = VoteType::get_type(vote);
         if let Some(conflicting_type) =
-            self.has_conflicting_vote(slot, vote_type, &validator_vote_key, &voted_block_key)
+            self.has_conflicting_vote(slot, vote_type, &validator_vote_key, &block_id)
         {
             self.stats.conflicting_votes = self.stats.conflicting_votes.saturating_add(1);
             return Err(AddVoteError::ConflictingVoteType(
@@ -466,7 +452,7 @@ impl CertificatePool {
         if !self.update_vote_pool(
             slot,
             vote_type,
-            voted_block_key.clone(),
+            block_id,
             vote_message,
             &validator_vote_key,
             validator_stake,
@@ -482,14 +468,14 @@ impl CertificatePool {
             events.push(VotorEvent::SafeToSkip(slot));
             self.stats.event_safe_to_skip = self.stats.event_safe_to_skip.saturating_add(1);
         }
-        for (block_id, bank_hash) in self.safe_to_notar(my_vote_pubkey, slot) {
-            events.push(VotorEvent::SafeToNotar((slot, block_id, bank_hash)));
+        for block_id in self.safe_to_notar(my_vote_pubkey, slot) {
+            events.push(VotorEvent::SafeToNotar((slot, block_id)));
             self.stats.event_safe_to_notarize = self.stats.event_safe_to_notarize.saturating_add(1);
         }
 
         self.stats.incr_ingested_vote_type(vote_type);
 
-        self.update_certificates(vote, voted_block_key, events, total_stake)
+        self.update_certificates(vote, block_id, events, total_stake)
     }
 
     fn add_certificate(
@@ -518,7 +504,7 @@ impl CertificatePool {
     }
 
     /// The highest notarized fallback slot, for use as the parent slot in leader window
-    pub fn highest_notarized_fallback(&self) -> Option<(Slot, Hash, Hash)> {
+    pub fn highest_notarized_fallback(&self) -> Option<(Slot, Hash)> {
         self.highest_notarized_fallback
     }
 
@@ -527,9 +513,7 @@ impl CertificatePool {
         self.completed_certificates
             .iter()
             .find_map(|(cert_id, _)| match cert_id {
-                CertificateId::Notarize(s, block_id, bank_hash) if slot == *s => {
-                    Some((*s, *block_id, *bank_hash))
-                }
+                CertificateId::Notarize(s, block_id) if slot == *s => Some((*s, *block_id)),
                 _ => None,
             })
     }
@@ -540,8 +524,8 @@ impl CertificatePool {
         self.completed_certificates
             .iter()
             .filter_map(|(cert_id, _)| match cert_id {
-                CertificateId::Notarize(s, _, _) => Some(s),
-                CertificateId::NotarizeFallback(s, _, _) => Some(s),
+                CertificateId::Notarize(s, _) => Some(s),
+                CertificateId::NotarizeFallback(s, _) => Some(s),
                 _ => None,
             })
             .max()
@@ -567,7 +551,7 @@ impl CertificatePool {
             .iter()
             .filter_map(|(cert_id, _)| match cert_id {
                 CertificateId::Finalize(s) => Some(s),
-                CertificateId::FinalizeFast(s, _, _) => Some(s),
+                CertificateId::FinalizeFast(s, _) => Some(s),
                 _ => None,
             })
             .max()
@@ -579,7 +563,7 @@ impl CertificatePool {
         self.completed_certificates
             .iter()
             .filter_map(|(cert_id, _)| match cert_id {
-                CertificateId::FinalizeFast(s, bid, bh) => Some((*s, *bid, *bh)),
+                CertificateId::FinalizeFast(s, bid) => Some((*s, *bid)),
                 _ => None,
             })
             .max()
@@ -588,14 +572,14 @@ impl CertificatePool {
     /// Checks if any block in the slot `s` is finalized
     pub fn is_finalized(&self, slot: Slot) -> bool {
         self.completed_certificates.keys().any(|cert_id| {
-            matches!(cert_id, CertificateId::Finalize(s) | CertificateId::FinalizeFast(s, _, _) if *s == slot)
+            matches!(cert_id, CertificateId::Finalize(s) | CertificateId::FinalizeFast(s, _) if *s == slot)
         })
     }
 
-    /// Check if the specific block `(block_id, bank_hash)` in slot `s` is notarized
-    pub fn is_notarized(&self, slot: Slot, block_id: Hash, bank_hash: Hash) -> bool {
+    /// Check if the specific block `(block_id)` in slot `s` is notarized
+    pub fn is_notarized(&self, slot: Slot, block_id: Hash) -> bool {
         self.completed_certificates
-            .contains_key(&CertificateId::Notarize(slot, block_id, bank_hash))
+            .contains_key(&CertificateId::Notarize(slot, block_id))
     }
 
     /// Checks if the any block in slot `slot` has received a `NotarizeFallback` certificate, if so return
@@ -603,7 +587,7 @@ impl CertificatePool {
     #[cfg(test)]
     pub fn slot_has_notarized_fallback(&self, slot: Slot) -> bool {
         self.completed_certificates.iter().any(
-            |(cert_id, _)| matches!(cert_id, CertificateId::NotarizeFallback(s,_,_) if *s == slot),
+            |(cert_id, _)| matches!(cert_id, CertificateId::NotarizeFallback(s,_) if *s == slot),
         )
     }
 
@@ -613,13 +597,13 @@ impl CertificatePool {
             .contains_key(&CertificateId::Skip(slot))
     }
 
-    /// Checks if we have voted to skip `slot` or notarize some block `b' = (block_id', bank_hash')` in `slot`
-    /// Additionally check that for some different block `b = (block_id, bank_hash)` in `slot` either:
+    /// Checks if we have voted to skip `slot` or already notarized some block `b` in `slot`
+    /// Additionally check if there exists blocks `b` in `slot` such that:
     /// (i) At least 40% of stake has voted to notarize `b`
     /// (ii) At least 20% of stake voted to notarize `b` and at least 60% of stake voted to either notarize `b` or skip `slot`
-    /// and we have not already cast a notarize fallback for this `b`
-    /// If all the above hold, return `Some(block_id, bank_hash)` for the `b`
-    pub fn safe_to_notar(&self, my_vote_pubkey: &Pubkey, slot: Slot) -> Vec<(Hash, Hash)> {
+    /// and we have not already cast a notarize fallback for this `b` in `slot`
+    /// If all the above hold, return the block ids `Vec<block_id>` for all such `b`
+    pub fn safe_to_notar(&self, my_vote_pubkey: &Pubkey, slot: Slot) -> Vec<Hash> {
         let Some(epoch_stakes) = self
             .epoch_stakes_map
             .get(&self.epoch_schedule.get_epoch(slot))
@@ -645,21 +629,14 @@ impl CertificatePool {
         let notarize_pool = notarize_pool.unwrap_duplicate_block_vote_pool(
             "Notarize vote pool should be a DuplicateBlockVotePool",
         );
-        let my_prev_notarize_vote = notarize_pool.get_prev_vote(my_vote_pubkey);
+        let my_prev_voted_block_id = notarize_pool.get_prev_voted_block_id(my_vote_pubkey);
 
         let mut safe_to_notar = vec![];
-        for (
-            VotedBlockKey {
-                bank_hash,
-                block_id,
-            },
-            votes,
-        ) in notarize_pool.votes.iter()
-        {
+        for (block_id, votes) in notarize_pool.votes.iter() {
             if !voted_skip
-                && my_prev_notarize_vote
+                && my_prev_voted_block_id
                     .as_ref()
-                    .is_none_or(|prev_vote| prev_vote.block_id == *block_id)
+                    .is_none_or(|prev_block_id| *prev_block_id == *block_id)
             {
                 // We either have not voted for the slot or we voted notarize on this block.
                 // Not eligble for safe to notar
@@ -675,7 +652,7 @@ impl CertificatePool {
                     && notarized_ratio + skip_ratio >= SAFE_TO_NOTAR_MIN_NOTARIZE_AND_SKIP);
 
             if qualifies {
-                safe_to_notar.push((*block_id, *bank_hash));
+                safe_to_notar.push(*block_id);
             }
         }
         safe_to_notar
@@ -759,9 +736,9 @@ impl CertificatePool {
         self.completed_certificates
             .retain(|cert_id, _| match cert_id {
                 CertificateId::Finalize(s)
-                | CertificateId::FinalizeFast(s, _, _)
-                | CertificateId::Notarize(s, _, _)
-                | CertificateId::NotarizeFallback(s, _, _)
+                | CertificateId::FinalizeFast(s, _)
+                | CertificateId::Notarize(s, _)
+                | CertificateId::NotarizeFallback(s, _)
                 | CertificateId::Skip(s) => *s >= self.root,
             });
         self.vote_pools = self.vote_pools.split_off(&(new_root, VoteType::Finalize));
@@ -797,8 +774,8 @@ pub fn load_from_blockstore(
         let certs = slot_cert
             .notarize_fallback_certificates
             .into_iter()
-            .map(|((block_id, bank_hash), cert)| {
-                let cert_id = CertificateId::NotarizeFallback(slot, block_id, bank_hash);
+            .map(|(block_id, cert)| {
+                let cert_id = CertificateId::NotarizeFallback(slot, block_id);
                 (cert_id, cert)
             })
             .chain(slot_cert.skip_certificate.map(|cert| {
@@ -1540,7 +1517,6 @@ mod tests {
         // Create bank 2
         let slot = 2;
         let block_id = Hash::new_unique();
-        let bank_hash = Hash::new_unique();
 
         // With no votes, this should fail.
         assert!(pool.safe_to_notar(&my_vote_key, slot).is_empty());
@@ -1556,7 +1532,7 @@ mod tests {
             .is_ok());
         // 40% notarized, should succeed
         for rank in 1..5 {
-            let vote = Vote::new_notarization_vote(2, block_id, bank_hash);
+            let vote = Vote::new_notarization_vote(2, block_id, Hash::default());
             assert!(pool
                 .add_message(
                     &Pubkey::new_unique(),
@@ -1565,19 +1541,15 @@ mod tests {
                 )
                 .is_ok());
         }
-        assert_eq!(
-            pool.safe_to_notar(&my_vote_key, slot),
-            vec![(block_id, bank_hash)]
-        );
+        assert_eq!(pool.safe_to_notar(&my_vote_key, slot), vec![block_id]);
 
         // Create bank 3
         let slot = 3;
         let block_id = Hash::new_unique();
-        let bank_hash = Hash::new_unique();
 
         // Add 20% notarize, but no vote from myself, should fail
         for rank in 1..3 {
-            let vote = Vote::new_notarization_vote(3, block_id, bank_hash);
+            let vote = Vote::new_notarization_vote(3, block_id, Hash::default());
             assert!(pool
                 .add_message(
                     &Pubkey::new_unique(),
@@ -1589,7 +1561,7 @@ mod tests {
         assert!(pool.safe_to_notar(&my_vote_key, slot).is_empty());
 
         // Add a notarize from myself for some other block, but still not enough notar or skip, should fail.
-        let vote = Vote::new_notarization_vote(3, Hash::new_unique(), Hash::new_unique());
+        let vote = Vote::new_notarization_vote(3, Hash::new_unique(), Hash::default());
         assert!(pool
             .add_message(
                 &Pubkey::new_unique(),
@@ -1610,16 +1582,12 @@ mod tests {
                 )
                 .is_ok());
         }
-        assert_eq!(
-            pool.safe_to_notar(&my_vote_key, slot),
-            vec![(block_id, bank_hash)]
-        );
+        assert_eq!(pool.safe_to_notar(&my_vote_key, slot), vec![block_id]);
 
         // Add 20% notarization for another block, we should notify on both
         let duplicate_block_id = Hash::new_unique();
-        let duplicate_bank_hash = Hash::new_unique();
         for rank in 7..9 {
-            let vote = Vote::new_notarization_vote(3, duplicate_block_id, duplicate_bank_hash);
+            let vote = Vote::new_notarization_vote(3, duplicate_block_id, Hash::default());
             assert!(pool
                 .add_message(
                     &Pubkey::new_unique(),
@@ -1634,13 +1602,10 @@ mod tests {
                 .into_iter()
                 .sorted()
                 .collect::<Vec<_>>(),
-            vec![
-                (block_id, bank_hash),
-                (duplicate_block_id, duplicate_bank_hash),
-            ]
-            .into_iter()
-            .sorted()
-            .collect::<Vec<_>>()
+            vec![block_id, duplicate_block_id,]
+                .into_iter()
+                .sorted()
+                .collect::<Vec<_>>()
         );
     }
 
@@ -1654,8 +1619,8 @@ mod tests {
 
         // Add a notarize from myself.
         let block_id = Hash::new_unique();
-        let block_hash = Hash::new_unique();
-        let vote = Vote::new_notarization_vote(2, block_id, block_hash);
+        let bank_hash = Hash::default();
+        let vote = Vote::new_notarization_vote(2, block_id, bank_hash);
         assert!(pool
             .add_message(
                 &Pubkey::new_unique(),
@@ -1678,7 +1643,7 @@ mod tests {
         }
         assert!(pool.safe_to_skip(&my_vote_key, slot));
         // Add 10% more notarize, still safe to skip any more because total voted increased.
-        let vote = Vote::new_notarization_vote(2, block_id, block_hash);
+        let vote = Vote::new_notarization_vote(2, block_id, bank_hash);
         assert!(pool
             .add_message(
                 &Pubkey::new_unique(),

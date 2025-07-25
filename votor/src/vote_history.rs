@@ -48,7 +48,7 @@ impl VoteHistoryVersions {
 #[cfg_attr(
     feature = "frozen-abi",
     derive(AbiExample),
-    frozen_abi(digest = "2Qos9ToMtEZiwZW63AvAcEHvKcCVkCMA12rPDAMiH1Hw")
+    frozen_abi(digest = "4weZDM6uKNGzT7SgQMqFrqXCuZ5uG9WJg2ZHRCJBTdZu")
 )]
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Default)]
 pub struct VoteHistory {
@@ -60,11 +60,11 @@ pub struct VoteHistory {
 
     /// The blocks for which this node has cast a notarization vote
     /// In the format of slot, block_id, bank_hash
-    voted_notar: HashMap<Slot, (Hash, Hash)>,
+    voted_notar: HashMap<Slot, Hash>,
 
     /// The blocks for which this node has cast a notarization fallback
     /// vote in this slot
-    voted_notar_fallback: HashMap<Slot, HashSet<(Hash, Hash)>>,
+    voted_notar_fallback: HashMap<Slot, HashSet<Hash>>,
 
     /// The slots for which this node has cast a skip fallback vote
     voted_skip_fallback: HashSet<Slot>,
@@ -109,17 +109,17 @@ impl VoteHistory {
     }
 
     /// The block for which we voted notarize in slot `slot`
-    pub fn voted_notar(&self, slot: Slot) -> Option<(Hash, Hash)> {
+    pub fn voted_notar(&self, slot: Slot) -> Option<Hash> {
         assert!(slot >= self.root);
         self.voted_notar.get(&slot).copied()
     }
 
     /// Whether we voted notarize fallback in `slot` for block `(block_id, bank_hash)`
-    pub fn voted_notar_fallback(&self, slot: Slot, block_id: Hash, bank_hash: Hash) -> bool {
+    pub fn voted_notar_fallback(&self, slot: Slot, block_id: Hash) -> bool {
         assert!(slot >= self.root);
         self.voted_notar_fallback
             .get(&slot)
-            .is_some_and(|v| v.contains(&(block_id, bank_hash)))
+            .is_some_and(|v| v.contains(&block_id))
     }
 
     /// Whether we voted skip fallback for `slot`
@@ -187,7 +187,7 @@ impl VoteHistory {
                 assert!(self.voted.insert(vote.slot()));
                 assert!(self
                     .voted_notar
-                    .insert(vote.slot(), (*vote.block_id(), *vote.replayed_bank_hash()))
+                    .insert(vote.slot(), *vote.block_id())
                     .is_none());
             }
             Vote::Finalize(vote) => {
@@ -205,7 +205,7 @@ impl VoteHistory {
                 self.voted_notar_fallback
                     .entry(vote.slot())
                     .or_default()
-                    .insert((*vote.block_id(), *vote.replayed_bank_hash()));
+                    .insert(*vote.block_id());
             }
             Vote::SkipFallback(vote) => {
                 assert!(self.voted(vote.slot()));
@@ -218,7 +218,7 @@ impl VoteHistory {
     }
 
     /// Add a new notarized block
-    pub fn add_block_notarized(&mut self, block @ (slot, _, _): Block) {
+    pub fn add_block_notarized(&mut self, block @ (slot, _): Block) {
         if slot < self.root {
             return;
         }
@@ -255,7 +255,7 @@ impl VoteHistory {
         self.skipped.retain(|s| *s >= root);
         self.its_over.retain(|s| *s >= root);
         self.votes_cast.retain(|s, _| *s >= root);
-        self.notarized_blocks.retain(|(s, _, _)| *s >= root);
+        self.notarized_blocks.retain(|(s, _)| *s >= root);
         self.parent_ready_slots.retain(|s, _| *s >= root);
     }
 
