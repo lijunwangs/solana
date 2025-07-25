@@ -299,8 +299,6 @@ impl ClusterInfoVoteListener {
                 !packet_batch.get(0).unwrap().meta().discard()
             })
             .filter_map(|(tx, packet_batch)| {
-                // let (vote_account_key, vote, ..) = vote_parser::parse_vote_transaction(&tx)
-                //     .or_else(|| vote_parser::parse_alpenglow_vote_transaction(&tx))?;
                 let (vote_account_key, vote, ..) = vote_parser::parse_vote_transaction(&tx)?;
                 let slot = vote.last_voted_slot()?;
                 if (slot >= first_alpenglow_slot) ^ vote.is_alpenglow_vote() {
