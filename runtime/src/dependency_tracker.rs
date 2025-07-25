@@ -20,7 +20,8 @@ impl DependencyTracker {
     /// The sequence starts from 0 and increments by 1 each time it is called.
     pub fn declare_work(&self) -> u64 {
         self.work_sequence
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1
     }
 
     /// Notify all waiting threads that a work has occurred with the given sequence number.
