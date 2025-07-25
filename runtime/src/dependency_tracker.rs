@@ -56,8 +56,7 @@ impl DependencyTracker {
 #[cfg(test)]
 mod tests {
     use {
-        super::*,
-        std::{sync::Arc, thread},
+        super::*, serde::de, std::{sync::Arc, thread}
     };
 
     #[test]
@@ -103,12 +102,17 @@ mod tests {
         let dependency_tracker = Arc::new(DependencyTracker::default());
         let tracker_clone = Arc::clone(&dependency_tracker);
 
+        let work = dependency_tracker.declare_work();
+        assert_eq!(work, 1);
+        let work = dependency_tracker.declare_work();
+        assert_eq!(work, 2);
+        let work_to_wait = dependency_tracker.get_current_declared_work();
         let handle = thread::spawn(move || {
-            tracker_clone.wait_for_dependency(2);
+            tracker_clone.wait_for_dependency(work_to_wait);
         });
 
         thread::sleep(std::time::Duration::from_millis(100));
-        dependency_tracker.mark_this_and_all_previous_work_processed(2);
+        dependency_tracker.mark_this_and_all_previous_work_processed(work);
         handle.join().unwrap();
 
         let processed_sequence = *dependency_tracker.processed_work_sequence.lock().unwrap();
