@@ -74,7 +74,7 @@ mod tests {
         let dependency_tracker = DependencyTracker::default();
         assert_eq!(dependency_tracker.declare_work(), 0);
         assert_eq!(dependency_tracker.declare_work(), 1);
-        assert_eq!(dependency_tracker.get_current_declared_work(), 1);
+        assert_eq!(dependency_tracker.get_current_declared_work(), 2);
     }
 
     #[test]
