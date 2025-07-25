@@ -56,9 +56,7 @@ use {
         epoch_stakes_service::EpochStakesService,
         prioritization_fee_cache::PrioritizationFeeCache,
         root_bank_cache::RootBankCache,
-        vote_sender_types::{
-            AlpenglowVoteSender, BLSVerifiedMessageSender, ReplayVoteReceiver, ReplayVoteSender,
-        },
+        vote_sender_types::{BLSVerifiedMessageSender, ReplayVoteReceiver, ReplayVoteSender},
     },
     solana_streamer::{
         quic::{spawn_server_multi, QuicServerParams, SpawnServerResult},
@@ -155,7 +153,6 @@ impl Tpu {
         tpu_coalesce: Duration,
         duplicate_confirmed_slot_sender: DuplicateConfirmedSlotsSender,
         client: ForwardingClientOption,
-        alpenglow_vote_sender: AlpenglowVoteSender,
         bls_verified_message_sender: BLSVerifiedMessageSender,
         turbine_quic_endpoint_sender: AsyncSender<(SocketAddr, Bytes)>,
         votor_event_sender: VotorEventSender,
@@ -359,7 +356,6 @@ impl Tpu {
             blockstore.clone(),
             bank_notification_sender,
             duplicate_confirmed_slot_sender,
-            alpenglow_vote_sender.clone(),
         );
 
         let banking_stage = BankingStage::new(
@@ -375,7 +371,6 @@ impl Tpu {
             log_messages_bytes_limit,
             bank_forks.clone(),
             prioritization_fee_cache,
-            Some(alpenglow_vote_sender),
         );
 
         let SpawnForwardingStageResult {

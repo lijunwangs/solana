@@ -905,8 +905,6 @@ impl Validator {
         );
 
         let (replay_vote_sender, replay_vote_receiver) = unbounded();
-        // TODO(wen): Remove this later.
-        let (alpenglow_vote_sender, _) = unbounded();
         let (bls_verified_message_sender, bls_verified_message_receiver) =
             bounded(MAX_ALPENGLOW_PACKET_NUM);
 
@@ -982,7 +980,6 @@ impl Validator {
                     config.runtime_config.log_messages_bytes_limit,
                     transaction_status_sender.clone(),
                     Some(replay_vote_sender.clone()),
-                    Some(alpenglow_vote_sender.clone()),
                     prioritization_fee_cache.clone(),
                 );
                 bank_forks
@@ -1589,7 +1586,6 @@ impl Validator {
             completed_data_sets_sender,
             bank_notification_sender.clone(),
             duplicate_confirmed_slots_receiver,
-            alpenglow_vote_sender.clone(),
             bls_verified_message_sender.clone(),
             bls_verified_message_receiver,
             TvuConfig {
@@ -1703,7 +1699,6 @@ impl Validator {
             config.tpu_coalesce,
             duplicate_confirmed_slot_sender,
             forwarding_tpu_client,
-            alpenglow_vote_sender,
             bls_verified_message_sender,
             turbine_quic_endpoint_sender,
             votor_event_sender,

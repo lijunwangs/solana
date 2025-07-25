@@ -48,8 +48,7 @@ use {
         prioritization_fee_cache::PrioritizationFeeCache,
         snapshot_controller::SnapshotController,
         vote_sender_types::{
-            AlpenglowVoteSender, BLSVerifiedMessageReceiver, BLSVerifiedMessageSender,
-            ReplayVoteSender,
+            BLSVerifiedMessageReceiver, BLSVerifiedMessageSender, ReplayVoteSender,
         },
     },
     solana_streamer::evicting_sender::EvictingSender,
@@ -166,7 +165,6 @@ impl Tvu {
         completed_data_sets_sender: Option<CompletedDataSetsSender>,
         bank_notification_sender: Option<BankNotificationSenderConfig>,
         duplicate_confirmed_slots_receiver: DuplicateConfirmedSlotsReceiver,
-        alpenglow_vote_sender: AlpenglowVoteSender,
         own_vote_sender: BLSVerifiedMessageSender,
         bls_verified_message_receiver: BLSVerifiedMessageReceiver,
         tvu_config: TvuConfig,
@@ -338,7 +336,6 @@ impl Tvu {
             drop_bank_sender,
             block_metadata_notifier,
             dumped_slots_sender,
-            alpenglow_vote_sender,
             certificate_sender,
             votor_event_sender,
             own_vote_sender,
@@ -564,7 +561,6 @@ pub mod tests {
         let (_gossip_verified_vote_hash_sender, gossip_verified_vote_hash_receiver) = unbounded();
         let (_verified_vote_sender, verified_vote_receiver) = unbounded();
         let (replay_vote_sender, _replay_vote_receiver) = unbounded();
-        let (alpenglow_vote_sender, _alpenglow_vote_receiver) = unbounded();
         let (_, gossip_confirmed_slots_receiver) = unbounded();
         let (bls_verified_message_sender, bls_verified_message_receiver) = unbounded();
         let max_complete_transaction_status_slot = Arc::new(AtomicU64::default());
@@ -630,7 +626,6 @@ pub mod tests {
             /*completed_data_sets_sender:*/ None,
             None,
             gossip_confirmed_slots_receiver,
-            alpenglow_vote_sender,
             bls_verified_message_sender,
             bls_verified_message_receiver,
             TvuConfig::default(),

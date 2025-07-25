@@ -20,7 +20,7 @@ use {
     solana_clock::FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET,
     solana_measure::{measure::Measure, measure_us},
     solana_poh::poh_recorder::{BankStart, PohRecorderError},
-    solana_runtime::{bank::Bank, bank_forks::BankForks, vote_sender_types::AlpenglowVoteSender},
+    solana_runtime::{bank::Bank, bank_forks::BankForks},
     solana_runtime_transaction::{
         runtime_transaction::RuntimeTransaction, transaction_with_meta::TransactionWithMeta,
     },
@@ -52,7 +52,6 @@ pub struct VoteWorker {
     storage: VoteStorage,
     bank_forks: Arc<RwLock<BankForks>>,
     consumer: Consumer,
-    alpenglow_vote_sender: Option<AlpenglowVoteSender>,
 }
 
 impl VoteWorker {
@@ -63,7 +62,6 @@ impl VoteWorker {
         storage: VoteStorage,
         bank_forks: Arc<RwLock<BankForks>>,
         consumer: Consumer,
-        alpenglow_vote_sender: Option<AlpenglowVoteSender>,
     ) -> Self {
         Self {
             decision_maker,
@@ -72,7 +70,6 @@ impl VoteWorker {
             storage,
             bank_forks,
             consumer,
-            alpenglow_vote_sender,
         }
     }
 
@@ -99,7 +96,6 @@ impl VoteWorker {
                 &mut banking_stage_stats,
                 &mut slot_metrics_tracker,
                 VoteSource::Tpu,
-                self.alpenglow_vote_sender.as_ref(),
             ) {
                 Ok(()) | Err(RecvTimeoutError::Timeout) => (),
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -110,7 +106,6 @@ impl VoteWorker {
                 &mut banking_stage_stats,
                 &mut slot_metrics_tracker,
                 VoteSource::Gossip,
-                self.alpenglow_vote_sender.as_ref(),
             ) {
                 Ok(()) | Err(RecvTimeoutError::Timeout) => (),
                 Err(RecvTimeoutError::Disconnected) => break,

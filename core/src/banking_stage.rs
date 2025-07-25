@@ -29,10 +29,8 @@ use {
     solana_poh::{poh_recorder::PohRecorder, transaction_recorder::TransactionRecorder},
     solana_pubkey::Pubkey,
     solana_runtime::{
-        bank::Bank,
-        bank_forks::BankForks,
-        prioritization_fee_cache::PrioritizationFeeCache,
-        vote_sender_types::{AlpenglowVoteSender, ReplayVoteSender},
+        bank::Bank, bank_forks::BankForks, prioritization_fee_cache::PrioritizationFeeCache,
+        vote_sender_types::ReplayVoteSender,
     },
     solana_runtime_transaction::runtime_transaction::RuntimeTransaction,
     solana_time_utils::AtomicInterval,
@@ -381,7 +379,6 @@ impl BankingStage {
         log_messages_bytes_limit: Option<usize>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
-        alpenglow_vote_sender: Option<AlpenglowVoteSender>,
     ) -> Self {
         Self::new_num_threads(
             block_production_method,
@@ -397,7 +394,6 @@ impl BankingStage {
             log_messages_bytes_limit,
             bank_forks,
             prioritization_fee_cache,
-            alpenglow_vote_sender,
         )
     }
 
@@ -416,7 +412,6 @@ impl BankingStage {
         log_messages_bytes_limit: Option<usize>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
-        alpenglow_vote_sender: Option<AlpenglowVoteSender>,
     ) -> Self {
         let use_greedy_scheduler = matches!(
             block_production_method,
@@ -436,7 +431,6 @@ impl BankingStage {
             log_messages_bytes_limit,
             bank_forks,
             prioritization_fee_cache,
-            alpenglow_vote_sender,
         )
     }
 
@@ -455,7 +449,6 @@ impl BankingStage {
         log_messages_bytes_limit: Option<usize>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
-        alpenglow_vote_sender: Option<AlpenglowVoteSender>,
     ) -> Self {
         assert!(num_threads >= MIN_TOTAL_THREADS);
         let vote_storage = {
@@ -483,7 +476,6 @@ impl BankingStage {
             transaction_recorder.clone(),
             log_messages_bytes_limit,
             vote_storage,
-            alpenglow_vote_sender.clone(),
         ));
 
         match transaction_struct {
@@ -632,7 +624,6 @@ impl BankingStage {
         transaction_recorder: TransactionRecorder,
         log_messages_bytes_limit: Option<usize>,
         vote_storage: VoteStorage,
-        alpenglow_vote_sender: Option<AlpenglowVoteSender>,
     ) -> JoinHandle<()> {
         let tpu_receiver = PacketReceiver::new(tpu_receiver);
         let gossip_receiver = PacketReceiver::new(gossip_receiver);
@@ -653,7 +644,6 @@ impl BankingStage {
                     vote_storage,
                     bank_forks,
                     consumer,
-                    alpenglow_vote_sender,
                 )
                 .run()
             })
@@ -844,7 +834,6 @@ mod tests {
             None,
             bank_forks,
             &Arc::new(PrioritizationFeeCache::new(0u64)),
-            None,
         );
         drop(non_vote_sender);
         drop(tpu_vote_sender);
@@ -900,7 +889,6 @@ mod tests {
             None,
             bank_forks,
             &Arc::new(PrioritizationFeeCache::new(0u64)),
-            None,
         );
         trace!("sending bank");
         drop(non_vote_sender);
@@ -965,7 +953,6 @@ mod tests {
             None,
             bank_forks.clone(), // keep a local-copy of bank-forks so worker threads do not lose weak access to bank-forks
             &Arc::new(PrioritizationFeeCache::new(0u64)),
-            None,
         );
 
         // fund another account so we can send 2 good transactions in a single batch.
@@ -1118,7 +1105,6 @@ mod tests {
                 None,
                 bank_forks,
                 &Arc::new(PrioritizationFeeCache::new(0u64)),
-                None,
             );
 
             // wait for banking_stage to eat the packets
@@ -1305,7 +1291,6 @@ mod tests {
             None,
             bank_forks,
             &Arc::new(PrioritizationFeeCache::new(0u64)),
-            None,
         );
 
         let keypairs = (0..100).map(|_| Keypair::new()).collect_vec();
