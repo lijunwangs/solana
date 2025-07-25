@@ -56,7 +56,7 @@ impl DependencyTracker {
 #[cfg(test)]
 mod tests {
     use {
-        super::*, serde::de, std::{sync::Arc, thread}
+        super::*, std::{sync::Arc, thread}
     };
 
     #[test]
