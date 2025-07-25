@@ -17,12 +17,10 @@ fn less_than(a: &Option<u64>, b: u64) -> bool {
 
 impl DependencyTracker {
     /// Get the next event sequence number.
-    /// This function will increment the event sequence number and return the
-    /// the previously stored value as the new value.
     /// The sequence starts from 0 and increments by 1 each time it is called.
     pub fn declare_work(&self) -> u64 {
         self.work_sequence
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
     }
 
     /// Notify all waiting threads that a work has occurred with the given sequence number.
@@ -72,8 +70,8 @@ mod tests {
     #[test]
     fn test_get_new_event_sequence() {
         let dependency_tracker = DependencyTracker::default();
-        assert_eq!(dependency_tracker.declare_work(), 0);
         assert_eq!(dependency_tracker.declare_work(), 1);
+        assert_eq!(dependency_tracker.declare_work(), 2);
         assert_eq!(dependency_tracker.get_current_declared_work(), 2);
     }
 
@@ -109,7 +107,7 @@ mod tests {
         });
 
         thread::sleep(std::time::Duration::from_millis(100));
-        dependency_tracker.mark_this_and_all_previous_work_processed(1);
+        dependency_tracker.mark_this_and_all_previous_work_processed(2);
         handle.join().unwrap();
 
         let processed_sequence = *dependency_tracker.processed_work_sequence.lock().unwrap();
