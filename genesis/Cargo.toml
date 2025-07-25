@@ -59,6 +59,7 @@ solana-stake-interface = "=1.2.1"
 solana-stake-program = { workspace = true }
 solana-time-utils = "2.2.1"
 solana-version = { workspace = true }
+solana-vote = { workspace = true }
 solana-vote-program = { workspace = true }
 tempfile = { workspace = true }
 

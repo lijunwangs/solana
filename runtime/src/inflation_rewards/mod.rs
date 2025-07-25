@@ -257,10 +257,10 @@ mod tests {
     use {
         self::points::null_tracer,
         super::*,
-        alpenglow_vote::{accounting::EpochCredit, state::VoteState as AlpenglowVoteState},
         solana_native_token::sol_to_lamports,
         solana_pubkey::Pubkey,
         solana_stake_interface::state::Delegation,
+        solana_vote::alpenglow::{accounting::EpochCredit, state::VoteState as AlpenglowVoteState},
         solana_vote_program::vote_state::VoteStateV3,
         test_case::test_case,
     };

@@ -12,7 +12,6 @@ use {
         votor::{SharedContext, Votor},
         Block,
     },
-    alpenglow_vote::vote::Vote,
     crossbeam_channel::{select, RecvError, SendError},
     solana_clock::Slot,
     solana_hash::Hash,
@@ -22,6 +21,7 @@ use {
     solana_pubkey::Pubkey,
     solana_runtime::{bank::Bank, bank_forks::SetRootError},
     solana_signer::Signer,
+    solana_vote::alpenglow::vote::Vote,
     std::{
         collections::{BTreeMap, BTreeSet},
         sync::{

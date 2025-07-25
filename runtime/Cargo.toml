@@ -52,7 +52,6 @@ agave-precompiles = { workspace = true }
 agave-reserved-account-keys = { workspace = true }
 agave-syscalls = { workspace = true }
 ahash = { workspace = true }
-alpenglow-vote = { workspace = true }
 aquamarine = { workspace = true }
 arrayref = { workspace = true }
 assert_matches = { workspace = true }
@@ -196,6 +195,7 @@ rand_chacha = { workspace = true }
 solana-accounts-db = { workspace = true, features = ["dev-context-only-utils"] }
 solana-builtins = { workspace = true, features = ["dev-context-only-utils"] }
 solana-logger = { workspace = true }
+solana-program = { workspace = true }
 # See order-crates-for-publishing.py for using this unusual `path = "."`
 solana-runtime = { path = ".", features = ["dev-context-only-utils"] }
 solana-runtime-transaction = { workspace = true, features = [

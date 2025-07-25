@@ -1,11 +1,8 @@
 use {
     agave_feature_set::{FeatureSet, FEATURE_NAMES},
-    alpenglow_vote::{
-        bls_message::BLS_KEYPAIR_DERIVE_SEED, state::VoteState as AlpenglowVoteState,
-    },
-    log::warn,
+    log::*,
     solana_account::{Account, AccountSharedData},
-    solana_bls_signatures::{Keypair as BLSKeypair, Pubkey as BLSPubkey},
+    solana_bls_signatures::{keypair::Keypair as BLSKeypair, Pubkey as BLSPubkey},
     solana_feature_gate_interface::{self as feature, Feature},
     solana_fee_calculator::FeeRateGovernor,
     solana_genesis_config::{ClusterType, GenesisConfig},
@@ -19,6 +16,9 @@ use {
     solana_stake_interface::state::StakeStateV2,
     solana_stake_program::stake_state,
     solana_system_interface::program as system_program,
+    solana_vote::alpenglow::{
+        self, bls_message::BLS_KEYPAIR_DERIVE_SEED, state::VoteState as AlpenglowVoteState,
+    },
     solana_vote_program::vote_state,
     std::{borrow::Borrow, fs::File, io::Read},
 };
@@ -363,7 +363,7 @@ pub fn include_alpenglow_bpf_program(genesis_config: &mut GenesisConfig, alpengl
         });
 
     // Derive the address for the program data account
-    let address = alpenglow_vote::id();
+    let address = alpenglow::id();
     let loader = solana_sdk_ids::bpf_loader_upgradeable::id();
     let programdata_address = solana_loader_v3_interface::get_program_data_address(&address);
 

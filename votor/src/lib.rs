@@ -1,11 +1,11 @@
 #![cfg_attr(feature = "frozen-abi", feature(min_specialization))]
 use {
-    alpenglow_vote::{
+    solana_clock::Slot,
+    solana_hash::Hash,
+    solana_vote::alpenglow::{
         certificate::{Certificate, CertificateType},
         vote::Vote,
     },
-    solana_clock::Slot,
-    solana_hash::Hash,
     std::time::Duration,
 };
 

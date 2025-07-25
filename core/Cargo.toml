@@ -22,7 +22,6 @@ dev-context-only-utils = [
 frozen-abi = [
     "dep:solana-frozen-abi",
     "dep:solana-frozen-abi-macro",
-    "alpenglow-vote/frozen-abi",
     "solana-accounts-db/frozen-abi",
     "solana-bloom/frozen-abi",
     "solana-compute-budget/frozen-abi",

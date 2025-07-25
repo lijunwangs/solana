@@ -5,7 +5,6 @@
 use log::*;
 use {
     crate::{cluster::QuicTpuClient, local_cluster::LocalCluster},
-    alpenglow_vote::bls_message::BLSMessage,
     rand::{thread_rng, Rng},
     rayon::{prelude::*, ThreadPool},
     solana_client::connection_cache::ConnectionCache,
@@ -37,6 +36,7 @@ use {
     solana_transaction_error::TransportError,
     solana_validator_exit::Exit,
     solana_vote::{
+        alpenglow::bls_message::BLSMessage,
         vote_parser::ParsedVoteTransaction,
         vote_transaction::{self},
     },

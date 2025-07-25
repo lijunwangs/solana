@@ -17,7 +17,6 @@ use {
         votor::Votor,
         CertificateId, STANDSTILL_TIMEOUT,
     },
-    alpenglow_vote::bls_message::{BLSMessage, CertificateMessage},
     crossbeam_channel::{select, RecvError, Sender, TrySendError},
     solana_clock::Slot,
     solana_ledger::{
@@ -28,6 +27,7 @@ use {
     solana_runtime::{
         root_bank_cache::RootBankCache, vote_sender_types::BLSVerifiedMessageReceiver,
     },
+    solana_vote::alpenglow::bls_message::{BLSMessage, CertificateMessage},
     stats::CertificatePoolServiceStats,
     std::{
         sync::{

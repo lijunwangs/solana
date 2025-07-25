@@ -8,7 +8,6 @@ use {
         sigverifier::ed25519_sigverifier::ed25519_verify_cpu,
     },
     agave_banking_stage_ingress_types::BankingPacketBatch,
-    alpenglow_vote::vote::Vote as AlpenglowVote,
     crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Select, Sender},
     log::*,
     solana_clock::{Slot, DEFAULT_MS_PER_SLOT},
@@ -39,6 +38,7 @@ use {
     solana_time_utils::AtomicInterval,
     solana_transaction::Transaction,
     solana_vote::{
+        alpenglow::vote::Vote as AlpenglowVote,
         vote_parser::{self, ParsedVote, ParsedVoteTransaction},
         vote_transaction::VoteTransaction,
     },

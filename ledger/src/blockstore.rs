@@ -25,7 +25,6 @@ use {
         transaction_address_lookup_table_scanner::scan_transaction,
     },
     agave_feature_set::FeatureSet,
-    alpenglow_vote::bls_message::CertificateMessage,
     assert_matches::debug_assert_matches,
     bincode::{deserialize, serialize},
     crossbeam_channel::{bounded, Receiver, Sender, TrySendError},
@@ -61,6 +60,7 @@ use {
         VersionedConfirmedBlock, VersionedConfirmedBlockWithEntries,
         VersionedTransactionWithStatusMeta,
     },
+    solana_vote::alpenglow::bls_message::CertificateMessage,
     std::{
         borrow::Cow,
         cell::RefCell,

@@ -35,6 +35,7 @@ solana-remote-wallet = { workspace = true, features = ["default"] }
 solana-seed-derivable = "=2.2.1"
 solana-signer = "=2.2.1"
 solana-version = { workspace = true }
+solana-vote = { workspace = true }
 tiny-bip39 = { workspace = true }
 
 [dev-dependencies]

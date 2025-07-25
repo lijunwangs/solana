@@ -17,10 +17,6 @@ use {
         SAFE_TO_NOTAR_MIN_NOTARIZE_FOR_NOTARIZE_OR_SKIP, SAFE_TO_NOTAR_MIN_NOTARIZE_ONLY,
         SAFE_TO_SKIP_THRESHOLD,
     },
-    alpenglow_vote::{
-        bls_message::{BLSMessage, CertificateMessage, VoteMessage},
-        vote::Vote,
-    },
     crossbeam_channel::Sender,
     log::{error, trace},
     solana_clock::{Epoch, Slot},
@@ -29,6 +25,10 @@ use {
     solana_ledger::blockstore::Blockstore,
     solana_pubkey::Pubkey,
     solana_runtime::{bank::Bank, epoch_stakes::VersionedEpochStakes},
+    solana_vote::alpenglow::{
+        bls_message::{BLSMessage, CertificateMessage, VoteMessage},
+        vote::Vote,
+    },
     std::{
         collections::{BTreeMap, HashMap},
         sync::Arc,
@@ -818,10 +818,6 @@ pub fn load_from_blockstore(
 mod tests {
     use {
         super::*,
-        alpenglow_vote::{
-            bls_message::{VoteMessage, BLS_KEYPAIR_DERIVE_SEED},
-            certificate::{Certificate, CertificateType},
-        },
         bitvec::prelude::*,
         itertools::Itertools,
         solana_bls_signatures::{keypair::Keypair as BLSKeypair, Signature as BLSSignature},
@@ -836,6 +832,10 @@ mod tests {
             },
         },
         solana_signer::Signer,
+        solana_vote::alpenglow::{
+            bls_message::{VoteMessage, BLS_KEYPAIR_DERIVE_SEED},
+            certificate::{Certificate, CertificateType},
+        },
         std::sync::{Arc, RwLock},
         test_case::test_case,
     };
