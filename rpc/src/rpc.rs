@@ -8850,7 +8850,7 @@ pub mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event synchronization
+            &None, // No dependency tracker
         );
         let req =
             r#"{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment": "confirmed"}]}"#;
@@ -8874,7 +8874,7 @@ pub mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event synchronization
+            &None, // No dependency tracker
         );
         let req =
             r#"{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment": "confirmed"}]}"#;
@@ -8899,7 +8899,7 @@ pub mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event synchronization
+            &None, // No dependency tracker
         );
         let req =
             r#"{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment": "confirmed"}]}"#;
