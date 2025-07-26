@@ -74,7 +74,7 @@ impl std::fmt::Debug for BankNotification {
 
 pub type BankNotificationWithEventSequence = (
     BankNotification,
-    Option<u64>, // event_sequence
+    Option<u64>, // dependecy work sequence number
 );
 
 pub type BankNotificationReceiver = Receiver<BankNotificationWithEventSequence>;
@@ -480,7 +480,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 2);
         assert_eq!(highest_confirmed_slot, 2);
@@ -500,7 +500,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 2);
         assert_eq!(highest_confirmed_slot, 2);
@@ -520,7 +520,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 2);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 1);
@@ -545,7 +545,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 3);
         assert_eq!(highest_confirmed_slot, 3);
@@ -569,7 +569,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 3);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 1);
@@ -602,7 +602,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 5);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
@@ -625,7 +625,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
 
         assert_eq!(newest_root_slot, 5);
@@ -656,7 +656,7 @@ mod tests {
             &mut newest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 5);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
@@ -681,7 +681,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
         assert_eq!(optimistically_confirmed_bank.read().unwrap().bank.slot(), 7);
         assert_eq!(pending_optimistically_confirmed_banks.len(), 0);
@@ -703,7 +703,7 @@ mod tests {
             &mut newest_root_slot,
             &subscribers,
             &PrioritizationFeeCache::default(),
-            &None, // No event notification synchronizer
+            &None, // No dependency tracker
         );
 
         assert_eq!(newest_root_slot, 7);
