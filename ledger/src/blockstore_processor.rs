@@ -2159,12 +2159,12 @@ pub fn process_single_slot(
     Ok(())
 }
 
-type EventSequence = u64;
+type WorkSequence = u64;
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum TransactionStatusMessage {
-    Batch((TransactionStatusBatch, Option<EventSequence>)),
+    Batch((TransactionStatusBatch, Option<WorkSequence>)),
     Freeze(Arc<Bank>),
 }
 
