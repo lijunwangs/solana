@@ -8815,7 +8815,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(2),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -8826,7 +8826,7 @@ pub mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
         let req =
             r#"{"jsonrpc":"2.0","id":1,"method":"getSlot","params":[{"commitment": "confirmed"}]}"#;
@@ -8839,7 +8839,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(1),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -8863,7 +8863,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -8888,7 +8888,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::Frozen(bank3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,

@@ -1992,7 +1992,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2003,7 +2003,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         // a closure to reduce code duplications in building expected responses:
@@ -2049,7 +2049,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::Frozen(bank3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2060,7 +2060,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         let response = receiver.recv();
@@ -2172,7 +2172,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2183,7 +2183,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         // The following should panic
@@ -2291,7 +2291,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2302,7 +2302,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         // a closure to reduce code duplications in building expected responses:
@@ -2350,7 +2350,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::Frozen(bank3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2361,7 +2361,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         let response = receiver.recv();
@@ -2792,7 +2792,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         // Now, notify the frozen bank and ensure its notifications are processed
@@ -2800,7 +2800,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(1),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2811,7 +2811,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
 
         let response = receiver0.recv();
@@ -2859,7 +2859,7 @@ pub(crate) mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::Frozen(bank2),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -2870,7 +2870,7 @@ pub(crate) mod tests {
             &mut highest_root_slot,
             &None,
             &PrioritizationFeeCache::default(),
-            &None, // no event synchronization
+            &None, // no dependency tracker
         );
         let response = receiver1.recv();
         let expected = json!({

@@ -469,7 +469,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(2),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -489,7 +489,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(1),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -509,7 +509,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -534,7 +534,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::Frozen(bank3),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -558,7 +558,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(4),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -591,7 +591,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::NewRootBank(bank5),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -614,7 +614,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::NewRootedChain(parent_roots),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -645,7 +645,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(6),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -670,7 +670,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::NewRootBank(bank7),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -692,7 +692,7 @@ mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::NewRootedChain(parent_roots),
-                None, /* no event sequence */
+                None, /* no work sequence */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
