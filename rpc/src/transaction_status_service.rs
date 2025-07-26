@@ -257,8 +257,7 @@ impl TransactionStatusService {
 
                 if let Some(dependency_tracker) = dependency_tracker.as_ref() {
                     if let Some(work_sequence) = work_sequence {
-                        dependency_tracker
-                            .mark_this_and_all_previous_work_processed(work_sequence);
+                        dependency_tracker.mark_this_and_all_previous_work_processed(work_sequence);
                     }
                 }
             }

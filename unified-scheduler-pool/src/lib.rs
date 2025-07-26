@@ -4532,7 +4532,7 @@ mod tests {
                     receiver.try_recv(),
                     Ok(TransactionStatusMessage::Batch((
                         TransactionStatusBatch { .. },
-                        None, // no event sequence
+                        None, // no work sequence
                     )))
                 );
                 assert_matches!(
