@@ -742,7 +742,7 @@ fn record_transactions(
     slots: Arc<Mutex<Vec<SlotDetails>>>,
 ) {
     for tsm in recv {
-        if let TransactionStatusMessage::Batch((batch, _event_sequence)) = tsm {
+        if let TransactionStatusMessage::Batch((batch, _work_sequence)) = tsm {
             assert_eq!(batch.transactions.len(), batch.commit_results.len());
 
             let transactions: Vec<_> = batch

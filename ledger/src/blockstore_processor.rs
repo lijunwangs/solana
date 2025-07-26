@@ -2196,10 +2196,10 @@ impl TransactionStatusSender {
         costs: Vec<Option<u64>>,
         transaction_indexes: Vec<usize>,
     ) {
-        let event_sequence = self
+        let work_sequence = self
             .dependency_tracker
             .as_ref()
-            .map(|synchronizer| synchronizer.declare_work());
+            .map(|dependency_tracker| dependency_tracker.declare_work());
 
         if let Err(e) = self.sender.send(TransactionStatusMessage::Batch((
             TransactionStatusBatch {
@@ -2211,7 +2211,7 @@ impl TransactionStatusSender {
                 costs,
                 transaction_indexes,
             },
-            event_sequence,
+            work_sequence,
         ))) {
             trace!("Slot {slot} transaction_status send batch failed: {e:?}");
         }
