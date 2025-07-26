@@ -322,7 +322,7 @@ pub fn load_and_process_ledger(
             (
                 Some(TransactionStatusSender {
                     sender: transaction_status_sender,
-                    event_notification_synchronizer: None,
+                    dependency_tracker: None,
                 }),
                 Some(transaction_status_service),
             )

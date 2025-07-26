@@ -4493,7 +4493,7 @@ mod tests {
             log_messages_bytes_limit: None,
             transaction_status_sender: Some(TransactionStatusSender {
                 sender,
-                event_notification_synchronizer: None,
+                dependency_tracker: None,
             }),
             replay_vote_sender: None,
             prioritization_fee_cache,

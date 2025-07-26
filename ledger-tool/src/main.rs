@@ -653,7 +653,7 @@ fn setup_slot_recording(
                 (
                     Some(TransactionStatusSender {
                         sender,
-                        event_notification_synchronizer: None,
+                        dependency_tracker: None,
                     }),
                     transaction_recorder,
                 )

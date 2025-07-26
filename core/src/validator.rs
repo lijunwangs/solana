@@ -770,7 +770,7 @@ impl Validator {
             },
         ));
 
-        let event_notification_synchronizer = Arc::new(DependencyTracker::default());
+        let dependency_tracker = Arc::new(DependencyTracker::default());
 
         let (
             bank_forks,
@@ -800,7 +800,7 @@ impl Validator {
             config
                 .rpc_addrs
                 .is_some()
-                .then(|| event_notification_synchronizer.clone()),
+                .then(|| dependency_tracker.clone()),
         )
         .map_err(ValidatorError::Other)?;
 
@@ -1259,7 +1259,7 @@ impl Validator {
 
             let dependency_tracker = transaction_status_sender
                 .is_some()
-                .then_some(event_notification_synchronizer);
+                .then_some(dependency_tracker);
             let optimistically_confirmed_bank_tracker =
                 Some(OptimisticallyConfirmedBankTracker::new(
                     bank_notification_receiver,
@@ -2054,7 +2054,7 @@ fn load_blockstore(
     accounts_update_notifier: Option<AccountsUpdateNotifier>,
     transaction_notifier: Option<TransactionNotifierArc>,
     entry_notifier: Option<EntryNotifierArc>,
-    event_notification_synchronizer: Option<Arc<DependencyTracker>>,
+    dependency_tracker: Option<Arc<DependencyTracker>>,
 ) -> Result<
     (
         Arc<RwLock<BankForks>>,
@@ -2114,7 +2114,7 @@ fn load_blockstore(
                 enable_rpc_transaction_history,
                 config.rpc_config.enable_extended_tx_metadata_storage,
                 transaction_notifier,
-                event_notification_synchronizer,
+                dependency_tracker,
             )
         } else {
             TransactionHistoryServices::default()
@@ -2534,13 +2534,13 @@ fn initialize_rpc_transaction_history_services(
     enable_rpc_transaction_history: bool,
     enable_extended_tx_metadata_storage: bool,
     transaction_notifier: Option<TransactionNotifierArc>,
-    event_notification_synchronizer: Option<Arc<DependencyTracker>>,
+    dependency_tracker: Option<Arc<DependencyTracker>>,
 ) -> TransactionHistoryServices {
     let max_complete_transaction_status_slot = Arc::new(AtomicU64::new(blockstore.max_root()));
     let (transaction_status_sender, transaction_status_receiver) = unbounded();
     let transaction_status_sender = Some(TransactionStatusSender {
         sender: transaction_status_sender,
-        event_notification_synchronizer: event_notification_synchronizer.clone(),
+        dependency_tracker: dependency_tracker.clone(),
     });
     let transaction_status_service = Some(TransactionStatusService::new(
         transaction_status_receiver,
@@ -2549,7 +2549,7 @@ fn initialize_rpc_transaction_history_services(
         transaction_notifier,
         blockstore.clone(),
         enable_extended_tx_metadata_storage,
-        event_notification_synchronizer,
+        dependency_tracker,
         exit.clone(),
     ));
 

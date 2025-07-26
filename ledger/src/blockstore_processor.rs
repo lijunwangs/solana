@@ -2182,7 +2182,7 @@ pub struct TransactionStatusBatch {
 #[derive(Clone, Debug)]
 pub struct TransactionStatusSender {
     pub sender: Sender<TransactionStatusMessage>,
-    pub event_notification_synchronizer: Option<Arc<DependencyTracker>>,
+    pub dependency_tracker: Option<Arc<DependencyTracker>>,
 }
 
 impl TransactionStatusSender {
@@ -2197,7 +2197,7 @@ impl TransactionStatusSender {
         transaction_indexes: Vec<usize>,
     ) {
         let event_sequence = self
-            .event_notification_synchronizer
+            .dependency_tracker
             .as_ref()
             .map(|synchronizer| synchronizer.declare_work());
 
@@ -4872,7 +4872,7 @@ pub mod tests {
             crossbeam_channel::unbounded();
         let transaction_status_sender = TransactionStatusSender {
             sender: transaction_status_sender,
-            event_notification_synchronizer: None,
+            dependency_tracker: None,
         };
 
         let blockhash = bank.last_blockhash();
@@ -5133,7 +5133,7 @@ pub mod tests {
             &bank,
             Some(&TransactionStatusSender {
                 sender,
-                event_notification_synchronizer: None,
+                dependency_tracker: None,
             }),
             None,
             &mut timing,
