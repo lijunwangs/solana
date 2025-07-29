@@ -745,10 +745,10 @@ async fn setup_connection(
                     stats
                         .connection_rate_limited_per_ipaddr
                         .fetch_add(1, Ordering::Relaxed);
-                    new_connection.close(
-                        CONNECTION_CLOSE_CODE_DISALLOWED.into(),
-                        CONNECTION_CLOSE_REASON_DISALLOWED,
-                    );
+                    // new_connection.close(
+                    //     CONNECTION_CLOSE_CODE_DISALLOWED.into(),
+                    //     CONNECTION_CLOSE_REASON_DISALLOWED,
+                    // );
                     return;
                 }
                 stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
@@ -761,10 +761,10 @@ async fn setup_connection(
                     stats
                         .connection_rate_limited_across_all
                         .fetch_add(1, Ordering::Relaxed);
-                    new_connection.close(
-                        CONNECTION_CLOSE_CODE_DISALLOWED.into(),
-                        CONNECTION_CLOSE_REASON_DISALLOWED,
-                    );
+                    // new_connection.close(
+                    //     CONNECTION_CLOSE_CODE_DISALLOWED.into(),
+                    //     CONNECTION_CLOSE_REASON_DISALLOWED,
+                    // );
                     return;
                 }
 
