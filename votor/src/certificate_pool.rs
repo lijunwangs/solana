@@ -7,6 +7,7 @@ use {
             vote_certificate_builder::{CertificateError, VoteCertificateBuilder},
             vote_pool::{DuplicateBlockVotePool, SimpleVotePool, VotePool, VotePoolType},
         },
+        commitment::AlpenglowCommitmentError,
         conflicting_types,
         event::VotorEvent,
         vote_to_certificate_ids, Block, CertificateId, Stake, VoteType,
@@ -70,17 +71,20 @@ pub enum AddVoteError {
     #[error("Certificate error: {0}")]
     Certificate(#[from] CertificateError),
 
-    #[error("Certificate sender error")]
-    CertificateSenderError,
-
-    #[error("Voting Service sender disconnected")]
-    VotingServiceSenderDisconnected,
+    #[error("{0} channel disconnected")]
+    ChannelDisconnected(String),
 
     #[error("Voting Service queue full")]
     VotingServiceQueueFull,
 
     #[error("Invalid rank: {0}")]
     InvalidRank(u16),
+}
+
+impl From<AlpenglowCommitmentError> for AddVoteError {
+    fn from(_: AlpenglowCommitmentError) -> Self {
+        AddVoteError::ChannelDisconnected("CommitmentSender".to_string())
+    }
 }
 
 #[derive(Default)]
@@ -263,7 +267,9 @@ impl CertificatePool {
             if cert_id.is_critical() {
                 if let Err(e) = sender.try_send((cert_id, (*vote_certificate).clone())) {
                     error!("Unable to send certificate {cert_id:?}: {e:?}");
-                    return Err(AddVoteError::CertificateSenderError);
+                    return Err(AddVoteError::ChannelDisconnected(
+                        "CertificateSender".to_string(),
+                    ));
                 }
             }
         }
@@ -332,7 +338,7 @@ impl CertificatePool {
                     events.push(VotorEvent::Finalized((slot, block_id)));
                     if self
                         .highest_finalized_with_notarize
-                        .map_or(true, |s| s < slot)
+                        .is_none_or(|s| s < slot)
                     {
                         self.highest_finalized_with_notarize = Some(slot);
                     }
@@ -343,7 +349,7 @@ impl CertificatePool {
                     events.push(VotorEvent::Finalized(block));
                     if self
                         .highest_finalized_with_notarize
-                        .map_or(true, |s| s < slot)
+                        .is_none_or(|s| s < slot)
                     {
                         self.highest_finalized_with_notarize = Some(slot);
                     }
@@ -359,7 +365,7 @@ impl CertificatePool {
                 }
                 if self
                     .highest_finalized_with_notarize
-                    .map_or(true, |s| s < slot)
+                    .is_none_or(|s| s < slot)
                 {
                     self.highest_finalized_with_notarize = Some(slot);
                 }
