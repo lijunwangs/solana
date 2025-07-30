@@ -359,7 +359,7 @@ async fn run_server(
 
     while !exit.load(Ordering::Relaxed) {
         if let Err(not_unitl) = accept_rate_limiter.check() {
-            info!("Sleeping until next accept rate limiter tick: {not_unitl:?}");
+            debug!("Sleeping until next accept rate limiter tick: {not_unitl:?}");
             let wait_until = quanta_to_tokio(not_unitl.earliest_possible(), base_q, base_tokio);
             sleep_until(wait_until).await;
         }
