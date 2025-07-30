@@ -51,7 +51,6 @@ use {
         vote_history::VoteHistory,
         vote_history_storage::VoteHistoryStorage,
         voting_utils::{BLSOp, VotingContext},
-        CertificateId,
     },
     crossbeam_channel::Sender,
     solana_clock::Slot,
@@ -71,7 +70,7 @@ use {
         vote_sender_types::{BLSVerifiedMessageReceiver, BLSVerifiedMessageSender},
     },
     solana_signer::Signer,
-    solana_vote::alpenglow::bls_message::CertificateMessage,
+    solana_votor_messages::bls_message::{Certificate, CertificateMessage},
     std::{
         collections::HashMap,
         sync::{
@@ -115,7 +114,7 @@ pub struct VotorConfig {
     pub drop_bank_sender: Sender<Vec<BankWithScheduler>>,
     pub bank_notification_sender: Option<BankNotificationSenderConfig>,
     pub leader_window_notifier: Arc<LeaderWindowNotifier>,
-    pub certificate_sender: Sender<(CertificateId, CertificateMessage)>,
+    pub certificate_sender: Sender<(Certificate, CertificateMessage)>,
     pub event_sender: VotorEventSender,
     pub own_vote_sender: BLSVerifiedMessageSender,
 

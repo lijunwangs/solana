@@ -60,7 +60,7 @@ use {
         VersionedConfirmedBlock, VersionedConfirmedBlockWithEntries,
         VersionedTransactionWithStatusMeta,
     },
-    solana_vote::alpenglow::bls_message::CertificateMessage,
+    solana_votor_messages::bls_message::CertificateMessage,
     std::{
         borrow::Cow,
         cell::RefCell,

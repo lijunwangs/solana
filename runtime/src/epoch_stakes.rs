@@ -224,14 +224,11 @@ impl VersionedEpochStakes {
 #[cfg(test)]
 pub(crate) mod tests {
     use {
-        super::*,
-        solana_account::AccountSharedData,
+        super::*, solana_account::AccountSharedData,
         solana_bls_signatures::keypair::Keypair as BLSKeypair,
-        solana_vote::{
-            alpenglow::state::VoteState as AlpenglowVoteState, vote_account::VoteAccount,
-        },
+        solana_vote::vote_account::VoteAccount,
         solana_vote_program::vote_state::create_account_with_authorized,
-        std::iter,
+        solana_votor_messages::state::VoteState as AlpenglowVoteState, std::iter,
         test_case::test_case,
     };
 

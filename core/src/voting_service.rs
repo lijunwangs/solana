@@ -15,8 +15,8 @@ use {
     solana_runtime::bank_forks::BankForks,
     solana_transaction::Transaction,
     solana_transaction_error::TransportError,
-    solana_vote::alpenglow::bls_message::BLSMessage,
     solana_votor::{vote_history_storage::VoteHistoryStorage, voting_utils::BLSOp},
+    solana_votor_messages::bls_message::BLSMessage,
     std::{
         net::SocketAddr,
         sync::{Arc, RwLock},
@@ -259,7 +259,7 @@ impl VotingService {
                 );
             }
             BLSOp::PushCertificate { certificate } => {
-                let vote_slot = certificate.certificate.slot;
+                let vote_slot = certificate.certificate.slot();
                 let bls_message = BLSMessage::Certificate((*certificate).clone());
                 Self::broadcast_alpenglow_message(
                     vote_slot,
@@ -336,13 +336,14 @@ mod tests {
         },
         solana_signer::Signer,
         solana_streamer::{packet::Packet, recvmmsg::recv_mmsg, socket::SocketAddrSpace},
-        solana_vote::alpenglow::{
-            bls_message::{BLSMessage, CertificateMessage, VoteMessage},
-            certificate::{Certificate, CertificateType},
-            vote::Vote,
-        },
         solana_votor::vote_history_storage::{
             NullVoteHistoryStorage, SavedVoteHistory, SavedVoteHistoryVersions,
+        },
+        solana_votor_messages::{
+            bls_message::{
+                BLSMessage, Certificate, CertificateMessage, CertificateType, VoteMessage,
+            },
+            vote::Vote,
         },
         std::{
             net::SocketAddr,
@@ -419,20 +420,12 @@ mod tests {
     }))]
     #[test_case(BLSOp::PushCertificate {
         certificate: Arc::new(CertificateMessage {
-            certificate: Certificate {
-                certificate_type: CertificateType::Skip,
-                slot: 5,
-                block_id: None,
-            },
+            certificate: Certificate::new(CertificateType::Skip, 5, None),
             signature: BLSSignature::default(),
             bitmap: BitVec::new(),
         }),
     }, BLSMessage::Certificate(CertificateMessage {
-        certificate: Certificate {
-            certificate_type: CertificateType::Skip,
-            slot: 5,
-            block_id: None,
-        },
+        certificate: Certificate::new(CertificateType::Skip, 5, None),
         signature: BLSSignature::default(),
         bitmap: BitVec::new(),
     }))]

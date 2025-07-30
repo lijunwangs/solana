@@ -61,6 +61,7 @@ solana-time-utils = "2.2.1"
 solana-version = { workspace = true }
 solana-vote = { workspace = true }
 solana-vote-program = { workspace = true }
+solana-votor-messages = { workspace = true }
 tempfile = { workspace = true }
 
 [dev-dependencies]

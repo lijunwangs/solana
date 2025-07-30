@@ -8,7 +8,7 @@ use {
     serde::{Deserialize, Deserializer, Serialize, Serializer},
     solana_clock::{Slot, UnixTimestamp},
     solana_hash::Hash,
-    solana_vote::alpenglow::bls_message::CertificateMessage,
+    solana_votor_messages::bls_message::CertificateMessage,
     std::{
         collections::{BTreeSet, HashMap},
         ops::{Range, RangeBounds},

@@ -36,11 +36,11 @@ use {
     solana_transaction_error::TransportError,
     solana_validator_exit::Exit,
     solana_vote::{
-        alpenglow::bls_message::BLSMessage,
         vote_parser::ParsedVoteTransaction,
         vote_transaction::{self},
     },
     solana_vote_program::vote_state::TowerSync,
+    solana_votor_messages::bls_message::BLSMessage,
     std::{
         collections::{HashMap, HashSet, VecDeque},
         net::{SocketAddr, TcpListener, UdpSocket},
