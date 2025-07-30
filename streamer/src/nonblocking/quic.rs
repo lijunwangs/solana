@@ -97,7 +97,7 @@ const CONNECTION_CLOSE_REASON_INVALID_STREAM: &[u8] = b"invalid_stream";
 const TOTAL_CONNECTIONS_PER_SECOND: u64 = 2500;
 
 // Rate limiting accepts per second to reduce contention on the endpoint mutex
-const TOTAL_ACCEPT_PER_SECOND: u64 = 50000;
+const TOTAL_ACCEPT_PER_SECOND: u64 = 10000;
 
 /// The threshold of the size of the connection rate limiter map. When
 /// the map size is above this, we will trigger a cleanup of older
