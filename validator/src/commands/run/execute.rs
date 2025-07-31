@@ -717,7 +717,7 @@ pub fn execute(
         retransmit_xdp,
         broadcast_stage_type: BroadcastStageType::Standard,
         use_tpu_client_next: !matches.is_present("use_connection_cache"),
-        voting_service_additional_listeners: None,
+        voting_service_test_override: None,
         block_verification_method: value_t_or_exit!(
             matches,
             "block_verification_method",

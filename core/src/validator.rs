@@ -30,6 +30,7 @@ use {
             ForwardingClientOption, Tpu, TpuSockets, DEFAULT_TPU_COALESCE, MAX_ALPENGLOW_PACKET_NUM,
         },
         tvu::{Tvu, TvuConfig, TvuSockets},
+        voting_service::VotingServiceOverride,
     },
     anyhow::{anyhow, Context, Result},
     crossbeam_channel::{bounded, unbounded, Receiver},
@@ -305,8 +306,8 @@ pub struct ValidatorConfig {
     pub delay_leader_block_for_pending_fork: bool,
     pub use_tpu_client_next: bool,
     pub retransmit_xdp: Option<XdpConfig>,
+    pub voting_service_test_override: Option<VotingServiceOverride>,
     pub repair_handler_type: RepairHandlerType,
-    pub voting_service_additional_listeners: Option<Vec<SocketAddr>>,
 }
 
 impl ValidatorConfig {
@@ -388,7 +389,7 @@ impl ValidatorConfig {
             use_tpu_client_next: true,
             retransmit_xdp: None,
             repair_handler_type: RepairHandlerType::default(),
-            voting_service_additional_listeners: None,
+            voting_service_test_override: None,
         }
     }
 
@@ -1620,7 +1621,7 @@ impl Validator {
             vote_connection_cache,
             replay_highest_frozen,
             leader_window_notifier,
-            config.voting_service_additional_listeners.as_ref(),
+            config.voting_service_test_override.clone(),
             votor_event_sender.clone(),
             votor_event_receiver,
         )
