@@ -11,10 +11,7 @@ license = { workspace = true }
 edition = { workspace = true }
 
 [features]
-frozen-abi = [
-    "dep:solana-frozen-abi",
-    "dep:solana-frozen-abi-macro",
-]
+frozen-abi = ["dep:solana-frozen-abi", "dep:solana-frozen-abi-macro"]
 
 [dependencies]
 bitvec = { workspace = true }

@@ -3530,9 +3530,17 @@ impl ReplayStage {
                 new_frozen_slots.push(bank.slot());
                 let _ = cluster_slots_update_sender.send(vec![bank_slot]);
 
+                bank.freeze();
+                datapoint_info!(
+                    "bank_frozen",
+                    ("slot", bank_slot, i64),
+                    ("hash", bank.hash().to_string(), String),
+                );
+
                 if let Some(transaction_status_sender) = transaction_status_sender {
                     transaction_status_sender.send_transaction_status_freeze_message(bank);
                 }
+
                 // report cost tracker stats
                 cost_update_sender
                     .send(CostUpdate::FrozenBank {

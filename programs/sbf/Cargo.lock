@@ -147,14 +147,16 @@ dependencies = [
  "solana-account-info",
  "solana-big-mod-exp",
  "solana-blake3-hasher",
+ "solana-bls12-381",
  "solana-bn254",
  "solana-clock",
  "solana-cpi",
+ "solana-curve-traits",
  "solana-curve25519 3.0.0",
  "solana-hash",
  "solana-instruction",
  "solana-keccak-hasher",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-log-collector",
  "solana-measure",
  "solana-poseidon",
@@ -353,6 +355,31 @@ name = "allocator-api2"
 version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
+
+[[package]]
+name = "alpenglow-vote"
+version = "0.1.0"
+source = "git+https://github.com/solana-program/alpenglow-vote.git?rev=cdae90a#cdae90a3c3f57f56bfa6f4c7e05d5b77b83926f1"
+dependencies = [
+ "bincode",
+ "bitflags 2.9.1",
+ "bitvec",
+ "bytemuck",
+ "either",
+ "num-derive",
+ "num-traits",
+ "num_enum",
+ "serde",
+ "serde_derive",
+ "solana-account",
+ "solana-bls-signatures",
+ "solana-hash",
+ "solana-program",
+ "solana-signature",
+ "solana-vote-interface",
+ "spl-pod",
+ "thiserror 2.0.12",
+]
 
 [[package]]
 name = "android-tzdata"
@@ -4672,6 +4699,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_xorshift"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
+dependencies = [
+ "rand_core 0.6.4",
+]
+
+[[package]]
 name = "rand_xoshiro"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5558,7 +5594,7 @@ dependencies = [
  "solana-epoch-schedule",
  "solana-fee-calculator",
  "solana-instruction",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-nonce",
  "solana-program-option",
  "solana-program-pack",
@@ -5841,7 +5877,7 @@ dependencies = [
 
 [[package]]
 name = "solana-bls12-381"
-version = "2.3.0"
+version = "3.0.0"
 dependencies = [
  "blst",
  "bytemuck",
@@ -5892,11 +5928,10 @@ dependencies = [
  "solana-compute-budget",
  "solana-cpi",
  "solana-curve-traits",
- "solana-curve25519",
- "solana-feature-set",
+ "solana-curve25519 3.0.0",
  "solana-hash",
  "solana-instruction",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-log-collector",
  "solana-measure",
@@ -5931,7 +5966,7 @@ dependencies = [
 
 [[package]]
 name = "solana-build-alpenglow-vote"
-version = "2.3.0"
+version = "3.0.0"
 dependencies = [
  "build-print",
  "glob",
@@ -6264,6 +6299,7 @@ dependencies = [
  "agave-transaction-view",
  "agave-verified-packet-receiver",
  "ahash 0.8.11",
+ "alpenglow-vote",
  "anyhow",
  "arrayvec",
  "assert_matches",
@@ -6326,7 +6362,7 @@ dependencies = [
  "solana-instruction",
  "solana-keypair",
  "solana-ledger",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-measure",
  "solana-message",
  "solana-metrics",
@@ -6435,7 +6471,7 @@ dependencies = [
 
 [[package]]
 name = "solana-curve-traits"
-version = "2.3.0"
+version = "3.0.0"
 
 [[package]]
 name = "solana-curve25519"
@@ -6986,8 +7022,8 @@ version = "3.0.0"
 dependencies = [
  "agave-feature-set",
  "agave-reserved-account-keys",
- "anyhow",
  "alpenglow-vote",
+ "anyhow",
  "assert_matches",
  "bincode",
  "bitflags 2.9.1",
@@ -7067,7 +7103,7 @@ dependencies = [
  "solana-vote-program",
  "solana-votor-messages",
  "spl-token",
- "spl-token-2022 7.0.0",
+ "spl-token-2022",
  "static_assertions",
  "strum",
  "strum_macros",
@@ -7091,21 +7127,6 @@ dependencies = [
  "solana-instruction",
  "solana-pubkey",
  "solana-sdk-ids",
-]
-
-[[package]]
-name = "solana-loader-v3-interface"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa4be76cfa9afd84ca2f35ebc09f0da0f0092935ccdac0595d98447f259538c2"
-dependencies = [
- "serde",
- "serde_bytes",
- "serde_derive",
- "solana-instruction",
- "solana-pubkey",
- "solana-sdk-ids",
- "solana-system-interface",
 ]
 
 [[package]]
@@ -7148,7 +7169,7 @@ dependencies = [
  "solana-bincode",
  "solana-bpf-loader-program",
  "solana-instruction",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-log-collector",
  "solana-measure",
@@ -7354,7 +7375,6 @@ dependencies = [
  "solana-short-vec",
  "solana-signature",
  "solana-time-utils",
- "solana-vote",
  "solana-votor-messages",
 ]
 
@@ -7375,7 +7395,6 @@ dependencies = [
  "solana-poh-config",
  "solana-pubkey",
  "solana-runtime",
- "solana-sdk",
  "solana-time-utils",
  "solana-transaction",
  "thiserror 2.0.12",
@@ -7424,9 +7443,9 @@ dependencies = [
 
 [[package]]
 name = "solana-program"
-version = "2.2.1"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "586469467e93ceb79048f8d8e3a619bf61d05396ee7de95cb40280301a589d05"
+checksum = "98eca145bd3545e2fbb07166e895370576e47a00a7d824e325390d33bf467210"
 dependencies = [
  "bincode",
  "blake3",
@@ -7469,7 +7488,7 @@ dependencies = [
  "solana-keccak-hasher",
  "solana-last-restart-slot",
  "solana-loader-v2-interface",
- "solana-loader-v3-interface 3.0.0",
+ "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-message",
  "solana-msg",
@@ -7626,7 +7645,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction",
  "solana-keypair",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-log-collector",
  "solana-logger",
  "solana-message",
@@ -8073,7 +8092,7 @@ dependencies = [
  "solana-instruction",
  "solana-keypair",
  "solana-lattice-hash",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-measure",
  "solana-message",
@@ -8124,8 +8143,8 @@ dependencies = [
  "solana-vote",
  "solana-vote-interface",
  "solana-vote-program",
- "spl-generic-token",
  "solana-votor-messages",
+ "spl-generic-token",
  "static_assertions",
  "strum",
  "strum_macros",
@@ -8198,7 +8217,7 @@ dependencies = [
  "solana-instruction",
  "solana-keypair",
  "solana-ledger",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-log-collector",
  "solana-logger",
@@ -9107,8 +9126,10 @@ checksum = "64c8ec8e657aecfc187522fc67495142c12f35e55ddeca8698edbb738b8dbd8c"
 dependencies = [
  "ed25519-dalek",
  "five8",
- "rand 0.8.5",
+ "serde",
+ "serde-big-array",
  "serde_derive",
+ "solana-sanitize",
 ]
 
 [[package]]
@@ -9336,7 +9357,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction",
  "solana-instructions-sysvar",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-loader-v4-interface",
  "solana-loader-v4-program",
  "solana-log-collector",
@@ -9537,7 +9558,7 @@ dependencies = [
  "solana-instruction",
  "solana-keypair",
  "solana-ledger",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-logger",
  "solana-message",
  "solana-native-token",
@@ -9755,7 +9776,7 @@ dependencies = [
  "solana-hash",
  "solana-instruction",
  "solana-loader-v2-interface",
- "solana-loader-v3-interface 5.0.0",
+ "solana-loader-v3-interface",
  "solana-message",
  "solana-program-option",
  "solana-pubkey",
@@ -9968,6 +9989,7 @@ dependencies = [
  "solana-signature",
  "solana-signer",
  "solana-svm-transaction",
+ "solana-system-interface",
  "solana-transaction",
  "solana-vote-interface",
  "solana-votor-messages",
@@ -10033,7 +10055,7 @@ dependencies = [
 
 [[package]]
 name = "solana-votor"
-version = "2.3.0"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -10052,8 +10074,12 @@ dependencies = [
  "solana-accounts-db",
  "solana-bloom",
  "solana-bls-signatures",
+ "solana-clock",
  "solana-entry",
+ "solana-epoch-schedule",
  "solana-gossip",
+ "solana-hash",
+ "solana-keypair",
  "solana-ledger",
  "solana-logger",
  "solana-measure",
@@ -10061,7 +10087,10 @@ dependencies = [
  "solana-pubkey",
  "solana-rpc",
  "solana-runtime",
- "solana-sdk",
+ "solana-signature",
+ "solana-signer",
+ "solana-time-utils",
+ "solana-transaction",
  "solana-vote",
  "solana-vote-program",
  "solana-votor-messages",
@@ -10070,7 +10099,7 @@ dependencies = [
 
 [[package]]
 name = "solana-votor-messages"
-version = "2.3.0"
+version = "3.0.0"
 dependencies = [
  "bitvec",
  "bytemuck",
@@ -10078,10 +10107,10 @@ dependencies = [
  "serde",
  "solana-account",
  "solana-bls-signatures",
+ "solana-clock",
  "solana-hash",
  "solana-logger",
  "solana-program",
- "solana-sdk",
  "solana-vote-interface",
  "spl-pod",
 ]
@@ -11229,7 +11258,7 @@ version = "0.22.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3328d4f68a705b2a4498da1d580585d39a6510f98318a2cec3018a7ec61ddef"
 dependencies = [
- "indexmap 2.8.0",
+ "indexmap 2.10.0",
  "serde",
  "serde_spanned",
  "toml_datetime",

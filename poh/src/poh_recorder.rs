@@ -11,12 +11,11 @@
 //! * recorded entry must be >= WorkingBank::min_tick_height && entry must be < WorkingBank::max_tick_height
 //!
 #[cfg(feature = "dev-context-only-utils")]
-use qualifier_attr::qualifiers;
 use {
-    crate::{
-        leader_bank_notifier::LeaderBankNotifier, poh_service::PohService,
-        transaction_recorder::TransactionRecorder,
-    },
+    crate::transaction_recorder::TransactionRecorder, qualifier_attr::qualifiers, std::sync::RwLock,
+};
+use {
+    crate::{leader_bank_notifier::LeaderBankNotifier, poh_service::PohService},
     crossbeam_channel::{unbounded, Receiver, SendError, Sender, TrySendError},
     log::*,
     solana_clock::{Slot, NUM_CONSECUTIVE_LEADER_SLOTS},
@@ -33,7 +32,7 @@ use {
     solana_transaction::versioned::VersionedTransaction,
     std::{
         cmp,
-        sync::{atomic::AtomicBool, Arc, Mutex, RwLock},
+        sync::{atomic::AtomicBool, Arc, Mutex},
         time::Instant,
     },
     thiserror::Error,
@@ -323,7 +322,7 @@ impl PohRecorder {
 
     // Returns the index of `transactions.first()` in the slot, if being tracked by WorkingBank
     #[cfg_attr(feature = "dev-context-only-utils", qualifiers(pub))]
-    pub(crate) fn record(
+    pub fn record(
         &mut self,
         bank_slot: Slot,
         mixins: Vec<Hash>,

@@ -4,7 +4,7 @@ use {
         SAFE_TO_NOTAR_MIN_NOTARIZE_AND_SKIP, SAFE_TO_NOTAR_MIN_NOTARIZE_FOR_NOTARIZE_OR_SKIP,
         SAFE_TO_NOTAR_MIN_NOTARIZE_ONLY, SAFE_TO_SKIP_THRESHOLD,
     },
-    solana_sdk::hash::Hash,
+    solana_hash::Hash,
     solana_votor_messages::vote::Vote,
     std::collections::BTreeMap,
 };

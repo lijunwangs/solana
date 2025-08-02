@@ -15,11 +15,11 @@ bytemuck_derive = { workspace = true }
 solana-curve-traits = { workspace = true }
 thiserror = { workspace = true }
 
-[target.'cfg(target_os = "solana")'.dependencies]
-solana-define-syscall = { workspace = true }
-
 [target.'cfg(not(target_os = "solana"))'.dependencies]
 blst = { workspace = true }
+
+[target.'cfg(target_os = "solana")'.dependencies]
+solana-define-syscall = { workspace = true }
 
 [lints]
 workspace = true
