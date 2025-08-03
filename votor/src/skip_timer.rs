@@ -4,7 +4,7 @@
 use {
     crate::{
         event::{VotorEvent, VotorEventSender},
-        skip_timeout, BLOCKTIME,
+        skip_timeout, DELTA_BLOCK,
     },
     solana_clock::Slot,
     solana_ledger::leader_schedule_utils::{
@@ -95,7 +95,7 @@ impl SkipTimerManager {
         let timer = SkipTimer {
             id,
             next_fire,
-            interval: BLOCKTIME,
+            interval: DELTA_BLOCK,
             remaining,
             start_slot,
         };
