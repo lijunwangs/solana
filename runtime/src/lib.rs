@@ -11,7 +11,6 @@ pub mod bank_utils;
 pub mod commitment;
 pub mod dependency_tracker;
 pub mod epoch_stakes;
-pub mod epoch_stakes_service;
 pub mod genesis_utils;
 pub mod inflation_rewards;
 pub mod installed_scheduler_pool;

@@ -9,7 +9,6 @@ use {
         },
         snapshot_controller::SnapshotController,
     },
-    crossbeam_channel::{SendError, Sender},
     log::*,
     solana_clock::{BankId, Slot},
     solana_hash::Hash,
@@ -74,8 +73,6 @@ pub struct BankForks {
     highest_slot_at_startup: Slot,
     scheduler_pool: Option<InstalledSchedulerPoolArc>,
     dumped_slot_subscribers: Vec<DumpedSlotSubscription>,
-    /// Tracks subscribers interested in hearing about new `Bank`s.
-    new_bank_subscribers: Vec<Sender<Arc<Bank>>>,
 }
 
 impl Index<u64> for BankForks {
@@ -124,7 +121,6 @@ impl BankForks {
             highest_slot_at_startup: 0,
             scheduler_pool: None,
             dumped_slot_subscribers: vec![],
-            new_bank_subscribers: vec![],
         }));
 
         root_bank.set_fork_graph_in_program_cache(Arc::downgrade(&bank_forks));
@@ -323,24 +319,6 @@ impl BankForks {
         self.dumped_slot_subscribers.push(notifier);
     }
 
-    /// Register a new subscriber interested in hearing about new `Bank`s.
-    pub fn register_new_bank_subscriber(&mut self, tx: Sender<Arc<Bank>>) {
-        self.new_bank_subscribers.push(tx);
-    }
-
-    /// Call to notify subscribers of new `Bank`s.
-    fn notify_new_bank_subscribers(&mut self, root_bank: &Arc<Bank>) {
-        let mut channels_to_drop = vec![];
-        for (ind, tx) in self.new_bank_subscribers.iter().enumerate() {
-            if let Err(SendError(_)) = tx.send(root_bank.clone()) {
-                channels_to_drop.push(ind);
-            }
-        }
-        for ind in channels_to_drop {
-            self.new_bank_subscribers.remove(ind);
-        }
-    }
-
     /// Clears associated banks from BankForks and notifies subscribers that a dump has occured.
     pub fn dump_slots<'a, I>(&mut self, slots: I) -> (Vec<(Slot, BankId)>, Vec<BankWithScheduler>)
     where
@@ -403,7 +381,6 @@ impl BankForks {
                 "Clearing epoch rewards cache for epoch {old_epoch} after setting root to slot {root}"
             );
             root_bank.clear_epoch_rewards_cache();
-            self.notify_new_bank_subscribers(root_bank);
         }
         let root_tx_count = root_bank
             .parents()
