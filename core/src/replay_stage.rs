@@ -4349,7 +4349,7 @@ impl ReplayStage {
         highest_super_majority_root: Option<Slot>,
         bank_notification_sender: &Option<BankNotificationSenderConfig>,
         has_new_vote_been_rooted: &mut bool,
-        _tracked_vote_transactions: &mut [TrackedVoteTransaction],
+        tracked_vote_transactions: &mut Vec<TrackedVoteTransaction>,
         drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
         tbft_structs: &mut TowerBFTStructures,
     ) -> Result<(), SetRootError> {
@@ -4365,9 +4365,15 @@ impl ReplayStage {
             bank_forks,
             rpc_subscriptions,
             my_pubkey,
-            has_new_vote_been_rooted,
             move |bank_forks| {
-                Self::set_progress_and_tower_bft_root(new_root, bank_forks, progress, tbft_structs)
+                Self::set_progress_and_tower_bft_root(
+                    new_root,
+                    bank_forks,
+                    progress,
+                    has_new_vote_been_rooted,
+                    tracked_vote_transactions,
+                    tbft_structs,
+                )
             },
         )
     }
@@ -4378,8 +4384,30 @@ impl ReplayStage {
         new_root: Slot,
         bank_forks: &BankForks,
         progress: &mut ProgressMap,
+        has_new_vote_been_rooted: &mut bool,
+        tracked_vote_transactions: &mut Vec<TrackedVoteTransaction>,
         tbft_structs: &mut TowerBFTStructures,
     ) {
+        let new_root_bank = &bank_forks[new_root];
+        if !*has_new_vote_been_rooted {
+            for TrackedVoteTransaction {
+                message_hash,
+                transaction_blockhash,
+            } in tracked_vote_transactions.iter()
+            {
+                if new_root_bank
+                    .get_committed_transaction_status_and_slot(message_hash, transaction_blockhash)
+                    .is_some()
+                {
+                    *has_new_vote_been_rooted = true;
+                    break;
+                }
+            }
+            if *has_new_vote_been_rooted {
+                std::mem::take(tracked_vote_transactions);
+            }
+        }
+
         progress.handle_new_root(bank_forks);
         let TowerBFTStructures {
             heaviest_subtree_fork_choice,
@@ -4419,10 +4447,16 @@ impl ReplayStage {
             bank_forks,
             snapshot_controller,
             highest_super_majority_root,
-            has_new_vote_been_rooted,
             drop_bank_sender,
             move |bank_forks| {
-                Self::set_progress_and_tower_bft_root(new_root, bank_forks, progress, tbft_structs)
+                Self::set_progress_and_tower_bft_root(
+                    new_root,
+                    bank_forks,
+                    progress,
+                    has_new_vote_been_rooted,
+                    &mut vec![],
+                    tbft_structs,
+                )
             },
         )?;
         Ok(())

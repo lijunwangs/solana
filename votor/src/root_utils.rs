@@ -59,7 +59,6 @@ pub(crate) fn set_root(
         &ctx.bank_forks,
         ctx.rpc_subscriptions.as_deref(),
         my_pubkey,
-        &mut false,
         |_| {},
     )?;
 
@@ -114,7 +113,6 @@ pub fn check_and_handle_new_root<CB>(
     bank_forks: &RwLock<BankForks>,
     rpc_subscriptions: Option<&RpcSubscriptions>,
     my_pubkey: &Pubkey,
-    has_new_vote_been_rooted: &mut bool,
     callback: CB,
 ) -> Result<(), SetRootError>
 where
@@ -153,7 +151,6 @@ where
         bank_forks,
         snapshot_controller,
         highest_super_majority_root,
-        has_new_vote_been_rooted,
         drop_bank_sender,
         callback,
     )?;
@@ -195,7 +192,6 @@ pub fn set_bank_forks_root<CB>(
     bank_forks: &RwLock<BankForks>,
     snapshot_controller: Option<&SnapshotController>,
     highest_super_majority_root: Option<Slot>,
-    _has_new_vote_been_rooted: &mut bool,
     drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
     callback: CB,
 ) -> Result<(), SetRootError>
