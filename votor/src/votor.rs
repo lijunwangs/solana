@@ -47,12 +47,13 @@ use {
         event::{LeaderWindowInfo, VotorEventReceiver, VotorEventSender},
         event_handler::{EventHandler, EventHandlerContext},
         root_utils::RootContext,
-        skip_timer::SkipTimerService,
+        timer_manager::TimerManager,
         vote_history::VoteHistory,
         vote_history_storage::VoteHistoryStorage,
         voting_utils::{BLSOp, VotingContext},
     },
     crossbeam_channel::Sender,
+    parking_lot::RwLock as PlRwLock,
     solana_clock::Slot,
     solana_gossip::cluster_info::ClusterInfo,
     solana_keypair::Keypair,
@@ -141,7 +142,7 @@ pub struct Votor {
 
     event_handler: EventHandler,
     certificate_pool_service: CertificatePoolService,
-    skip_timer_service: SkipTimerService,
+    timer_manager: Arc<PlRwLock<TimerManager>>,
 }
 
 impl Votor {
@@ -208,14 +209,16 @@ impl Votor {
             drop_bank_sender,
         };
 
-        let (skip_timer_service, skip_timer) =
-            SkipTimerService::new(exit.clone(), 100, event_sender.clone());
+        let timer_manager = Arc::new(PlRwLock::new(TimerManager::new(
+            event_sender.clone(),
+            exit.clone(),
+        )));
 
         let event_handler_context = EventHandlerContext {
             exit: exit.clone(),
             start: start.clone(),
             event_receiver,
-            skip_timer,
+            timer_manager: Arc::clone(&timer_manager),
             shared_context,
             voting_context,
             root_context,
@@ -243,7 +246,7 @@ impl Votor {
             start,
             event_handler,
             certificate_pool_service,
-            skip_timer_service,
+            timer_manager,
         }
     }
 
@@ -271,7 +274,21 @@ impl Votor {
 
     pub fn join(self) -> thread::Result<()> {
         self.certificate_pool_service.join()?;
-        self.skip_timer_service.join()?;
+
+        // Loop till we manage to unwrap the Arc and then we can join.
+        let mut timer_manager = self.timer_manager;
+        loop {
+            match Arc::try_unwrap(timer_manager) {
+                Ok(manager) => {
+                    manager.into_inner().join();
+                    break;
+                }
+                Err(m) => {
+                    timer_manager = m;
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
         self.event_handler.join()
     }
 }
