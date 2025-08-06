@@ -214,7 +214,12 @@ As for transaction notifications via the notify_transaction callback and the
 SlotStatus::Processed, even though SlotStatus::Processed is sent logically
 after the transaction events, because there are intermediate threads emitting
 the notitications to the plugin, the plugin can see the transaction
-notifications and the SlotStatus::Processed for a slot in either order.
+notifications and the SlotStatus::Processed for a slot in either order. This
+issue has been addressed in Agave 3.0.
+
+Within a block, transactions are ordered with transaction index. Transactions
+within a block are processed and notified in parallel. A plugin should use the
+transaction index to determine their relative order.
 
 A plugin can use the notify_block_metadata to know the
 executed_transaction_count for a given slot in the following structure:
