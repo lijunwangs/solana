@@ -172,7 +172,9 @@ For more details, please refer to the Rust documentation in
 
 Account update via update_account: As mentioned previously when is_startup is
 false, the account is updated during transaction processing. The account update
-has information about the transaction causing the update in the txn field.
+has information about the transaction causing the update in the `txn` field.
+Note, when account update is sent during start up, the txn field is None as
+there is no transaction.
 
 ```
 pub struct ReplicaAccountInfoV3<'a> {
@@ -210,12 +212,12 @@ The updates are sent serially for different accounts via update_slot_status
 in the transaction for a slot. After the accounts notifications are sent, the
 SlotStatus::Processed event is sent.
 
-As for transaction notifications via the notify_transaction callback and the
-SlotStatus::Processed, even though SlotStatus::Processed is sent logically
-after the transaction events, because there are intermediate threads emitting
-the notitications to the plugin, the plugin can see the transaction
-notifications and the SlotStatus::Processed for a slot in either order. This
-issue has been addressed in Agave 3.0.
+Starting with Agave 3.0, transaction notifications are sent before
+SlotStatus::Processed. In prior Agave version, even though SlotStatus::Processed
+is sent logically after the transaction events, because there are intermediate
+threads emitting the notitications to the plugin, the plugin can see the
+transaction notifications and the SlotStatus::Processed for a slot in either
+order.
 
 Within a block, transactions are ordered with transaction index. Transactions
 within a block are processed and notified in parallel. A plugin should use the
