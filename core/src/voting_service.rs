@@ -505,6 +505,15 @@ impl VotingService {
                         let tower_storage = tower_storage.clone();
                         move || {
                             for vote_op in vote_receiver.iter() {
+                                // Figure out if we are casting a vote for a new slot, and what slot it is for
+                                let vote_slot = match vote_op {
+                                    VoteOp::PushVote {
+                                        tx: _,
+                                        ref tower_slots,
+                                        ..
+                                    } => tower_slots.iter().copied().last(),
+                                    _ => None,
+                                };
                                 Self::handle_vote(
                                     &cluster_info,
                                     &poh_recorder,
