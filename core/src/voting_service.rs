@@ -355,7 +355,6 @@ impl VoteClient for TpuClientNextClient {
         });
     }
 
-    #[cfg(any(test, feature = "dev-context-only-utils"))]
     fn protocol(&self) -> Protocol {
         Protocol::QUIC
     }
