@@ -4307,8 +4307,8 @@ pub(crate) mod tests {
                 ThresholdDecision, Tower, VOTE_THRESHOLD_DEPTH,
             },
             replay_stage::ReplayStage,
+            vote_client::{ClusterTpuInfo, ConnectionCacheClient},
             vote_simulator::{self, VoteSimulator},
-            voting_service::{ClusterTpuInfo, ConnectionCacheClient},
         },
         blockstore_processor::{
             confirm_full_slot, fill_blockstore_slot_with_ticks, process_bank_0, ProcessOptions,
