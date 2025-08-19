@@ -1,4 +1,5 @@
 use {
+    crate::next_leader::upcoming_leader_tpu_vote_sockets,
     async_trait::async_trait,
     solana_client::connection_cache::ConnectionCache,
     solana_clock::NUM_CONSECUTIVE_LEADER_SLOTS,
@@ -54,19 +55,17 @@ where
     async fn stop(&mut self) {}
 }
 
-/// A trait to abstract out the leader estimation for the
-/// SendTransactionService.
+/// A trait to abstract out the leader estimation for the vote
 pub trait TpuInfo {
     fn refresh_recent_peers(&mut self);
 
-    /// Takes `max_count` which specifies how many leaders per
-    /// `NUM_CONSECUTIVE_LEADER_SLOTS` we want to receive and returns *unique*
+    /// Takes `fanout_slots` which specifies how many leaders
     /// TPU socket addresses for these leaders.
     ///
     /// For example, if leader schedule was `[L1, L1, L1, L1, L2, L2, L2, L2,
     /// L1, ...]` it will return `[L1, L2]` (the last L1 will be not added to
     /// the result).
-    fn get_leader_tpus(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr>;
+    fn get_leader_tpus(&self, fanout_slots: u64, protocol: Protocol) -> Vec<SocketAddr>;
 
     /// Takes `max_count` which specifies how many leaders per
     /// `NUM_CONSECUTIVE_LEADER_SLOTS` we want to receive and returns TPU socket
@@ -141,7 +140,7 @@ pub struct ConnectionCacheClient<T: TpuInfoWithSendStatic> {
     connection_cache: Arc<ConnectionCache>,
     tpu_address: SocketAddr,
     leader_info_provider: Arc<Mutex<CurrentLeaderInfo<T>>>,
-    leader_forward_count: u64,
+    leader_fanout_slots: u64,
 }
 
 // Manual implementation of Clone without requiring T to be Clone
@@ -154,7 +153,7 @@ where
             connection_cache: Arc::clone(&self.connection_cache),
             tpu_address: self.tpu_address,
             leader_info_provider: Arc::clone(&self.leader_info_provider),
-            leader_forward_count: self.leader_forward_count,
+            leader_fanout_slots: self.leader_fanout_slots,
         }
     }
 }
@@ -167,25 +166,25 @@ where
         connection_cache: Arc<ConnectionCache>,
         tpu_address: SocketAddr,
         leader_info: Option<T>,
-        leader_forward_count: u64,
+        leader_fanout_slots: u64,
     ) -> Self {
         let leader_info_provider = Arc::new(Mutex::new(CurrentLeaderInfo::new(leader_info)));
         Self {
             connection_cache,
             tpu_address,
             leader_info_provider,
-            leader_forward_count,
+            leader_fanout_slots,
         }
     }
 
-    fn get_tpu_addresses<'a>(&'a self, leader_info: Option<&'a T>) -> Vec<&'a SocketAddr> {
+    fn get_tpu_addresses<'a>(&'a self, leader_info: Option<&'a T>) -> Vec<SocketAddr> {
         leader_info
             .map(|leader_info| {
                 leader_info
-                    .get_leader_tpus(self.leader_forward_count, self.connection_cache.protocol())
+                    .get_leader_tpus(self.leader_fanout_slots, self.connection_cache.protocol())
             })
             .filter(|addresses| !addresses.is_empty())
-            .unwrap_or_else(|| vec![&self.tpu_address])
+            .unwrap_or_else(|| vec![self.tpu_address.clone()])
     }
 
     fn send_transactions(&self, peer: &SocketAddr, wire_transactions: Vec<Vec<u8>>) {
@@ -236,6 +235,7 @@ impl TpuClientNextClient {
         leader_info: Option<T>,
         stake_identity: Option<&Keypair>,
         bind_socket: UdpSocket,
+        leader_fanout_slots: u64,
         cancel: CancellationToken,
     ) -> Self
     where
@@ -251,7 +251,7 @@ impl TpuClientNextClient {
                 my_tpu_address,
             };
 
-        let config = Self::create_config(bind_socket, stake_identity);
+        let config = Self::create_config(bind_socket, stake_identity, leader_fanout_slots);
         let (update_certificate_sender, update_certificate_receiver) = watch::channel(None);
         let scheduler: ConnectionWorkersScheduler = ConnectionWorkersScheduler::new(
             Box::new(leader_updater),
@@ -276,6 +276,7 @@ impl TpuClientNextClient {
     fn create_config(
         bind_socket: UdpSocket,
         stake_identity: Option<&Keypair>,
+        leader_fanout_slots: u64,
     ) -> ConnectionWorkersSchedulerConfig {
         ConnectionWorkersSchedulerConfig {
             bind: BindTarget::Socket(bind_socket),
@@ -286,10 +287,10 @@ impl TpuClientNextClient {
             skip_check_transaction_age: true,
             worker_channel_size: 2,
             max_reconnect_attempts: 4,
-            // Send to the next leader only, but verify that connections exist
+            // Verify that connections exist
             // for the leaders of the next `4 * NUM_CONSECUTIVE_SLOTS`.
             leaders_fanout: Fanout {
-                send: 1,
+                send: leader_fanout_slots as usize,
                 connect: 4,
             },
         }
@@ -359,24 +360,13 @@ impl TpuInfo for ClusterTpuInfo {
             .collect();
     }
 
-    fn get_leader_tpus(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr> {
-        let recorder = self.poh_recorder.read().unwrap();
-        let leaders: Vec<_> = (0..max_count)
-            .filter_map(|i| recorder.leader_after_n_slots(i * NUM_CONSECUTIVE_LEADER_SLOTS))
-            .collect();
-        drop(recorder);
-        let mut unique_leaders = vec![];
-        for leader in leaders.iter() {
-            if let Some(addr) = self.recent_peers.get(leader).map(|addr| match protocol {
-                Protocol::UDP => &addr.0,
-                Protocol::QUIC => &addr.1,
-            }) {
-                if !unique_leaders.contains(&addr) {
-                    unique_leaders.push(addr);
-                }
-            }
-        }
-        unique_leaders
+    fn get_leader_tpus(&self, fanout_slots: u64, protocol: Protocol) -> Vec<SocketAddr> {
+        upcoming_leader_tpu_vote_sockets(
+            &self.cluster_info,
+            &self.poh_recorder,
+            fanout_slots,
+            protocol,
+        )
     }
 
     fn get_not_unique_leader_tpus(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr> {

@@ -2,7 +2,6 @@ use {
     crate::{
         consensus::tower_storage::{SavedTowerVersions, TowerStorage},
         mock_alpenglow_consensus::MockAlpenglowConsensus,
-        next_leader::upcoming_leader_tpu_vote_sockets,
         tvu::VoteClientOption,
         vote_client::{ClusterTpuInfo, ConnectionCacheClient, TpuClientNextClient, VoteClient},
     },
@@ -76,6 +75,14 @@ impl VotingService {
         alpenglow_socket: Option<UdpSocket>,
         bank_forks: Arc<RwLock<BankForks>>,
     ) -> Self {
+        // Attempt to send our vote transaction to the leaders for the next few
+        // slots. From the current slot to the forwarding slot offset
+        // (inclusive).
+        const UPCOMING_LEADER_FANOUT_SLOTS: u64 =
+            FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET.saturating_add(1);
+        #[cfg(test)]
+        static_assertions::const_assert_eq!(UPCOMING_LEADER_FANOUT_SLOTS, 3);
+
         // Pattern match and construct the concrete vote client type
         match vote_client {
             VoteClientOption::ConnectionCache(connection_cache) => {
@@ -92,7 +99,7 @@ impl VotingService {
                     connection_cache,
                     my_tpu_address,
                     leader_info,
-                    1, // Forward to the next leader only
+                    UPCOMING_LEADER_FANOUT_SLOTS,
                 );
 
                 let thread_hdl = Builder::new()
@@ -106,7 +113,6 @@ impl VotingService {
                             )
                         });
                         let cluster_info = cluster_info.clone();
-                        let poh_recorder = poh_recorder.clone();
                         let tower_storage = tower_storage.clone();
                         move || {
                             for vote_op in vote_receiver.iter() {
@@ -121,7 +127,6 @@ impl VotingService {
                                 };
                                 Self::handle_vote(
                                     &cluster_info,
-                                    &poh_recorder,
                                     tower_storage.as_ref(),
                                     vote_op,
                                     &vote_client,
@@ -163,6 +168,7 @@ impl VotingService {
                     leader_info,
                     Some(identity_keypair),
                     vote_client_socket,
+                    UPCOMING_LEADER_FANOUT_SLOTS,
                     cancel,
                 );
 
@@ -178,7 +184,6 @@ impl VotingService {
                         });
                         {
                             let cluster_info = cluster_info.clone();
-                            let poh_recorder = poh_recorder.clone();
                             let tower_storage = tower_storage.clone();
                             move || {
                                 for vote_op in vote_receiver.iter() {
@@ -194,7 +199,6 @@ impl VotingService {
                                     // perform all the normal vote handling routines
                                     Self::handle_vote(
                                         &cluster_info,
-                                        &poh_recorder,
                                         tower_storage.as_ref(),
                                         vote_op,
                                         &vote_client,
@@ -223,7 +227,6 @@ impl VotingService {
     // Generic version of handle_vote
     pub fn handle_vote<V: VoteClient + Send + Sync>(
         cluster_info: &ClusterInfo,
-        poh_recorder: &RwLock<PohRecorder>,
         tower_storage: &dyn TowerStorage,
         vote_op: VoteOp,
         vote_client: &V,
@@ -237,20 +240,6 @@ impl VotingService {
             measure.stop();
             trace!("{measure}");
         }
-
-        // Attempt to send our vote transaction to the leaders for the next few
-        // slots. From the current slot to the forwarding slot offset
-        // (inclusive).
-        const UPCOMING_LEADER_FANOUT_SLOTS: u64 =
-            FORWARD_TRANSACTIONS_TO_LEADER_AT_SLOT_OFFSET.saturating_add(1);
-        #[cfg(test)]
-        static_assertions::const_assert_eq!(UPCOMING_LEADER_FANOUT_SLOTS, 3);
-        let _upcoming_leader_sockets = upcoming_leader_tpu_vote_sockets(
-            cluster_info,
-            poh_recorder,
-            UPCOMING_LEADER_FANOUT_SLOTS,
-            vote_client.protocol(),
-        );
 
         let _ = send_vote_transaction(vote_op.tx(), vote_client);
 

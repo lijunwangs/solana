@@ -7690,7 +7690,6 @@ pub(crate) mod tests {
 
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
-            &poh_recorder,
             &tower_storage,
             vote_info,
             &vote_client,
@@ -7786,7 +7785,6 @@ pub(crate) mod tests {
 
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
-            &poh_recorder,
             &tower_storage,
             vote_info,
             &vote_client,
@@ -7905,7 +7903,6 @@ pub(crate) mod tests {
 
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
-            &poh_recorder,
             &tower_storage,
             vote_info,
             &vote_client,
@@ -8038,7 +8035,6 @@ pub(crate) mod tests {
 
         crate::voting_service::VotingService::handle_vote(
             &cluster_info,
-            &poh_recorder,
             tower_storage,
             vote_info,
             &vote_client,
