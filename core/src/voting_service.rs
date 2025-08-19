@@ -252,7 +252,6 @@ where
         }
     }
 
-    #[cfg(any(test, feature = "dev-context-only-utils"))]
     fn protocol(&self) -> Protocol {
         self.connection_cache.protocol()
     }
