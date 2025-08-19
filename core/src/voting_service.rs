@@ -121,7 +121,6 @@ impl<T> TpuInfoWithSendStatic for T where T: TpuInfo + std::marker::Send + 'stat
 pub trait VoteClient {
     fn send_transactions_in_batch(&self, wire_transactions: Vec<Vec<u8>>);
 
-    #[cfg(any(test, feature = "dev-context-only-utils"))]
     fn protocol(&self) -> Protocol;
 }
 
