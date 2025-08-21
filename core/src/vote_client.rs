@@ -29,56 +29,56 @@ use {
 };
 
 #[derive(Clone)]
-pub struct SendTransactionServiceLeaderUpdater<T: TpuInfoWithSendStatic> {
+pub struct VoteClientLeaderUpdater<T: TpuVoteInfoWithSendStatic> {
     leader_info_provider: CurrentLeaderInfo<T>,
-    my_tpu_address: SocketAddr,
+    my_tpu_vote_address: SocketAddr,
 }
 
 #[async_trait]
-impl<T> LeaderUpdater for SendTransactionServiceLeaderUpdater<T>
+impl<T> LeaderUpdater for VoteClientLeaderUpdater<T>
 where
-    T: TpuInfoWithSendStatic,
+    T: TpuVoteInfoWithSendStatic,
 {
     fn next_leaders(&mut self, lookahead_leaders: usize) -> Vec<SocketAddr> {
         self.leader_info_provider
             .get_leader_info()
             .map(|leader_info| {
                 leader_info
-                    .get_not_unique_leader_tpus(lookahead_leaders as u64, Protocol::QUIC)
+                    .get_not_unique_leader_tpu_votes(lookahead_leaders as u64, Protocol::QUIC)
                     .into_iter()
                     .cloned()
                     .collect::<Vec<SocketAddr>>()
             })
             .filter(|addresses| !addresses.is_empty())
-            .unwrap_or_else(|| vec![self.my_tpu_address])
+            .unwrap_or_else(|| vec![self.my_tpu_vote_address])
     }
     async fn stop(&mut self) {}
 }
 
 /// A trait to abstract out the leader estimation for the vote
-pub trait TpuInfo {
+pub trait TpuVoteInfo {
     fn refresh_recent_peers(&mut self);
 
     /// Takes `fanout_slots` which specifies how many leaders
-    /// TPU socket addresses for these leaders.
+    /// TPU vote socket addresses for these leaders.
     ///
     /// For example, if leader schedule was `[L1, L1, L1, L1, L2, L2, L2, L2,
     /// L1, ...]` it will return `[L1, L2]` (the last L1 will be not added to
     /// the result).
-    fn get_leader_tpus(&self, fanout_slots: u64, protocol: Protocol) -> Vec<SocketAddr>;
+    fn get_leader_tpu_votes(&self, fanout_slots: u64, protocol: Protocol) -> Vec<SocketAddr>;
 
     /// Takes `max_count` which specifies how many leaders per
-    /// `NUM_CONSECUTIVE_LEADER_SLOTS` we want to receive and returns TPU socket
+    /// `NUM_CONSECUTIVE_LEADER_SLOTS` we want to receive and returns TPU vote socket
     /// addresses for these leaders.
     ///
     /// For example, if leader schedule was `[L1, L1, L1, L1, L2, L2, L2, L2,
     /// L1, ...]` it will return `[L1, L2, L1]`.
-    fn get_not_unique_leader_tpus(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr>;
+    fn get_not_unique_leader_tpu_votes(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr>;
 }
 
 // Alias trait to shorten function definitions.
-pub trait TpuInfoWithSendStatic: TpuInfo + std::marker::Send + 'static {}
-impl<T> TpuInfoWithSendStatic for T where T: TpuInfo + std::marker::Send + 'static {}
+pub trait TpuVoteInfoWithSendStatic: TpuVoteInfo + std::marker::Send + 'static {}
+impl<T> TpuVoteInfoWithSendStatic for T where T: TpuVoteInfo + std::marker::Send + 'static {}
 
 pub trait VoteClient {
     fn send_transactions_in_batch(&self, wire_transactions: Vec<Vec<u8>>);
@@ -94,7 +94,7 @@ pub const LEADER_INFO_REFRESH_RATE_MS: u64 = 1000;
 #[derive(Clone)]
 pub struct CurrentLeaderInfo<T>
 where
-    T: TpuInfoWithSendStatic,
+    T: TpuVoteInfoWithSendStatic,
 {
     /// The last time the leader info was refreshed
     last_leader_refresh: Option<Instant>,
@@ -108,7 +108,7 @@ where
 
 impl<T> CurrentLeaderInfo<T>
 where
-    T: TpuInfoWithSendStatic,
+    T: TpuVoteInfoWithSendStatic,
 {
     /// Get the leader info, refresh if expired
     pub fn get_leader_info(&mut self) -> Option<&T> {
@@ -136,7 +136,7 @@ where
     }
 }
 
-pub struct ConnectionCacheClient<T: TpuInfoWithSendStatic> {
+pub struct ConnectionCacheClient<T: TpuVoteInfoWithSendStatic> {
     connection_cache: Arc<ConnectionCache>,
     tpu_address: SocketAddr,
     leader_info_provider: Arc<Mutex<CurrentLeaderInfo<T>>>,
@@ -146,7 +146,7 @@ pub struct ConnectionCacheClient<T: TpuInfoWithSendStatic> {
 // Manual implementation of Clone without requiring T to be Clone
 impl<T> Clone for ConnectionCacheClient<T>
 where
-    T: TpuInfoWithSendStatic,
+    T: TpuVoteInfoWithSendStatic,
 {
     fn clone(&self) -> Self {
         Self {
@@ -160,7 +160,7 @@ where
 
 impl<T> ConnectionCacheClient<T>
 where
-    T: TpuInfoWithSendStatic,
+    T: TpuVoteInfoWithSendStatic,
 {
     pub fn new(
         connection_cache: Arc<ConnectionCache>,
@@ -181,7 +181,7 @@ where
         leader_info
             .map(|leader_info| {
                 leader_info
-                    .get_leader_tpus(self.leader_fanout_slots, self.connection_cache.protocol())
+                    .get_leader_tpu_votes(self.leader_fanout_slots, self.connection_cache.protocol())
             })
             .filter(|addresses| !addresses.is_empty())
             .unwrap_or_else(|| vec![self.tpu_address.clone()])
@@ -202,7 +202,7 @@ where
 
 impl<T> VoteClient for ConnectionCacheClient<T>
 where
-    T: TpuInfoWithSendStatic,
+    T: TpuVoteInfoWithSendStatic,
 {
     fn send_transactions_in_batch(&self, wire_transactions: Vec<Vec<u8>>) {
         let mut leader_info_provider = self.leader_info_provider.lock().unwrap();
@@ -220,7 +220,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct TpuClientNextClient {
+pub struct TpuClientNextVoteClient {
     runtime_handle: tokio::runtime::Handle,
     sender: mpsc::Sender<TransactionBatch>,
     update_certificate_sender: watch::Sender<Option<StakeIdentity>>,
@@ -228,7 +228,7 @@ pub struct TpuClientNextClient {
 
 const METRICS_REPORTING_INTERVAL: Duration = Duration::from_secs(5);
 
-impl TpuClientNextClient {
+impl TpuClientNextVoteClient {
     pub fn new<T>(
         runtime_handle: tokio::runtime::Handle,
         my_tpu_address: SocketAddr,
@@ -239,16 +239,16 @@ impl TpuClientNextClient {
         cancel: CancellationToken,
     ) -> Self
     where
-        T: TpuInfoWithSendStatic + Clone,
+        T: TpuVoteInfoWithSendStatic + Clone,
     {
         // For now use large channel, the more suitable size to be found later.
         let (sender, receiver) = mpsc::channel(128);
         let leader_info_provider = CurrentLeaderInfo::new(leader_info);
 
-        let leader_updater: SendTransactionServiceLeaderUpdater<T> =
-            SendTransactionServiceLeaderUpdater {
+        let leader_updater: VoteClientLeaderUpdater<T> =
+            VoteClientLeaderUpdater {
                 leader_info_provider,
-                my_tpu_address,
+                my_tpu_vote_address: my_tpu_address,
             };
 
         let config = Self::create_config(bind_socket, stake_identity, leader_fanout_slots);
@@ -287,8 +287,6 @@ impl TpuClientNextClient {
             skip_check_transaction_age: true,
             worker_channel_size: 2,
             max_reconnect_attempts: 4,
-            // Verify that connections exist
-            // for the leaders of the next `4 * NUM_CONSECUTIVE_SLOTS`.
             leaders_fanout: Fanout {
                 send: leader_fanout_slots as usize,
                 connect: 4,
@@ -297,7 +295,7 @@ impl TpuClientNextClient {
     }
 }
 
-impl NotifyKeyUpdate for TpuClientNextClient {
+impl NotifyKeyUpdate for TpuClientNextVoteClient {
     fn update_key(&self, identity: &Keypair) -> Result<(), Box<dyn std::error::Error>> {
         let stake_identity = StakeIdentity::new(identity);
         self.update_certificate_sender
@@ -306,7 +304,7 @@ impl NotifyKeyUpdate for TpuClientNextClient {
     }
 }
 
-impl VoteClient for TpuClientNextClient {
+impl VoteClient for TpuClientNextVoteClient {
     fn send_transactions_in_batch(&self, wire_transactions: Vec<Vec<u8>>) {
         self.runtime_handle.spawn({
             let sender = self.sender.clone();
@@ -341,7 +339,7 @@ impl ClusterTpuInfo {
     }
 }
 
-impl TpuInfo for ClusterTpuInfo {
+impl TpuVoteInfo for ClusterTpuInfo {
     fn refresh_recent_peers(&mut self) {
         self.recent_peers = self
             .cluster_info
@@ -360,7 +358,7 @@ impl TpuInfo for ClusterTpuInfo {
             .collect();
     }
 
-    fn get_leader_tpus(&self, fanout_slots: u64, protocol: Protocol) -> Vec<SocketAddr> {
+    fn get_leader_tpu_votes(&self, fanout_slots: u64, protocol: Protocol) -> Vec<SocketAddr> {
         upcoming_leader_tpu_vote_sockets(
             &self.cluster_info,
             &self.poh_recorder,
@@ -369,7 +367,7 @@ impl TpuInfo for ClusterTpuInfo {
         )
     }
 
-    fn get_not_unique_leader_tpus(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr> {
+    fn get_not_unique_leader_tpu_votes(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr> {
         let recorder = self.poh_recorder.read().unwrap();
         let leader_pubkeys: Vec<_> = (0..max_count)
             .filter_map(|i| recorder.leader_after_n_slots(i * NUM_CONSECUTIVE_LEADER_SLOTS))
