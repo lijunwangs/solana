@@ -3,7 +3,7 @@ use {
         consensus::tower_storage::{SavedTowerVersions, TowerStorage},
         mock_alpenglow_consensus::MockAlpenglowConsensus,
         tvu::VoteClientOption,
-        vote_client::{ClusterTpuInfo, ConnectionCacheClient, TpuClientNextClient, VoteClient},
+        vote_client::{ClusterTpuInfo, ConnectionCacheClient, TpuClientNextVoteClient, VoteClient},
     },
     bincode::serialize,
     crossbeam_channel::Receiver,
@@ -162,7 +162,7 @@ impl VotingService {
                     poh_recorder.clone(),
                 ));
 
-                let vote_client = TpuClientNextClient::new(
+                let vote_client = TpuClientNextVoteClient::new(
                     client_runtime,
                     my_tpu_address,
                     leader_info,
