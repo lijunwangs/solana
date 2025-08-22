@@ -138,7 +138,7 @@ where
 
 pub struct ConnectionCacheClient<T: TpuVoteInfoWithSendStatic> {
     connection_cache: Arc<ConnectionCache>,
-    tpu_address: SocketAddr,
+    tpu_vote_address: SocketAddr,
     leader_info_provider: Arc<Mutex<CurrentLeaderInfo<T>>>,
     leader_fanout_slots: u64,
 }
@@ -151,7 +151,7 @@ where
     fn clone(&self) -> Self {
         Self {
             connection_cache: Arc::clone(&self.connection_cache),
-            tpu_address: self.tpu_address,
+            tpu_vote_address: self.tpu_vote_address,
             leader_info_provider: Arc::clone(&self.leader_info_provider),
             leader_fanout_slots: self.leader_fanout_slots,
         }
@@ -171,7 +171,7 @@ where
         let leader_info_provider = Arc::new(Mutex::new(CurrentLeaderInfo::new(leader_info)));
         Self {
             connection_cache,
-            tpu_address,
+            tpu_vote_address: tpu_address,
             leader_info_provider,
             leader_fanout_slots,
         }
@@ -184,7 +184,7 @@ where
                     .get_leader_tpu_votes(self.leader_fanout_slots, self.connection_cache.protocol())
             })
             .filter(|addresses| !addresses.is_empty())
-            .unwrap_or_else(|| vec![self.tpu_address.clone()])
+            .unwrap_or_else(|| vec![self.tpu_vote_address])
     }
 
     fn send_transactions(&self, peer: &SocketAddr, wire_transactions: Vec<Vec<u8>>) {
@@ -194,7 +194,7 @@ where
         if let Err(err) = result {
             warn!(
                 "Failed to send transaction transaction to {}: {:?}",
-                self.tpu_address, err
+                self.tpu_vote_address, err
             );
         }
     }
