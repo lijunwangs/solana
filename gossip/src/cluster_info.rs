@@ -98,7 +98,6 @@ use {
     thiserror::Error,
 };
 
-
 const DEFAULT_EPOCH_DURATION: Duration =
     Duration::from_millis(DEFAULT_SLOTS_PER_EPOCH * DEFAULT_MS_PER_SLOT);
 /// milliseconds we sleep for between gossip rounds
@@ -1339,7 +1338,7 @@ impl ClusterInfo {
     }
 
     /// At random pick a node and try to get updated changes from them
-        #[allow(dead_code)]
+    #[allow(dead_code)]
     fn run_gossip(
         &self,
         thread_pool: &ThreadPool,
