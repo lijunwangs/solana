@@ -73,7 +73,11 @@ pub trait TpuVoteInfo {
     ///
     /// For example, if leader schedule was `[L1, L1, L1, L1, L2, L2, L2, L2,
     /// L1, ...]` it will return `[L1, L2, L1]`.
-    fn get_not_unique_leader_tpu_votes(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr>;
+    fn get_not_unique_leader_tpu_votes(
+        &self,
+        max_count: u64,
+        protocol: Protocol,
+    ) -> Vec<&SocketAddr>;
 }
 
 // Alias trait to shorten function definitions.
@@ -180,8 +184,10 @@ where
     fn get_tpu_addresses<'a>(&'a self, leader_info: Option<&'a T>) -> Vec<SocketAddr> {
         leader_info
             .map(|leader_info| {
-                leader_info
-                    .get_leader_tpu_votes(self.leader_fanout_slots, self.connection_cache.protocol())
+                leader_info.get_leader_tpu_votes(
+                    self.leader_fanout_slots,
+                    self.connection_cache.protocol(),
+                )
             })
             .filter(|addresses| !addresses.is_empty())
             .unwrap_or_else(|| vec![self.tpu_vote_address])
@@ -245,11 +251,10 @@ impl TpuClientNextVoteClient {
         let (sender, receiver) = mpsc::channel(128);
         let leader_info_provider = CurrentLeaderInfo::new(leader_info);
 
-        let leader_updater: VoteClientLeaderUpdater<T> =
-            VoteClientLeaderUpdater {
-                leader_info_provider,
-                my_tpu_vote_address: my_tpu_address,
-            };
+        let leader_updater: VoteClientLeaderUpdater<T> = VoteClientLeaderUpdater {
+            leader_info_provider,
+            my_tpu_vote_address: my_tpu_address,
+        };
 
         let config = Self::create_config(bind_socket, stake_identity, leader_fanout_slots);
         let (update_certificate_sender, update_certificate_receiver) = watch::channel(None);
@@ -367,7 +372,11 @@ impl TpuVoteInfo for ClusterTpuInfo {
         )
     }
 
-    fn get_not_unique_leader_tpu_votes(&self, max_count: u64, protocol: Protocol) -> Vec<&SocketAddr> {
+    fn get_not_unique_leader_tpu_votes(
+        &self,
+        max_count: u64,
+        protocol: Protocol,
+    ) -> Vec<&SocketAddr> {
         let recorder = self.poh_recorder.read().unwrap();
         let leader_pubkeys: Vec<_> = (0..max_count)
             .filter_map(|i| recorder.leader_after_n_slots(i * NUM_CONSECUTIVE_LEADER_SLOTS))
