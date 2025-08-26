@@ -56,7 +56,7 @@ fn send_vote_transaction<V: VoteClient + ?Sized>(
     transaction: &Transaction,
     vote_client: &V,
 ) -> Result<(), SendVoteError> {
-    let buf = Arc::new(serialize(transaction)?);
+    let buf = serialize(transaction)?;
     vote_client.send_transactions_in_batch(vec![buf]);
     Ok(())
 }
