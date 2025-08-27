@@ -53,7 +53,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 
-
 [dev-dependencies]
 crossbeam-channel = { workspace = true }
 solana-net-utils = { workspace = true, features = ["dev-context-only-utils"] }
