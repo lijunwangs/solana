@@ -22,7 +22,7 @@ use {
     },
     bytes::Bytes,
     crossbeam_channel::{unbounded, Receiver, Sender},
-    solana_client::connection_cache::{ConnectionCache, Protocol},
+    solana_client::connection_cache::ConnectionCache,
     solana_clock::Slot,
     solana_geyser_plugin_manager::block_metadata_notifier_interface::BlockMetadataNotifierArc,
     solana_gossip::{
@@ -128,15 +128,6 @@ impl Default for TvuConfig {
 pub enum VoteClientOption<'a> {
     ConnectionCache(Arc<ConnectionCache>),
     TpuClientNext(&'a Keypair, UdpSocket, RuntimeHandle, CancellationToken),
-}
-
-impl VoteClientOption<'_> {
-    pub fn protocol(&self) -> Protocol {
-        match self {
-            VoteClientOption::ConnectionCache(cache) => cache.protocol(),
-            VoteClientOption::TpuClientNext(_, _, _, _) => Protocol::QUIC,
-        }
-    }
 }
 
 impl Tvu {
