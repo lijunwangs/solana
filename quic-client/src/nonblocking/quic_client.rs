@@ -17,7 +17,7 @@ use {
     },
     solana_keypair::Keypair,
     solana_measure::measure::Measure,
-    solana_net_utils::sockets,
+    solana_net_utils::sockets::{self, unique_port_range_for_tests},
     solana_quic_definitions::{
         QUIC_CONNECTION_HANDSHAKE_TIMEOUT, QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT, QUIC_SEND_FAIRNESS,
     },
@@ -78,11 +78,16 @@ impl QuicLazyInitializedEndpoint {
         let mut endpoint = if let Some(endpoint) = &self.client_endpoint {
             endpoint.clone()
         } else {
-            // This will bind to random ports, but VALIDATOR_PORT_RANGE is outside
-            // of the range for CI tests when this is running in CI
+            let port_range = if cfg!(debug_assertions) {
+                // Avoid port collision during tests
+                let range = unique_port_range_for_tests(1);
+                (range.start, range.end)
+            } else {
+                solana_net_utils::VALIDATOR_PORT_RANGE
+            };
             let client_socket = sockets::bind_in_range_with_config(
                 std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-                solana_net_utils::VALIDATOR_PORT_RANGE,
+                port_range,
                 sockets::SocketConfiguration::default(),
             )
             .expect("QuicLazyInitializedEndpoint::create_endpoint bind_in_range")
