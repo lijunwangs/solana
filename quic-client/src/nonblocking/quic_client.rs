@@ -17,7 +17,7 @@ use {
     },
     solana_keypair::Keypair,
     solana_measure::measure::Measure,
-    solana_net_utils::sockets::{self, unique_port_range_for_tests},
+    solana_net_utils::sockets,
     solana_quic_definitions::{
         QUIC_CONNECTION_HANDSHAKE_TIMEOUT, QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT, QUIC_SEND_FAIRNESS,
     },
@@ -80,7 +80,7 @@ impl QuicLazyInitializedEndpoint {
         } else {
             let port_range = if cfg!(debug_assertions) {
                 // Avoid port collision during tests
-                let range = unique_port_range_for_tests(1);
+                let range = sockets::unique_port_range_for_tests(1);
                 (range.start, range.end)
             } else {
                 solana_net_utils::VALIDATOR_PORT_RANGE
