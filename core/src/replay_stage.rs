@@ -4329,6 +4329,7 @@ pub(crate) mod tests {
             get_tmp_ledger_path, get_tmp_ledger_path_auto_delete,
             shred::{ProcessShredsStats, ReedSolomonCache, Shred, Shredder},
         },
+        solana_net_utils::sockets::{bind_to_with_config, unique_port_range_for_tests, SocketConfiguration},
         solana_poh_config::PohConfig,
         solana_rpc::{
             optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
@@ -4350,6 +4351,7 @@ pub(crate) mod tests {
         std::{
             fs::remove_dir_all,
             iter,
+            net::{IpAddr, Ipv4Addr, UdpSocket},
             sync::{atomic::AtomicU64, Arc, Mutex, RwLock},
         },
         tempfile::tempdir,
@@ -7567,6 +7569,16 @@ pub(crate) mod tests {
         );
     }
 
+    fn create_client_socket() -> UdpSocket {
+        let port_range = unique_port_range_for_tests(1);
+        bind_to_with_config(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            port_range.start,
+            SocketConfiguration::default(),
+        )
+        .unwrap()   
+    }
+
     #[test]
     fn test_replay_stage_refresh_last_vote() {
         let ReplayBlockstoreComponents {
@@ -7653,9 +7665,12 @@ pub(crate) mod tests {
             .unwrap();
 
         let connection_cache = if DEFAULT_VOTE_USE_QUIC {
-            ConnectionCache::new_quic(
+            ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
                 DEFAULT_TPU_CONNECTION_POOL_SIZE,
+                Some(create_client_socket()),
+                None, // cert_info
+                None, // stake_info
             )
         } else {
             ConnectionCache::with_udp(
