@@ -74,6 +74,26 @@ impl ConnectionCache {
         Self::new_with_client_options(name, connection_pool_size, None, None, None)
     }
 
+    fn create_client_socket() -> UdpSocket {
+        let port_range = solana_net_utils::sockets::unique_port_range_for_tests(1);
+        solana_net_utils::sockets::bind_to_with_config(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            port_range.start,
+            solana_net_utils::sockets::SocketConfiguration::default(),
+        )
+        .unwrap()
+    }
+
+    pub fn new_quic_for_tests(name: &'static str, connection_pool_size: usize) -> Self {
+        Self::new_with_client_options(
+            name,
+            connection_pool_size,
+            Some(Self::create_client_socket()),
+            None,
+            None,
+        )
+    }
+
     /// Create a quic connection_cache with more client options
     pub fn new_with_client_options(
         name: &'static str,

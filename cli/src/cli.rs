@@ -30,7 +30,10 @@ use {
     solana_signature::Signature,
     solana_signer::{Signer, SignerError},
     solana_stake_interface::{instruction::LockupArgs, state::Lockup},
-    solana_tps_client::{utils::create_connection_cache, TpsClient},
+    solana_tps_client::{
+        utils::{create_connection_cache, create_connection_cache_for_tests},
+        TpsClient,
+    },
     solana_tpu_client::tpu_client::{
         TpuClient, TpuClientConfig, DEFAULT_TPU_CONNECTION_POOL_SIZE, DEFAULT_TPU_ENABLE_UDP,
     },
@@ -538,6 +541,7 @@ pub struct CliConfig<'a> {
     pub address_labels: HashMap<String, String>,
     pub use_quic: bool,
     pub use_tpu_client: bool,
+    pub for_tests: bool,
 }
 
 impl CliConfig<'_> {
@@ -559,6 +563,7 @@ impl CliConfig<'_> {
                 preflight_commitment: Some(CommitmentConfig::processed().commitment),
                 ..RpcSendTransactionConfig::default()
             },
+            for_tests: true,
             ..Self::default()
         }
     }
@@ -587,6 +592,7 @@ impl Default for CliConfig<'_> {
             address_labels: HashMap::new(),
             use_quic: !DEFAULT_TPU_ENABLE_UDP,
             use_tpu_client: DEFAULT_PING_USE_TPU_CLIENT,
+            for_tests: false,
         }
     }
 }
@@ -944,13 +950,23 @@ pub fn process_command(config: &CliConfig) -> ProcessResult {
         } => {
             let client_dyn: Arc<dyn TpsClient + 'static> = if config.use_tpu_client {
                 let keypair = read_keypair_file(&config.keypair_path).unwrap_or(Keypair::new());
-                let connection_cache = create_connection_cache(
-                    DEFAULT_TPU_CONNECTION_POOL_SIZE,
-                    config.use_quic,
-                    "127.0.0.1".parse().unwrap(),
-                    Some(&keypair),
-                    rpc_client.clone(),
-                );
+                let connection_cache = if config.for_tests {
+                    create_connection_cache_for_tests(
+                        DEFAULT_TPU_CONNECTION_POOL_SIZE,
+                        config.use_quic,
+                        "127.0.0.1".parse().unwrap(),
+                        Some(&keypair),
+                        rpc_client.clone(),
+                    )
+                } else {
+                    create_connection_cache(
+                        DEFAULT_TPU_CONNECTION_POOL_SIZE,
+                        config.use_quic,
+                        "127.0.0.1".parse().unwrap(),
+                        Some(&keypair),
+                        rpc_client.clone(),
+                    )
+                };
                 match connection_cache {
                     ConnectionCache::Udp(cache) => Arc::new(
                         TpuClient::new_with_connection_cache(

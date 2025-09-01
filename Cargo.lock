@@ -11204,6 +11204,7 @@ dependencies = [
  "solana-hash",
  "solana-keypair",
  "solana-message",
+ "solana-net-utils",
  "solana-pubkey",
  "solana-quic-client",
  "solana-rpc-client",
