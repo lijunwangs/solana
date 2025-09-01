@@ -78,7 +78,7 @@ impl QuicLazyInitializedEndpoint {
         let mut endpoint = if let Some(endpoint) = &self.client_endpoint {
             endpoint.clone()
         } else {
-            let port_range = if cfg!(debug_assertions) {
+            let port_range = if cfg!(test) {
                 // Avoid port collision during tests
                 let range = sockets::unique_port_range_for_tests(1);
                 (range.start, range.end)

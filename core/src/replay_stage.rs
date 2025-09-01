@@ -4329,7 +4329,9 @@ pub(crate) mod tests {
             get_tmp_ledger_path, get_tmp_ledger_path_auto_delete,
             shred::{ProcessShredsStats, ReedSolomonCache, Shred, Shredder},
         },
-        solana_net_utils::sockets::{bind_to_with_config, unique_port_range_for_tests, SocketConfiguration},
+        solana_net_utils::sockets::{
+            bind_to_with_config, unique_port_range_for_tests, SocketConfiguration,
+        },
         solana_poh_config::PohConfig,
         solana_rpc::{
             optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
@@ -7576,7 +7578,7 @@ pub(crate) mod tests {
             port_range.start,
             SocketConfiguration::default(),
         )
-        .unwrap()   
+        .unwrap()
     }
 
     #[test]
@@ -7773,9 +7775,12 @@ pub(crate) mod tests {
             .unwrap();
 
         let connection_cache = if DEFAULT_VOTE_USE_QUIC {
-            ConnectionCache::new_quic(
+            ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
                 DEFAULT_TPU_CONNECTION_POOL_SIZE,
+                Some(create_client_socket()),
+                None, // cert_info
+                None, // stake_info
             )
         } else {
             ConnectionCache::with_udp(
@@ -7901,9 +7906,12 @@ pub(crate) mod tests {
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
         let connection_cache = if DEFAULT_VOTE_USE_QUIC {
-            ConnectionCache::new_quic(
+            ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
                 DEFAULT_TPU_CONNECTION_POOL_SIZE,
+                Some(create_client_socket()),
+                None, // cert_info
+                None, // stake_info
             )
         } else {
             ConnectionCache::with_udp(
@@ -8043,9 +8051,12 @@ pub(crate) mod tests {
             .recv_timeout(Duration::from_secs(1))
             .unwrap();
         let connection_cache = if DEFAULT_VOTE_USE_QUIC {
-            ConnectionCache::new_quic(
+            ConnectionCache::new_with_client_options(
                 "connection_cache_vote_quic",
                 DEFAULT_TPU_CONNECTION_POOL_SIZE,
+                Some(create_client_socket()),
+                None, // cert_info
+                None, // stake_info
             )
         } else {
             ConnectionCache::with_udp(

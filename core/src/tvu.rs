@@ -471,14 +471,27 @@ pub mod tests {
             create_new_tmp_ledger,
             genesis_utils::{create_genesis_config, GenesisConfigInfo},
         },
+        solana_net_utils::sockets::{
+            bind_to_with_config, SocketConfiguration, unique_port_range_for_tests,
+        },
         solana_poh::poh_recorder::create_test_recorder,
         solana_rpc::optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
         solana_runtime::bank::Bank,
         solana_signer::Signer,
         solana_streamer::socket::SocketAddrSpace,
         solana_tpu_client::tpu_client::{DEFAULT_TPU_CONNECTION_POOL_SIZE, DEFAULT_VOTE_USE_QUIC},
-        std::sync::atomic::{AtomicU64, Ordering},
+        std::{net::{IpAddr, Ipv4Addr}, sync::atomic::{AtomicU64, Ordering}},
     };
+
+    fn create_client_socket() -> UdpSocket {
+        let port_range = unique_port_range_for_tests(1);
+        bind_to_with_config(
+            IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            port_range.start,
+            SocketConfiguration::default(),
+        )
+        .unwrap()
+    }
 
     fn test_tvu_exit(enable_wen_restart: bool) {
         solana_logger::setup();
