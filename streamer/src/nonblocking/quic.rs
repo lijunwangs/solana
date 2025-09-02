@@ -1117,8 +1117,15 @@ async fn handle_connection(
         if streams_read_in_throttle_interval >= max_streams_per_throttling_interval {
             // The peer is sending faster than we're willing to read. Sleep for what's
             // left of this read interval so the peer backs off.
-            let throttle_duration =
-                STREAM_THROTTLING_INTERVAL.saturating_sub(throttle_interval_start.elapsed());
+
+            let excessive_duration = Duration::from_micros(
+                    (streams_read_in_throttle_interval - max_streams_per_throttling_interval)
+                        * STREAM_THROTTLING_INTERVAL.as_micros() as u64
+                        / max_streams_per_throttling_interval,
+                );
+            let throttle_duration = STREAM_THROTTLING_INTERVAL
+                .saturating_sub(throttle_interval_start.elapsed())
+                + excessive_duration;
 
             if !throttle_duration.is_zero() {
                 debug!(
