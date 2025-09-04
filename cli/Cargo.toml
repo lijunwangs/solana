@@ -103,6 +103,7 @@ dev-context-only-utils = []
 
 [dev-dependencies]
 solana-cli = { path = ".", features = ["dev-context-only-utils"] }
+solana-client = { workspace = true, features = ["dev-context-only-utils"] }
 assert_matches = { workspace = true }
 solana-faucet = { workspace = true }
 solana-nonce-account = { workspace = true }
