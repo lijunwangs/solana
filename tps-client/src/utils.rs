@@ -8,7 +8,7 @@ use {
     solana_streamer::streamer::StakedNodes,
     std::{
         collections::HashMap,
-        net::{IpAddr, Ipv4Addr, UdpSocket},
+        net::{IpAddr, UdpSocket},
         sync::{Arc, RwLock},
     },
 };
@@ -66,16 +66,18 @@ pub fn create_connection_cache(
     )
 }
 
+#[cfg(feature = "dev-context-only-utils")]
 fn create_client_socket() -> UdpSocket {
     let port_range = solana_net_utils::sockets::unique_port_range_for_tests(1);
     solana_net_utils::sockets::bind_to_with_config(
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
         port_range.start,
         solana_net_utils::sockets::SocketConfiguration::default(),
     )
     .unwrap()
 }
 
+#[cfg(feature = "dev-context-only-utils")]
 pub fn create_connection_cache_for_tests(
     tpu_connection_pool_size: usize,
     use_quic: bool,

@@ -98,7 +98,11 @@ spl-memo-interface = { version = "=2.0.0" }
 thiserror = { workspace = true }
 tiny-bip39 = { workspace = true }
 
+[features]
+dev-context-only-utils = []
+
 [dev-dependencies]
+solana-cli = { path = ".", features = ["dev-context-only-utils"] }
 assert_matches = { workspace = true }
 solana-faucet = { workspace = true }
 solana-nonce-account = { workspace = true }
@@ -107,5 +111,6 @@ solana-rpc = { workspace = true }
 solana-sha256-hasher = { workspace = true }
 solana-streamer = { workspace = true }
 solana-test-validator = { workspace = true }
+solana-tps-client = { workspace = true, features = ["dev-context-only-utils"] }
 tempfile = { workspace = true }
 test-case = { workspace = true }

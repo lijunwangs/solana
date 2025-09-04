@@ -54,5 +54,8 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 
+[features]
+dev-context-only-utils = []
+
 [dev-dependencies]
 crossbeam-channel = { workspace = true }

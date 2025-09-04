@@ -7658,6 +7658,7 @@ dependencies = [
  "solana-address-lookup-table-interface",
  "solana-borsh",
  "solana-clap-utils",
+ "solana-cli",
  "solana-cli-config",
  "solana-cli-output",
  "solana-client",

@@ -192,6 +192,7 @@ serial_test = { workspace = true }
 solana-account = { workspace = true, features = ["dev-context-only-utils"] }
 # See order-crates-for-publishing.py for using this unusual `path = "."`
 solana-bpf-loader-program = { workspace = true }
+solana-client = { workspace = true, features = ["dev-context-only-utils"] }
 solana-compute-budget-interface = { workspace = true }
 solana-compute-budget-program = { workspace = true }
 solana-core = { path = ".", features = ["dev-context-only-utils"] }

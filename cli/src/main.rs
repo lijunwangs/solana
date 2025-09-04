@@ -237,7 +237,6 @@ pub fn parse_args<'a>(
             address_labels,
             use_quic,
             use_tpu_client,
-            for_tests: false,
         },
         signers,
     ))

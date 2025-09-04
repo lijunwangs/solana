@@ -15,6 +15,7 @@ rustdoc-args = ["--cfg=docsrs"]
 
 [features]
 bank-client = ["dep:solana-client-traits", "dep:solana-runtime"]
+dev-context-only-utils = []
 
 [dependencies]
 log = { workspace = true }
