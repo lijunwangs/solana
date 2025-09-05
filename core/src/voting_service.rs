@@ -151,6 +151,7 @@ pub struct VotingServiceOverride {
 }
 
 impl VotingService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         vote_receiver: Receiver<VoteOp>,
         bls_receiver: Receiver<BLSOp>,
@@ -159,6 +160,7 @@ impl VotingService {
         tower_storage: Arc<dyn TowerStorage>,
         vote_history_storage: Arc<dyn VoteHistoryStorage>,
         connection_cache: Arc<ConnectionCache>,
+        alpenglow_connection_cache: Arc<ConnectionCache>,
         bank_forks: Arc<RwLock<BankForks>>,
         test_override: Option<VotingServiceOverride>,
     ) -> Self {
@@ -175,7 +177,7 @@ impl VotingService {
             .spawn(move || {
                 let mut staked_validators_cache = StakedValidatorsCache::new(
                     bank_forks.clone(),
-                    connection_cache.protocol(),
+                    alpenglow_connection_cache.protocol(),
                     Duration::from_secs(STAKED_VALIDATORS_CACHE_TTL_S),
                     STAKED_VALIDATORS_CACHE_NUM_EPOCH_CAP,
                     false,
@@ -207,7 +209,7 @@ impl VotingService {
                                         &cluster_info,
                                         vote_history_storage.as_ref(),
                                         bls_op,
-                                        connection_cache.clone(),
+                                        alpenglow_connection_cache.clone(),
                                         &additional_listeners,
                                         &mut staked_validators_cache,
                                     );
@@ -466,6 +468,10 @@ mod tests {
             Arc::new(NullTowerStorage::default()),
             Arc::new(NullVoteHistoryStorage::default()),
             Arc::new(ConnectionCache::with_udp("TestConnectionCache", 10)),
+            Arc::new(ConnectionCache::with_udp(
+                "TestAlpenglowConnectionCache",
+                10,
+            )),
             bank_forks,
             Some(VotingServiceOverride {
                 additional_listeners: vec![listener],

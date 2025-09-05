@@ -1,5 +1,6 @@
 #![allow(clippy::arithmetic_side_effects)]
 use {
+    crate::cluster_tests::start_quic_streamer_to_listen_for_votes_and_certs,
     assert_matches::assert_matches,
     crossbeam_channel::{unbounded, Receiver},
     gag::BufferRedirect,
@@ -2748,7 +2749,7 @@ fn test_alpenglow_run_test_load_program_accounts_partition_root() {
 
 fn run_test_load_program_accounts_partition(scan_commitment: CommitmentConfig, is_alpenglow: bool) {
     let num_slots_per_validator = 8;
-    let partitions: [usize; 2] = [1, 1];
+    let partitions: [usize; 2] = [DEFAULT_NODE_STAKE as usize; 2];
     let (leader_schedule, validator_keys) = create_custom_leader_schedule_with_random_keys(&[
         num_slots_per_validator,
         num_slots_per_validator,
@@ -4542,7 +4543,7 @@ fn run_test_cluster_partition(num_partitions: usize, is_alpenglow: bool) {
     let on_partition_resolved = |cluster: &mut LocalCluster, _: &mut ()| {
         cluster.check_for_new_roots(16, "PARTITION_TEST", SocketAddrSpace::Unspecified);
     };
-    let partition_sizes = vec![1; num_partitions];
+    let partition_sizes = vec![DEFAULT_NODE_STAKE as usize; num_partitions];
     run_cluster_partition(
         &partition_sizes,
         None,
@@ -6162,7 +6163,7 @@ fn test_alpenglow_imbalanced_stakes_catchup() {
     // Cluster config
     let mut cluster_config = ClusterConfig {
         mint_lamports: total_stake,
-        node_stakes,
+        node_stakes: node_stakes.clone(),
         validator_configs: make_identical_validator_configs(&validator_config, num_nodes),
         validator_keys: Some(
             validator_keys
@@ -6208,6 +6209,8 @@ fn test_alpenglow_imbalanced_stakes_catchup() {
         "test_alpenglow_imbalanced_stakes_catchup",
         SocketAddrSpace::Unspecified,
         vote_listener_addr,
+        &validator_keys,
+        &node_stakes,
     );
 }
 
@@ -6294,14 +6297,14 @@ fn test_alpenglow_ensure_liveness_after_single_notar_fallback() {
         leader_schedule: Arc::new(leader_schedule),
     };
 
-    // Create our UDP socket to listen to votes
-    let vote_listener = solana_net_utils::bind_to_localhost().unwrap();
+    // Create our socket to listen to votes
+    let vote_listener_socket = solana_net_utils::bind_to_localhost().unwrap();
 
     // Create validator configs
     let mut validator_config = ValidatorConfig::default_for_test();
     validator_config.fixed_leader_schedule = Some(leader_schedule);
     validator_config.voting_service_test_override = Some(VotingServiceOverride {
-        additional_listeners: vec![vote_listener.local_addr().unwrap()],
+        additional_listeners: vec![vote_listener_socket.local_addr().unwrap()],
         alpenglow_port_override: AlpenglowPortOverride::default(),
     });
 
@@ -6313,7 +6316,7 @@ fn test_alpenglow_ensure_liveness_after_single_notar_fallback() {
     // Cluster config
     let mut cluster_config = ClusterConfig {
         mint_lamports: total_stake,
-        node_stakes,
+        node_stakes: node_stakes.clone(),
         validator_configs,
         validator_keys: Some(
             validator_keys
@@ -6337,54 +6340,64 @@ fn test_alpenglow_ensure_liveness_after_single_notar_fallback() {
     let mut post_experiment_votes = HashMap::new();
     let mut post_experiment_roots = HashSet::new();
 
+    // Start quic streamer to listen for votes
+    let (exit, quic_server_thread, receiver) = start_quic_streamer_to_listen_for_votes_and_certs(
+        vote_listener_socket,
+        &validator_keys,
+        &node_stakes,
+    );
+
     // Start vote listener thread to monitor and control the experiment
     let vote_listener = std::thread::spawn({
-        let mut buf = [0_u8; 65_535];
         let mut check_for_roots = false;
         let mut slots_with_skip = HashSet::new();
 
         move || loop {
-            let n_bytes = vote_listener.recv(&mut buf).unwrap();
-            let message = bincode::deserialize::<ConsensusMessage>(&buf[0..n_bytes]).unwrap();
-            let ConsensusMessage::Vote(vote_message) = message else {
-                continue;
+            let Ok(packet_batch) = receiver.recv() else {
+                break;
             };
-            let vote = vote_message.vote;
+            for packet in packet_batch.iter() {
+                let Ok(ConsensusMessage::Vote(vote_message)) = packet.deserialize_slice(..) else {
+                    continue;
+                };
+                let vote = vote_message.vote;
 
-            // Since A has 60% of the stake, it will be node 0, and B will be node 1
-            let node_index = vote_message.rank;
+                // Since A has 60% of the stake, it will be node 0, and B will be node 1
+                let node_index = vote_message.rank;
 
-            // Once we've received a vote from node B at slot 31, we can start the experiment.
-            if vote.slot() == 31 && node_index == 1 {
-                node_a_turbine_disabled.store(true, Ordering::Relaxed);
-            }
-
-            if vote.slot() >= 32 && node_index == 0 {
-                if vote.is_skip() {
-                    slots_with_skip.insert(vote.slot());
+                // Once we've received a vote from node B at slot 31, we can start the experiment.
+                if vote.slot() == 31 && node_index == 1 {
+                    node_a_turbine_disabled.store(true, Ordering::Relaxed);
                 }
 
-                if !check_for_roots && vote.slot() == 32 && vote.is_notarize_fallback() {
-                    check_for_roots = true;
-                    assert!(slots_with_skip.contains(&32)); // skip on slot 32
+                if vote.slot() >= 32 && node_index == 0 {
+                    if vote.is_skip() {
+                        slots_with_skip.insert(vote.slot());
+                    }
+
+                    if !check_for_roots && vote.slot() == 32 && vote.is_notarize_fallback() {
+                        check_for_roots = true;
+                        assert!(slots_with_skip.contains(&32)); // skip on slot 32
+                    }
                 }
-            }
 
-            // We should see a skip followed by a notar fallback. Once we do, the experiment is
-            // complete.
-            if check_for_roots {
-                node_a_turbine_disabled.store(false, Ordering::Relaxed);
+                // We should see a skip followed by a notar fallback. Once we do, the experiment is
+                // complete.
+                if check_for_roots {
+                    node_a_turbine_disabled.store(false, Ordering::Relaxed);
 
-                if vote.is_finalize() {
-                    let value = post_experiment_votes.entry(vote.slot()).or_insert(vec![]);
+                    if vote.is_finalize() {
+                        let value = post_experiment_votes.entry(vote.slot()).or_insert(vec![]);
 
-                    value.push(node_index);
+                        value.push(node_index);
 
-                    if value.len() == 2 {
-                        post_experiment_roots.insert(vote.slot());
+                        if value.len() == 2 {
+                            post_experiment_roots.insert(vote.slot());
 
-                        if post_experiment_roots.len() >= 10 {
-                            break;
+                            if post_experiment_roots.len() >= 10 {
+                                exit.store(true, Ordering::Relaxed);
+                                break;
+                            }
                         }
                     }
                 }
@@ -6393,6 +6406,7 @@ fn test_alpenglow_ensure_liveness_after_single_notar_fallback() {
     });
 
     vote_listener.join().unwrap();
+    quic_server_thread.join().unwrap();
 }
 
 /// Test to validate the Alpenglow consensus protocol's ability to maintain liveness when a node
@@ -6715,47 +6729,58 @@ fn test_alpenglow_ensure_liveness_after_double_notar_fallback() {
         }
     }
 
+    // Start quic streamer to listen for votes
+    let (exit, quic_server_thread, receiver) = start_quic_streamer_to_listen_for_votes_and_certs(
+        vote_listener_socket,
+        &validator_keys,
+        &node_stakes,
+    );
     // Start vote listener thread to monitor and control the experiment
     let vote_listener_thread = std::thread::spawn({
-        let mut buf = [0u8; 65_535];
         let mut state = VoteListenerState::new();
 
         move || {
             loop {
-                let n_bytes = vote_listener_socket.recv(&mut buf).unwrap();
-                let ConsensusMessage::Vote(vote_message) =
-                    bincode::deserialize::<ConsensusMessage>(&buf[0..n_bytes]).unwrap()
-                else {
-                    continue;
-                };
-
-                match vote_message.rank {
-                    0 => {
-                        // Node A: Handle vote broadcasting to B and D
-                        state.handle_node_a_vote(
-                            &vote_message,
-                            &node_b_vote_keypair,
-                            &node_d_vote_keypair,
-                            &tpu_socket_addrs,
-                            cluster.connection_cache.clone(),
-                        );
-                    }
-                    2 => {
-                        // Node C: Handle experiment state transitions
-                        state.handle_node_c_vote(&vote_message.vote, &node_c_turbine_disabled);
-                    }
-                    _ => {}
-                }
-
-                // Check for finalization votes to determine test completion
-                if vote_message.vote.is_finalize() && state.handle_finalize_vote(&vote_message) {
+                let Ok(packet_batch) = receiver.recv() else {
                     break;
+                };
+                for packet in packet_batch.iter() {
+                    let Ok(ConsensusMessage::Vote(vote_message)) = packet.deserialize_slice(..)
+                    else {
+                        continue;
+                    };
+
+                    match vote_message.rank {
+                        0 => {
+                            // Node A: Handle vote broadcasting to B and D
+                            state.handle_node_a_vote(
+                                &vote_message,
+                                &node_b_vote_keypair,
+                                &node_d_vote_keypair,
+                                &tpu_socket_addrs,
+                                cluster.connection_cache.clone(),
+                            );
+                        }
+                        2 => {
+                            // Node C: Handle experiment state transitions
+                            state.handle_node_c_vote(&vote_message.vote, &node_c_turbine_disabled);
+                        }
+                        _ => {}
+                    }
+
+                    // Check for finalization votes to determine test completion
+                    if vote_message.vote.is_finalize() && state.handle_finalize_vote(&vote_message)
+                    {
+                        exit.store(true, Ordering::Relaxed);
+                        break;
+                    }
                 }
             }
         }
     });
 
     vote_listener_thread.join().unwrap();
+    quic_server_thread.join().unwrap();
 }
 
 /// Test to validate Alpenglow's ability to maintain liveness when nodes issue both NotarizeFallback
@@ -6946,71 +6971,86 @@ fn test_alpenglow_ensure_liveness_after_intertwined_notar_and_skip_fallbacks() {
         }
     }
 
+    // Start quic streamer to listen for votes
+    let (exit, quic_server_thread, receiver) = start_quic_streamer_to_listen_for_votes_and_certs(
+        vote_listener_socket,
+        &validator_keys,
+        &node_stakes,
+    );
+
     // Start vote monitoring thread
     let vote_listener_thread = std::thread::spawn({
         let node_c_turbine_disabled = node_a_turbine_disabled.clone();
 
         move || {
-            let mut buffer = [0u8; 65_535];
             let mut experiment_state = ExperimentState::new();
 
             let timer = std::time::Instant::now();
 
             loop {
-                let bytes_received = vote_listener_socket
-                    .recv(&mut buffer)
-                    .expect("Failed to receive vote data");
+                let Ok(packet_batch) = receiver.recv() else {
+                    break;
+                };
 
-                let message = bincode::deserialize::<ConsensusMessage>(&buffer[..bytes_received])
-                    .expect("Failed to deserialize BLS message");
+                for packet in packet_batch.iter() {
+                    if exit.load(Ordering::Relaxed) {
+                        return;
+                    }
 
-                match message {
-                    ConsensusMessage::Vote(vote_message) => {
-                        let vote = &vote_message.vote;
-                        let node_index = vote_message.rank as usize;
+                    let Ok(message) = packet.deserialize_slice(..) else {
+                        continue;
+                    };
+                    match message {
+                        ConsensusMessage::Vote(vote_message) => {
+                            let vote = &vote_message.vote;
+                            let node_index = vote_message.rank as usize;
 
-                        // Stage timeouts
-                        let elapsed_time = timer.elapsed();
+                            // Stage timeouts
+                            let elapsed_time = timer.elapsed();
 
-                        for stage in Stage::all() {
-                            if elapsed_time > stage.timeout() {
-                                panic!(
+                            for stage in Stage::all() {
+                                if elapsed_time > stage.timeout() {
+                                    panic!(
                                     "Timeout during {:?}. node_c_turbine_disabled: {:#?}. Latest vote: {:#?}. Experiment state: {:#?}",
                                     stage,
                                     node_c_turbine_disabled.load(Ordering::Acquire),
                                     vote,
                                     experiment_state
                                 );
+                                }
+                            }
+
+                            // Stage 1: Wait for stability, then introduce partition at slot 20
+                            if vote.slot() == 20 && !node_c_turbine_disabled.load(Ordering::Acquire)
+                            {
+                                node_c_turbine_disabled.store(true, Ordering::Release);
+                                experiment_state.stage = Stage::ObserveSkipFallbacks;
+                            }
+
+                            // Stage 2: Monitor for expected fallback vote patterns
+                            if experiment_state.stage == Stage::ObserveSkipFallbacks {
+                                experiment_state.record_vote_bitmap(vote.slot(), node_index, vote);
+
+                                // Check if we've observed the expected pattern for 3 consecutive slots
+                                if experiment_state.matches_expected_pattern() {
+                                    node_c_turbine_disabled.store(false, Ordering::Release);
+                                    experiment_state.stage = Stage::ObserveLiveness;
+                                }
                             }
                         }
+                        ConsensusMessage::Certificate(cert_message) => {
+                            // Stage 3: Verify continued liveness after partition resolution
+                            if experiment_state.stage == Stage::ObserveLiveness
+                                && [CertificateType::Finalize, CertificateType::FinalizeFast]
+                                    .contains(&cert_message.certificate.certificate_type())
+                            {
+                                experiment_state
+                                    .record_certificate(cert_message.certificate.slot());
 
-                        // Stage 1: Wait for stability, then introduce partition at slot 20
-                        if vote.slot() == 20 && !node_c_turbine_disabled.load(Ordering::Acquire) {
-                            node_c_turbine_disabled.store(true, Ordering::Release);
-                            experiment_state.stage = Stage::ObserveSkipFallbacks;
-                        }
-
-                        // Stage 2: Monitor for expected fallback vote patterns
-                        if experiment_state.stage == Stage::ObserveSkipFallbacks {
-                            experiment_state.record_vote_bitmap(vote.slot(), node_index, vote);
-
-                            // Check if we've observed the expected pattern for 3 consecutive slots
-                            if experiment_state.matches_expected_pattern() {
-                                node_c_turbine_disabled.store(false, Ordering::Release);
-                                experiment_state.stage = Stage::ObserveLiveness;
-                            }
-                        }
-                    }
-                    ConsensusMessage::Certificate(cert_message) => {
-                        // Stage 3: Verify continued liveness after partition resolution
-                        if experiment_state.stage == Stage::ObserveLiveness
-                            && [CertificateType::Finalize, CertificateType::FinalizeFast]
-                                .contains(&cert_message.certificate.certificate_type())
-                        {
-                            experiment_state.record_certificate(cert_message.certificate.slot());
-
-                            if experiment_state.sufficient_roots_created() {
-                                break;
+                                if experiment_state.sufficient_roots_created() {
+                                    exit.store(true, Ordering::Relaxed);
+                                    break;
+                                }
                             }
                         }
                     }
@@ -7022,6 +7062,9 @@ fn test_alpenglow_ensure_liveness_after_intertwined_notar_and_skip_fallbacks() {
     vote_listener_thread
         .join()
         .expect("Vote listener thread panicked");
+    quic_server_thread
+        .join()
+        .expect("Quic server thread panicked");
 }
 
 /// Test to validate the Alpenglow consensus protocol's ability to maintain liveness when a node
@@ -7273,67 +7316,81 @@ fn test_alpenglow_ensure_liveness_after_second_notar_fallback_condition() {
         }
     }
 
+    // Start quic streamer to listen for votes
+    let (exit, quic_server_thread, receiver) = start_quic_streamer_to_listen_for_votes_and_certs(
+        vote_listener_socket,
+        &validator_keys,
+        &node_stakes,
+    );
+
     // Start vote listener thread to monitor and control the experiment
     let vote_listener_thread = std::thread::spawn({
-        let mut buf = [0u8; 65_535];
         let node_c_turbine_disabled = node_c_turbine_disabled.clone();
         let mut experiment_state = ExperimentState::new(vote_pubkeys.len());
         let timer = std::time::Instant::now();
 
         move || {
             loop {
-                let n_bytes = vote_listener_socket.recv(&mut buf).unwrap();
+                let Ok(packet_batch) = receiver.recv() else {
+                    break;
+                };
+                for packet in packet_batch.iter() {
+                    let Ok(message) = packet.deserialize_slice(..) else {
+                        continue;
+                    };
 
-                let message = bincode::deserialize::<ConsensusMessage>(&buf[0..n_bytes]).unwrap();
+                    match message {
+                        ConsensusMessage::Vote(vote_message) => {
+                            let vote = &vote_message.vote;
+                            let node_name = vote_message.rank as usize;
 
-                match message {
-                    ConsensusMessage::Vote(vote_message) => {
-                        let vote = &vote_message.vote;
-                        let node_name = vote_message.rank as usize;
+                            // Stage timeouts
+                            let elapsed_time = timer.elapsed();
 
-                        // Stage timeouts
-                        let elapsed_time = timer.elapsed();
-
-                        for stage in Stage::all() {
-                            if elapsed_time > stage.timeout() {
-                                panic!(
+                            for stage in Stage::all() {
+                                if elapsed_time > stage.timeout() {
+                                    panic!(
                                     "Timeout during {:?}. node_c_turbine_disabled: {:#?}. Latest vote: {:#?}. Experiment state: {:#?}",
                                     stage,
                                     node_c_turbine_disabled.load(Ordering::Acquire),
                                     vote,
                                     experiment_state
                                 );
+                                }
                             }
+
+                            // Handle experiment phase transitions
+                            experiment_state.wait_for_nodes_ready(
+                                vote,
+                                node_name,
+                                &mut cluster,
+                                &validator_keys[0].pubkey(),
+                            );
+                            experiment_state
+                                .handle_experiment_start(vote, &node_c_turbine_disabled);
+                            experiment_state.handle_notar_fallback(
+                                vote,
+                                node_name,
+                                &node_c_turbine_disabled,
+                            );
                         }
 
-                        // Handle experiment phase transitions
-                        experiment_state.wait_for_nodes_ready(
-                            vote,
-                            node_name,
-                            &mut cluster,
-                            &validator_keys[0].pubkey(),
-                        );
-                        experiment_state.handle_experiment_start(vote, &node_c_turbine_disabled);
-                        experiment_state.handle_notar_fallback(
-                            vote,
-                            node_name,
-                            &node_c_turbine_disabled,
-                        );
-                    }
+                        ConsensusMessage::Certificate(cert_message) => {
+                            // Wait until the final stage before looking for finalization certificates.
+                            if experiment_state.stage != Stage::ObserveLiveness {
+                                continue;
+                            }
+                            // Observing finalization certificates to ensure liveness.
+                            if [CertificateType::Finalize, CertificateType::FinalizeFast]
+                                .contains(&cert_message.certificate.certificate_type())
+                            {
+                                experiment_state
+                                    .record_certificate(cert_message.certificate.slot());
 
-                    ConsensusMessage::Certificate(cert_message) => {
-                        // Wait until the final stage before looking for finalization certificates.
-                        if experiment_state.stage != Stage::ObserveLiveness {
-                            continue;
-                        }
-                        // Observing finalization certificates to ensure liveness.
-                        if [CertificateType::Finalize, CertificateType::FinalizeFast]
-                            .contains(&cert_message.certificate.certificate_type())
-                        {
-                            experiment_state.record_certificate(cert_message.certificate.slot());
-
-                            if experiment_state.sufficient_roots_created() {
-                                break;
+                                if experiment_state.sufficient_roots_created() {
+                                    exit.store(true, Ordering::Relaxed);
+                                    break;
+                                }
                             }
                         }
                     }
@@ -7343,12 +7400,13 @@ fn test_alpenglow_ensure_liveness_after_second_notar_fallback_condition() {
     });
 
     vote_listener_thread.join().unwrap();
+    quic_server_thread.join().unwrap();
 }
 
 #[test]
 #[serial]
 fn test_alpenglow_add_missing_parent_ready() {
-    solana_logger::setup_with_default(AG_DEBUG_LOG_FILTER);
+    solana_logger::setup_with_default(RUST_LOG_FILTER);
 
     // Configure total stake and stake distribution
     const TOTAL_STAKE: u64 = 10 * DEFAULT_NODE_STAKE;
@@ -7374,7 +7432,7 @@ fn test_alpenglow_add_missing_parent_ready() {
         leader_schedule: Arc::new(leader_schedule),
     };
 
-    // Create UDP socket to listen to votes for experiment control
+    // Create socket to listen to votes for experiment control
     let vote_listener_socket = solana_net_utils::bind_to_localhost().unwrap();
 
     // Create validator configs
@@ -7551,74 +7609,82 @@ fn test_alpenglow_add_missing_parent_ready() {
         }
     }
 
+    // Start a quick streamer to handle quick control packets
+    let (exit, quic_server_thread, receiver) = start_quic_streamer_to_listen_for_votes_and_certs(
+        vote_listener_socket,
+        &validator_keys,
+        &node_stakes,
+    );
     // Start vote listener thread to monitor and control the experiment
     let vote_listener_thread = std::thread::spawn({
-        let mut buf = [0u8; 65_535];
         let node_c_turbine_disabled = node_c_turbine_disabled.clone();
         let mut experiment_state = ExperimentState::new(node_stakes.len(), alpenglow_port_override);
         let timer = std::time::Instant::now();
 
         move || {
             loop {
-                let n_bytes = vote_listener_socket.recv(&mut buf).unwrap();
+                let Ok(packet_batch) = receiver.recv() else {
+                    break;
+                };
 
-                let consensus_message =
-                    bincode::deserialize::<ConsensusMessage>(&buf[0..n_bytes]).unwrap();
+                for packet in packet_batch.iter() {
+                    let consensus_message = packet.deserialize_slice(..).unwrap();
+                    match consensus_message {
+                        ConsensusMessage::Vote(vote_message) => {
+                            let vote = &vote_message.vote;
+                            let node_name = vote_message.rank as usize;
 
-                match consensus_message {
-                    ConsensusMessage::Vote(vote_message) => {
-                        let vote = &vote_message.vote;
-                        let node_name = vote_message.rank as usize;
+                            // Stage timeouts
+                            let elapsed_time = timer.elapsed();
 
-                        // Stage timeouts
-                        let elapsed_time = timer.elapsed();
-
-                        for stage in Stage::all() {
-                            if elapsed_time > stage.timeout() {
-                                panic!(
+                            for stage in Stage::all() {
+                                if elapsed_time > stage.timeout() {
+                                    panic!(
                                     "Timeout during {:?}. node_c_turbine_disabled: {:#?}. Latest vote: {:#?}.",
                                     stage,
                                     node_c_turbine_disabled.load(Ordering::Acquire),
                                     vote,
                                 );
+                                }
                             }
+
+                            // Handle experiment phase transitions
+                            experiment_state.wait_for_nodes_ready(
+                                vote,
+                                node_name,
+                                &node_c_turbine_disabled,
+                                &validator_keys[2].pubkey(),
+                            );
+                            experiment_state.handle_experiment_start(
+                                vote,
+                                &mut cluster,
+                                &validator_keys[0].pubkey(),
+                            );
+                            experiment_state.handle_cluster_stuck(&node_c_turbine_disabled);
                         }
 
-                        // Handle experiment phase transitions
-                        experiment_state.wait_for_nodes_ready(
-                            vote,
-                            node_name,
-                            &node_c_turbine_disabled,
-                            &validator_keys[2].pubkey(),
-                        );
-                        experiment_state.handle_experiment_start(
-                            vote,
-                            &mut cluster,
-                            &validator_keys[0].pubkey(),
-                        );
-                        experiment_state.handle_cluster_stuck(&node_c_turbine_disabled);
+                        ConsensusMessage::Certificate(cert_message) => {
+                            // Wait until the final stage before looking for finalization certificates.
+                            if experiment_state.stage != Stage::ObserveLiveness {
+                                continue;
+                            }
+                            // Observing finalization certificates to ensure liveness.
+                            if [CertificateType::Finalize, CertificateType::FinalizeFast]
+                                .contains(&cert_message.certificate.certificate_type())
+                            {
+                                experiment_state
+                                    .record_certificate(cert_message.certificate.slot());
+                            }
+                        }
                     }
-
-                    ConsensusMessage::Certificate(cert_message) => {
-                        // Wait until the final stage before looking for finalization certificates.
-                        if experiment_state.stage != Stage::ObserveLiveness {
-                            continue;
-                        }
-                        // Observing finalization certificates to ensure liveness.
-                        if [CertificateType::Finalize, CertificateType::FinalizeFast]
-                            .contains(&cert_message.certificate.certificate_type())
-                        {
-                            experiment_state.record_certificate(cert_message.certificate.slot());
-
-                            if experiment_state.sufficient_roots_created() {
-                                break;
-                            }
-                        }
+                    if experiment_state.sufficient_roots_created() {
+                        exit.store(true, Ordering::Relaxed);
+                        break;
                     }
                 }
             }
         }
     });
-
     vote_listener_thread.join().unwrap();
+    quic_server_thread.join().unwrap();
 }
