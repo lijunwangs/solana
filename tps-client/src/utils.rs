@@ -67,17 +67,6 @@ pub fn create_connection_cache(
 }
 
 #[cfg(feature = "dev-context-only-utils")]
-fn create_client_socket() -> UdpSocket {
-    let port_range = solana_net_utils::sockets::unique_port_range_for_tests(1);
-    solana_net_utils::sockets::bind_to_with_config(
-        IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-        port_range.start,
-        solana_net_utils::sockets::SocketConfiguration::default(),
-    )
-    .unwrap()
-}
-
-#[cfg(feature = "dev-context-only-utils")]
 pub fn create_connection_cache_for_tests(
     tpu_connection_pool_size: usize,
     use_quic: bool,
@@ -92,7 +81,7 @@ pub fn create_connection_cache_for_tests(
         bind_address,
         client_node_id,
         rpc_client,
-        Some(create_client_socket()),
+        Some(solana_net_utils::sockets::bind_to_localhost_unique().unwrap()),
     )
 }
 

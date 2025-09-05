@@ -64,7 +64,7 @@ use {
         collections::HashMap,
         io::{Error, Result},
         iter,
-        net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+        net::{IpAddr, Ipv4Addr, SocketAddr},
         path::{Path, PathBuf},
         sync::{Arc, RwLock},
         time::Duration,
@@ -975,16 +975,6 @@ impl LocalCluster {
     }
 }
 
-fn create_client_socket() -> UdpSocket {
-    let port_range = solana_net_utils::sockets::unique_port_range_for_tests(1);
-    solana_net_utils::sockets::bind_to_with_config(
-        IpAddr::V4(Ipv4Addr::UNSPECIFIED),
-        port_range.start,
-        solana_net_utils::sockets::SocketConfiguration::default(),
-    )
-    .unwrap()
-}
-
 fn create_connection_cache(
     quic_connection_cache_config: &Option<QuicConnectionCacheConfig>,
     tpu_connection_pool_size: usize,
@@ -993,7 +983,7 @@ fn create_connection_cache(
         Arc::new(ConnectionCache::new_with_client_options(
             "connection_cache_local_cluster_quic_staked",
             tpu_connection_pool_size,
-            Some(create_client_socket()),
+            Some(solana_net_utils::sockets::bind_to_localhost_unique().unwrap()),
             Some((
                 &config.client_keypair,
                 IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)),
