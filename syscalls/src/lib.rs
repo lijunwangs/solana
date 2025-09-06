@@ -17,7 +17,7 @@ use {
     solana_big_mod_exp::{big_mod_exp, BigModExpParams},
     solana_blake3_hasher as blake3,
     solana_bn254::prelude::{
-        alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing, AltBn128Error,
+        alt_bn128_addition, alt_bn128_multiplication, alt_bn128_pairing,
         ALT_BN128_ADDITION_OUTPUT_LEN, ALT_BN128_MULTIPLICATION_OUTPUT_LEN,
         ALT_BN128_PAIRING_ELEMENT_LEN, ALT_BN128_PAIRING_OUTPUT_LEN,
     },
@@ -29,7 +29,8 @@ use {
     solana_program_runtime::{
         execution_budget::{SVMTransactionExecutionBudget, SVMTransactionExecutionCost},
         invoke_context::InvokeContext,
-        stable_log,
+        memory::MemoryTranslationError,
+        stable_log, translate_inner, translate_slice_inner, translate_type_inner,
     },
     solana_pubkey::{Pubkey, PubkeyError, MAX_SEEDS, MAX_SEED_LEN, PUBKEY_BYTES},
     solana_sbpf::{
@@ -121,6 +122,8 @@ pub enum SyscallError {
     InvalidPointer,
     #[error("Arithmetic overflow")]
     ArithmeticOverflow,
+    #[error(transparent)]
+    MemoryTranslation(#[from] MemoryTranslationError),
 }
 
 type Error = Box<dyn std::error::Error>;
@@ -547,63 +550,6 @@ pub fn create_program_runtime_environment_v2<'a>(
         // Warning, do not use `Config::default()` so that configuration here is explicit.
     };
     BuiltinProgram::new_loader(config)
-}
-
-fn address_is_aligned<T>(address: u64) -> bool {
-    (address as *mut T as usize)
-        .checked_rem(align_of::<T>())
-        .map(|rem| rem == 0)
-        .expect("T to be non-zero aligned")
-}
-
-// Do not use this directly
-#[macro_export]
-macro_rules! translate_inner {
-    ($memory_mapping:expr, $map:ident, $access_type:expr, $vm_addr:expr, $len:expr $(,)?) => {
-        Result::<u64, Error>::from(
-            $memory_mapping
-                .$map($access_type, $vm_addr, $len)
-                .map_err(|err| err.into()),
-        )
-    };
-}
-// Do not use this directly
-#[macro_export]
-macro_rules! translate_type_inner {
-    ($memory_mapping:expr, $access_type:expr, $vm_addr:expr, $T:ty, $check_aligned:expr $(,)?) => {{
-        let host_addr = translate_inner!(
-            $memory_mapping,
-            map,
-            $access_type,
-            $vm_addr,
-            size_of::<$T>() as u64
-        )?;
-        if !$check_aligned {
-            Ok(unsafe { std::mem::transmute::<u64, &mut $T>(host_addr) })
-        } else if !address_is_aligned::<$T>(host_addr) {
-            Err(SyscallError::UnalignedPointer.into())
-        } else {
-            Ok(unsafe { &mut *(host_addr as *mut $T) })
-        }
-    }};
-}
-// Do not use this directly
-#[macro_export]
-macro_rules! translate_slice_inner {
-    ($memory_mapping:expr, $access_type:expr, $vm_addr:expr, $len:expr, $T:ty, $check_aligned:expr $(,)?) => {{
-        if $len == 0 {
-            return Ok(&mut []);
-        }
-        let total_size = $len.saturating_mul(size_of::<$T>() as u64);
-        if isize::try_from(total_size).is_err() {
-            return Err(SyscallError::InvalidLength.into());
-        }
-        let host_addr = translate_inner!($memory_mapping, map, $access_type, $vm_addr, total_size)?;
-        if $check_aligned && !address_is_aligned::<$T>(host_addr) {
-            return Err(SyscallError::UnalignedPointer.into());
-        }
-        Ok(unsafe { from_raw_parts_mut(host_addr as *mut $T, $len as usize) })
-    }};
 }
 
 fn translate_type<'a, T>(
@@ -1869,26 +1815,7 @@ declare_builtin_function!(
             }
         };
 
-        let simplify_alt_bn128_syscall_error_codes = invoke_context
-            .get_feature_set()
-            .simplify_alt_bn128_syscall_error_codes;
-
-        let result_point = match calculation(input) {
-            Ok(result_point) => result_point,
-            Err(e) => {
-                return if simplify_alt_bn128_syscall_error_codes {
-                    Ok(1)
-                } else {
-                    Ok(e.into())
-                };
-            }
-        };
-
-        // This can never happen and should be removed when the
-        // simplify_alt_bn128_syscall_error_codes feature gets activated
-        if result_point.len() != output && !simplify_alt_bn128_syscall_error_codes {
-            return Ok(AltBn128Error::SliceOutOfBounds.into());
-        }
+        let Ok(result_point) = calculation(input) else { return Ok(1) };
 
         call_result.copy_from_slice(&result_point);
         Ok(SUCCESS)
@@ -2331,6 +2258,7 @@ mod tests {
         solana_program_runtime::{
             execution_budget::MAX_HEAP_FRAME_BYTES,
             invoke_context::{BpfAllocator, InvokeContext, SyscallContext},
+            memory::address_is_aligned,
             with_mock_invoke_context,
         },
         solana_sbpf::{

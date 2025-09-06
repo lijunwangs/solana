@@ -194,12 +194,6 @@ pub fn load_bank_forks(
                 exit,
             )
             .map_err(BankForksUtilsError::ProcessBlockstoreFromGenesis)?;
-            bank_forks
-                .read()
-                .unwrap()
-                .root_bank()
-                .set_initial_accounts_hash_verification_completed();
-
             (bank_forks, None)
         };
 
@@ -282,7 +276,6 @@ fn bank_forks_from_snapshot(
             genesis_config,
             &process_options.runtime_config,
             process_options.debug_keys.clone(),
-            None,
             process_options.limit_load_slot_count_from_snapshot,
             process_options.verify_index,
             process_options.accounts_db_config.clone(),
@@ -308,7 +301,6 @@ fn bank_forks_from_snapshot(
             genesis_config,
             &process_options.runtime_config,
             process_options.debug_keys.clone(),
-            None,
             process_options.limit_load_slot_count_from_snapshot,
             process_options.accounts_db_skip_shrink,
             process_options.accounts_db_force_initial_clean,

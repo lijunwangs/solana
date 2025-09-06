@@ -11,6 +11,7 @@ use {
     log::*,
     solana_account::{create_account_shared_data_for_test, Account, AccountSharedData},
     solana_account_info::AccountInfo,
+    solana_accounts_db::accounts_db::ACCOUNTS_DB_CONFIG_FOR_TESTING,
     solana_banks_client::start_client,
     solana_banks_server::banks_server::start_local_server,
     solana_clock::{Epoch, Slot},
@@ -625,8 +626,9 @@ impl ProgramTest {
         program_name: &'static str,
         program_id: &Pubkey,
     ) {
-        let program_file = find_file(&format!("{program_name}.so"))
-            .expect("Program file data not available for {program_name} ({program_id})");
+        let program_file = find_file(&format!("{program_name}.so")).unwrap_or_else(|| {
+            panic!("Program file data not available for {program_name} ({program_id})")
+        });
         let elf = read_file(program_file);
         let program_accounts =
             programs::bpf_loader_upgradeable_program_accounts(program_id, &elf, &Rent::default());
@@ -852,9 +854,8 @@ impl ProgramTest {
             }),
             Vec::default(),
             None,
-            None,
             false,
-            None,
+            ACCOUNTS_DB_CONFIG_FOR_TESTING,
             None,
             None,
             Arc::default(),

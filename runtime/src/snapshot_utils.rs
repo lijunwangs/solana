@@ -1,3 +1,5 @@
+#[cfg(feature = "dev-context-only-utils")]
+use solana_accounts_db::utils::create_accounts_run_and_snapshot_dirs;
 use {
     crate::{
         bank::{BankFieldsToDeserialize, BankFieldsToSerialize, BankHashStats, BankSlotDelta},
@@ -22,7 +24,7 @@ use {
     solana_accounts_db::{
         account_storage::{AccountStorageMap, AccountStoragesOrderer},
         account_storage_reader::AccountStorageReader,
-        accounts_db::{AccountStorageEntry, AtomicAccountsFileId},
+        accounts_db::{AccountStorageEntry, AccountsDbConfig, AtomicAccountsFileId},
         accounts_file::{AccountsFile, AccountsFileError, StorageAccess},
         hardened_unpack::{self, UnpackError},
         utils::{move_and_async_delete_path, ACCOUNTS_RUN_DIR, ACCOUNTS_SNAPSHOT_DIR},
@@ -47,11 +49,6 @@ use {
     tar::{self, Archive},
     tempfile::TempDir,
     thiserror::Error,
-};
-#[cfg(feature = "dev-context-only-utils")]
-use {
-    hardened_unpack::UnpackedAppendVecMap,
-    solana_accounts_db::utils::create_accounts_run_and_snapshot_dirs,
 };
 
 mod archive_format;
@@ -1599,7 +1596,7 @@ pub fn verify_and_unarchive_snapshots(
     full_snapshot_archive_info: &FullSnapshotArchiveInfo,
     incremental_snapshot_archive_info: Option<&IncrementalSnapshotArchiveInfo>,
     account_paths: &[PathBuf],
-    storage_access: StorageAccess,
+    accounts_db_config: &AccountsDbConfig,
 ) -> Result<(UnarchivedSnapshots, UnarchivedSnapshotsGuard)> {
     check_are_snapshots_compatible(
         full_snapshot_archive_info,
@@ -1622,7 +1619,7 @@ pub fn verify_and_unarchive_snapshots(
         account_paths,
         full_snapshot_archive_info.archive_format(),
         next_append_vec_id.clone(),
-        storage_access,
+        accounts_db_config,
     )?;
 
     let (
@@ -1648,7 +1645,7 @@ pub fn verify_and_unarchive_snapshots(
             account_paths,
             incremental_snapshot_archive_info.archive_format(),
             next_append_vec_id.clone(),
-            storage_access,
+            accounts_db_config,
         )?;
         (
             Some(unpack_dir),
@@ -1693,17 +1690,19 @@ fn streaming_unarchive_snapshot(
     ledger_dir: PathBuf,
     snapshot_archive_path: PathBuf,
     archive_format: ArchiveFormat,
+    memlock_budget_size: usize,
 ) -> JoinHandle<Result<()>> {
     Builder::new()
         .name("solTarUnpack".to_string())
         .spawn(move || {
-            let archive_size = fs::metadata(&snapshot_archive_path)?.len();
-            let buf_size = archive_size.min(MAX_SNAPSHOT_READER_BUF_SIZE);
+            let archive_size = fs::metadata(&snapshot_archive_path)?.len() as usize;
+            let read_write_budget_size = (memlock_budget_size / 2).min(archive_size);
+            let read_buf_size = MAX_SNAPSHOT_READER_BUF_SIZE.min(read_write_budget_size as u64);
             let decompressor =
-                decompressed_tar_reader(archive_format, snapshot_archive_path, buf_size)?;
+                decompressed_tar_reader(archive_format, snapshot_archive_path, read_buf_size)?;
             hardened_unpack::streaming_unpack_snapshot(
                 Archive::new(decompressor),
-                archive_size,
+                read_write_budget_size,
                 ledger_dir.as_path(),
                 &account_paths,
                 &file_sender,
@@ -1717,7 +1716,7 @@ fn decompressed_tar_reader(
     archive_format: ArchiveFormat,
     archive_path: impl AsRef<Path>,
     buf_size: u64,
-) -> Result<ArchiveFormatDecompressor<Box<dyn BufRead + 'static>>> {
+) -> Result<ArchiveFormatDecompressor<impl BufRead>> {
     let buf_reader =
         solana_accounts_db::large_file_buf_reader(archive_path.as_ref(), buf_size as usize)
             .map_err(|err| {
@@ -1879,7 +1878,7 @@ fn unarchive_snapshot(
     account_paths: &[PathBuf],
     archive_format: ArchiveFormat,
     next_append_vec_id: Arc<AtomicAccountsFileId>,
-    storage_access: StorageAccess,
+    accounts_db_config: &AccountsDbConfig,
 ) -> Result<UnarchivedSnapshot> {
     let unpack_dir = tempfile::Builder::new()
         .prefix(unpacked_snapshots_dir_prefix)
@@ -1893,6 +1892,7 @@ fn unarchive_snapshot(
         unpack_dir.path().to_path_buf(),
         snapshot_archive_path.as_ref().to_path_buf(),
         archive_format,
+        accounts_db_config.memlock_budget_size,
     );
 
     let num_rebuilder_threads = num_cpus::get_physical().saturating_sub(1).max(1);
@@ -1912,7 +1912,7 @@ fn unarchive_snapshot(
                     num_rebuilder_threads,
                     next_append_vec_id,
                     SnapshotFrom::Archive,
-                    storage_access,
+                    accounts_db_config.storage_access,
                 )?,
                 measure_name
             );
@@ -2427,27 +2427,6 @@ pub fn purge_old_snapshot_archives(
     }
 }
 
-#[cfg(feature = "dev-context-only-utils")]
-fn unpack_snapshot_local(
-    snapshot_path: impl AsRef<Path>,
-    archive_format: ArchiveFormat,
-    ledger_dir: &Path,
-    account_paths: &[PathBuf],
-    num_threads: usize,
-) -> Result<UnpackedAppendVecMap> {
-    assert!(num_threads > 0);
-    let archive_size = fs::metadata(&snapshot_path)?.len();
-    let archive = Archive::new(decompressed_tar_reader(
-        archive_format,
-        snapshot_path,
-        archive_size,
-    )?);
-    let unpacked_append_vec_map =
-        hardened_unpack::unpack_snapshot(archive, archive_size, ledger_dir, account_paths)?;
-
-    Ok(unpacked_append_vec_map)
-}
-
 pub fn verify_unpacked_snapshots_dir_and_version(
     unpacked_snapshots_dir_and_version: &UnpackedSnapshotsDirAndVersion,
 ) -> Result<(SnapshotVersion, BankSnapshotInfo)> {
@@ -2497,100 +2476,6 @@ pub enum VerifyBank {
     /// the serialized bank was 'reserialized' into a non-deterministic format
     /// so, deserialize both files and compare deserialized results
     NonDeterministic,
-}
-
-#[cfg(feature = "dev-context-only-utils")]
-pub fn verify_snapshot_archive(
-    snapshot_archive: impl AsRef<Path>,
-    snapshots_to_verify: impl AsRef<Path>,
-    archive_format: ArchiveFormat,
-    verify_bank: VerifyBank,
-    slot: Slot,
-) {
-    let temp_dir = tempfile::TempDir::new().unwrap();
-    let unpack_dir = temp_dir.path();
-    let unpack_account_dir = create_accounts_run_and_snapshot_dirs(unpack_dir).unwrap().0;
-    unpack_snapshot_local(
-        snapshot_archive,
-        archive_format,
-        unpack_dir,
-        &[unpack_account_dir.clone()],
-        1,
-    )
-    .unwrap();
-
-    // Check snapshots are the same
-    let unpacked_snapshots = unpack_dir.join(BANK_SNAPSHOTS_DIR);
-
-    // Since the unpack code collects all the appendvecs into one directory unpack_account_dir, we need to
-    // collect all the appendvecs in account_paths/<slot>/snapshot/ into one directory for later comparison.
-    let storages_to_verify = unpack_dir.join("storages_to_verify");
-    // Create the directory if it doesn't exist
-    fs::create_dir_all(&storages_to_verify).unwrap();
-
-    let slot = slot.to_string();
-    let snapshot_slot_dir = snapshots_to_verify.as_ref().join(&slot);
-
-    if let VerifyBank::NonDeterministic = verify_bank {
-        // file contents may be different, but deserialized structs should be equal
-        let p1 = snapshots_to_verify.as_ref().join(&slot).join(&slot);
-        let p2 = unpacked_snapshots.join(&slot).join(&slot);
-        assert!(crate::serde_snapshot::compare_two_serialized_banks(&p1, &p2).unwrap());
-        fs::remove_file(p1).unwrap();
-        fs::remove_file(p2).unwrap();
-    }
-
-    // The new the status_cache file is inside the slot directory together with the snapshot file.
-    // When unpacking an archive, the status_cache file from the archive is one-level up outside of
-    //  the slot directory.
-    // The unpacked status_cache file need to be put back into the slot directory for the directory
-    // comparison to pass.
-    let existing_unpacked_status_cache_file =
-        unpacked_snapshots.join(SNAPSHOT_STATUS_CACHE_FILENAME);
-    let new_unpacked_status_cache_file = unpacked_snapshots
-        .join(&slot)
-        .join(SNAPSHOT_STATUS_CACHE_FILENAME);
-    fs::rename(
-        existing_unpacked_status_cache_file,
-        new_unpacked_status_cache_file,
-    )
-    .unwrap();
-
-    let accounts_hardlinks_dir = snapshot_slot_dir.join(SNAPSHOT_ACCOUNTS_HARDLINKS);
-    if accounts_hardlinks_dir.is_dir() {
-        // This directory contain symlinks to all <account_path>/snapshot/<slot> directories.
-        for entry in fs::read_dir(&accounts_hardlinks_dir).unwrap() {
-            let link_dst_path = fs::read_link(entry.unwrap().path()).unwrap();
-            // Copy all the files in dst_path into the storages_to_verify directory.
-            for entry in fs::read_dir(&link_dst_path).unwrap() {
-                let src_path = entry.unwrap().path();
-                let dst_path = storages_to_verify.join(src_path.file_name().unwrap());
-                fs::copy(src_path, dst_path).unwrap();
-            }
-        }
-        fs::remove_dir_all(accounts_hardlinks_dir).unwrap();
-    }
-
-    let version_path = snapshot_slot_dir.join(SNAPSHOT_VERSION_FILENAME);
-    if version_path.is_file() {
-        fs::remove_file(version_path).unwrap();
-    }
-
-    let state_complete_path = snapshot_slot_dir.join(SNAPSHOT_STATE_COMPLETE_FILENAME);
-    if state_complete_path.is_file() {
-        fs::remove_file(state_complete_path).unwrap();
-    }
-
-    assert!(!dir_diff::is_different(&snapshots_to_verify, unpacked_snapshots).unwrap());
-
-    // In the unarchiving case, there is an extra empty "accounts" directory. The account
-    // files in the archive accounts/ have been expanded to [account_paths].
-    // Remove the empty "accounts" directory for the directory comparison below.
-    // In some test cases the directory to compare do not come from unarchiving.
-    // Ignore the error when this directory does not exist.
-    _ = fs::remove_dir(unpack_account_dir.join("accounts"));
-    // Check the account entries are the same
-    assert!(!dir_diff::is_different(&storages_to_verify, unpack_account_dir).unwrap());
 }
 
 /// Purges all bank snapshots

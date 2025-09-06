@@ -297,10 +297,6 @@ enum StartLeaderError {
     #[error("Replay is behind for parent slot {0}")]
     ReplayIsBehind(/* parent slot */ Slot),
 
-    /// Startup verification is not yet complete
-    #[error("Startup verification is incomplete on parent bank {0}")]
-    StartupVerificationIncomplete(/* parent slot */ Slot),
-
     /// Bank forks already contains bank
     #[error("Already contain bank for leader slot {0}")]
     AlreadyHaveBank(/* leader slot */ Slot),
@@ -324,13 +320,14 @@ fn start_receive_and_record_loop(
         // for now but can be longer if needed.
         match record_receiver.recv_timeout(Duration::from_millis(400)) {
             Ok(record) => {
+                let record_response = poh_recorder.write().unwrap().record(
+                    record.slot,
+                    record.mixins,
+                    record.transaction_batches,
+                );
                 if record
                     .sender
-                    .send(poh_recorder.write().unwrap().record(
-                        record.slot,
-                        record.mixins,
-                        record.transaction_batches,
-                    ))
+                    .send(record_response.map(|r| r.starting_transaction_index))
                     .is_err()
                 {
                     panic!("Error returning mixin hashes");
@@ -406,8 +403,7 @@ pub fn start_loop(config: BlockCreationLoopConfig) {
             ctx.my_pubkey = my_pubkey;
 
             warn!(
-                "Identity changed from {} to {} during block creation loop",
-                my_old_pubkey, my_pubkey
+                "Identity changed from {my_old_pubkey} to {my_pubkey} during block creation loop"
             );
         }
 
@@ -687,11 +683,6 @@ fn maybe_start_leader(
     if !parent_bank.is_frozen() {
         slot_metrics.replay_is_behind_count += 1;
         return Err(StartLeaderError::ReplayIsBehind(parent_slot));
-    }
-
-    if !parent_bank.has_initial_accounts_hash_verification_completed() {
-        slot_metrics.startup_verification_incomplete_count += 1;
-        return Err(StartLeaderError::StartupVerificationIncomplete(parent_slot));
     }
 
     // TODO(ashwin): plug this in from replay

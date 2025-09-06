@@ -962,7 +962,6 @@ impl VerifyAccountsHashConfig {
     fn default_for_test() -> Self {
         Self {
             require_rooted_bank: false,
-            run_in_background: false,
         }
     }
 }
@@ -3725,14 +3724,12 @@ fn test_add_instruction_processor_for_existing_unrelated_accounts(is_alpenglow: 
             continue;
         }
 
-        bank.transaction_processor.add_builtin(
-            &bank,
+        bank.add_builtin(
             vote_id,
             "mock_program1",
             ProgramCacheEntry::new_builtin(0, 0, MockBuiltin::vm),
         );
-        bank.transaction_processor.add_builtin(
-            &bank,
+        bank.add_builtin(
             stake_id,
             "mock_program2",
             ProgramCacheEntry::new_builtin(0, 0, MockBuiltin::vm),
@@ -5164,8 +5161,7 @@ fn test_fuzz_instructions() {
         .map(|i| {
             let key = solana_pubkey::new_rand();
             let name = format!("program{i:?}");
-            bank.transaction_processor.add_builtin(
-                &bank,
+            bank.add_builtin(
                 key,
                 name.as_str(),
                 ProgramCacheEntry::new_builtin(0, 0, MockBuiltin::vm),
@@ -5334,9 +5330,8 @@ fn test_bank_hash_consistency() {
         Arc::new(RuntimeConfig::default()),
         vec![],
         None,
-        None,
         false,
-        Some(BankTestConfig::default().accounts_db_config),
+        BankTestConfig::default().accounts_db_config,
         None,
         Some(Pubkey::from([42; 32])),
         Arc::default(),
@@ -5380,7 +5375,7 @@ fn test_same_program_id_uses_unique_executable_accounts() {
         let instruction_context = transaction_context.get_current_instruction_context()?;
         let program_idx = instruction_context.get_index_of_program_account_in_transaction()?;
         let mut acc = transaction_context.accounts().try_borrow_mut(program_idx)?;
-        acc.set_data(vec![1, 2]);
+        acc.set_data_from_slice(&[1, 2]);
         Ok(())
     });
 
@@ -7423,7 +7418,7 @@ fn test_invoke_non_program_account_owned_by_a_builtin(
 fn test_debug_bank() {
     let (genesis_config, _mint_keypair) = create_genesis_config(50000);
     let mut bank = Bank::new_for_tests(&genesis_config);
-    bank.finish_init(&genesis_config, None, false);
+    bank.finish_init(false);
     let debug = format!("{bank:#?}");
     assert!(!debug.is_empty());
 }
@@ -8255,9 +8250,8 @@ fn test_epoch_schedule_from_genesis_config() {
         Arc::<RuntimeConfig>::default(),
         Vec::new(),
         None,
-        None,
         false,
-        Some(ACCOUNTS_DB_CONFIG_FOR_TESTING),
+        ACCOUNTS_DB_CONFIG_FOR_TESTING,
         None,
         None,
         Arc::default(),
@@ -8285,9 +8279,8 @@ where
         Arc::<RuntimeConfig>::default(),
         Vec::new(),
         None,
-        None,
         false,
-        Some(ACCOUNTS_DB_CONFIG_FOR_TESTING),
+        ACCOUNTS_DB_CONFIG_FOR_TESTING,
         None,
         None,
         Arc::default(),
@@ -12398,7 +12391,7 @@ fn test_apply_builtin_program_feature_transitions_for_new_epoch() {
 
     let mut bank = Bank::new_for_tests(&genesis_config);
     bank.feature_set = Arc::new(FeatureSet::all_enabled());
-    bank.finish_init(&genesis_config, None, false);
+    bank.finish_init(false);
 
     // Overwrite precompile accounts to simulate a cluster which already added precompiles.
     for precompile in get_precompiles() {
@@ -12433,7 +12426,7 @@ fn test_startup_from_snapshot_after_precompile_transition() {
 
     let mut bank = Bank::new_for_tests(&genesis_config);
     bank.feature_set = Arc::new(FeatureSet::all_enabled());
-    bank.finish_init(&genesis_config, None, false);
+    bank.finish_init(false);
 
     // Overwrite precompile accounts to simulate a cluster which already added precompiles.
     for precompile in get_precompiles() {
@@ -12444,5 +12437,19 @@ fn test_startup_from_snapshot_after_precompile_transition() {
     bank.freeze();
 
     // Simulate starting up from snapshot finishing the initialization for a frozen bank
-    bank.finish_init(&genesis_config, None, false);
+    bank.finish_init(false);
+}
+
+#[test]
+fn test_parent_block_id() {
+    // Setup parent bank and populate block ID.
+    let (genesis_config, _mint_keypair) = create_genesis_config(100_000);
+    let parent_bank = Arc::new(Bank::new_for_tests(&genesis_config));
+    let parent_block_id = Some(Hash::new_unique());
+    parent_bank.set_block_id(parent_block_id);
+
+    // Create child from parent and ensure parent block ID links back to the
+    // expected value.
+    let child_bank = Bank::new_from_parent(parent_bank, &Pubkey::new_unique(), 1);
+    assert_eq!(parent_block_id, child_bank.parent_block_id());
 }

@@ -777,7 +777,7 @@ impl AdminRpc for AdminRpcImpl {
             };
 
             banking_stage
-                .spawn_non_vote_threads(transaction_struct, block_production_method, num_workers)
+                .spawn_threads(transaction_struct, block_production_method, num_workers)
                 .map_err(|err| {
                     error!("Failed to spawn new non-vote threads: {err:?}");
                     jsonrpc_core::error::Error::internal_error()
@@ -1478,7 +1478,7 @@ mod tests {
         if let VotorEvent::SetIdentity = event {
             info!("Received SetIdentity event as expected");
         } else {
-            panic!("Unexpected event received: {:?}", event);
+            panic!("Unexpected event received: {event:?}");
         }
     }
 

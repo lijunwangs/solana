@@ -82,7 +82,7 @@ use {
         sanitized::{MessageHash, SanitizedTransaction, MAX_TX_ACCOUNT_LOCKS},
         versioned::VersionedTransaction,
     },
-    solana_transaction_context::TransactionAccount,
+    solana_transaction_context::transaction_accounts::TransactionAccount,
     solana_transaction_error::TransactionError,
     solana_transaction_status::{
         map_inner_instructions, BlockEncodingOptions, ConfirmedBlock,
@@ -496,7 +496,6 @@ impl JsonRpcRequestProcessor {
         );
 
         let leader_schedule_cache = Arc::new(LeaderScheduleCache::new_from_bank(&bank));
-        let startup_verification_complete = Arc::clone(bank.get_startup_verification_complete());
         let slot = bank.slot();
         let optimistically_confirmed_bank =
             Arc::new(RwLock::new(OptimisticallyConfirmedBank { bank }));
@@ -516,7 +515,6 @@ impl JsonRpcRequestProcessor {
                 blockstore,
                 0,
                 exit,
-                startup_verification_complete,
             )),
             cluster_info,
             genesis_hash,
@@ -8886,7 +8884,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(2),
-                None, /* no work sequence */
+                None, /* no dependency work */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -8910,7 +8908,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(1),
-                None, /* no work sequence */
+                None, /* no dependency work */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -8934,7 +8932,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::OptimisticallyConfirmed(3),
-                None, /* no work sequence */
+                None, /* no dependency work */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,
@@ -8959,7 +8957,7 @@ pub mod tests {
         OptimisticallyConfirmedBankTracker::process_notification(
             (
                 BankNotification::Frozen(bank3),
-                None, /* no work sequence */
+                None, /* no dependency work */
             ),
             &bank_forks,
             &optimistically_confirmed_bank,

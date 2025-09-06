@@ -77,7 +77,7 @@ use {
     solana_accounts_db::{
         account_locks::validate_account_locks,
         accounts::{AccountAddressFilter, Accounts, PubkeyAccountSlot},
-        accounts_db::{self, AccountStorageEntry, AccountsDb, AccountsDbConfig, DuplicatesLtHash},
+        accounts_db::{AccountStorageEntry, AccountsDb, AccountsDbConfig},
         accounts_hash::AccountsLtHash,
         accounts_index::{IndexKey, ScanConfig, ScanResult},
         accounts_update_notifier_interface::AccountsUpdateNotifier,
@@ -85,7 +85,7 @@ use {
         blockhash_queue::BlockhashQueue,
         storable_accounts::StorableAccounts,
     },
-    solana_builtins::{prototype::BuiltinPrototype, BUILTINS, STATELESS_BUILTINS},
+    solana_builtins::{BUILTINS, STATELESS_BUILTINS},
     solana_clock::{
         BankId, Epoch, Slot, SlotIndex, UnixTimestamp, INITIAL_RENT_EPOCH, MAX_PROCESSING_AGE,
         MAX_TRANSACTION_FORWARDING_DELAY,
@@ -106,7 +106,7 @@ use {
     solana_inflation::Inflation,
     solana_keypair::Keypair,
     solana_lattice_hash::lt_hash::LtHash,
-    solana_measure::{meas_dur, measure::Measure, measure_time, measure_us},
+    solana_measure::{measure::Measure, measure_time, measure_us},
     solana_message::{inner_instruction::InnerInstructions, AccountKeys, SanitizedMessage},
     solana_native_token::LAMPORTS_PER_SOL,
     solana_packet::PACKET_DATA_SIZE,
@@ -158,14 +158,13 @@ use {
         versioned::VersionedTransaction,
         Transaction, TransactionVerificationMode,
     },
-    solana_transaction_context::{TransactionAccount, TransactionReturnData},
+    solana_transaction_context::{transaction_accounts::TransactionAccount, TransactionReturnData},
     solana_transaction_error::{TransactionError, TransactionResult as Result},
     solana_vote::vote_account::{VoteAccount, VoteAccountsHashMap},
     std::{
         collections::{HashMap, HashSet},
         fmt,
-        num::NonZeroUsize,
-        ops::{AddAssign, RangeFull},
+        ops::AddAssign,
         path::PathBuf,
         slice,
         sync::{
@@ -175,7 +174,6 @@ use {
             },
             Arc, LockResult, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak,
         },
-        thread::Builder,
         time::{Duration, Instant},
     },
 };
@@ -195,7 +193,6 @@ pub use {partitioned_epoch_rewards::KeyedRewardsAndNumPartitions, solana_reward_
 /// params to `verify_accounts_hash`
 struct VerifyAccountsHashConfig {
     require_rooted_bank: bool,
-    run_in_background: bool,
 }
 
 mod accounts_lt_hash;
@@ -536,7 +533,6 @@ impl PartialEq for Bank {
             // TODO: Confirm if all these fields are intentionally ignored!
             rewards: _,
             cluster_type: _,
-            rewards_pool_pubkeys: _,
             transaction_debug_keys: _,
             transaction_log_collector_config: _,
             transaction_log_collector: _,
@@ -826,9 +822,6 @@ pub struct Bank {
 
     pub cluster_type: Option<ClusterType>,
 
-    // this is temporary field only to remove rewards_pool entirely
-    pub rewards_pool_pubkeys: Arc<HashSet<Pubkey>>,
-
     transaction_debug_keys: Option<Arc<HashSet<Pubkey>>>,
 
     // Global configuration for how transaction logs should be collected across all banks
@@ -1079,7 +1072,6 @@ impl Bank {
             is_delta: AtomicBool::default(),
             rewards: RwLock::<Vec<(Pubkey, RewardInfo)>>::default(),
             cluster_type: Option::<ClusterType>::default(),
-            rewards_pool_pubkeys: Arc::<HashSet<Pubkey>>::default(),
             transaction_debug_keys: Option::<Arc<HashSet<Pubkey>>>::default(),
             transaction_log_collector_config: Arc::<RwLock<TransactionLogCollectorConfig>>::default(
             ),
@@ -1124,9 +1116,8 @@ impl Bank {
         runtime_config: Arc<RuntimeConfig>,
         paths: Vec<PathBuf>,
         debug_keys: Option<Arc<HashSet<Pubkey>>>,
-        additional_builtins: Option<&[BuiltinPrototype]>,
         debug_do_not_add_builtins: bool,
-        accounts_db_config: Option<AccountsDbConfig>,
+        accounts_db_config: AccountsDbConfig,
         accounts_update_notifier: Option<AccountsUpdateNotifier>,
         #[allow(unused)] collector_id_for_tests: Option<Pubkey>,
         exit: Arc<AtomicBool>,
@@ -1153,11 +1144,7 @@ impl Bank {
         #[cfg(feature = "dev-context-only-utils")]
         bank.process_genesis_config(genesis_config, collector_id_for_tests, genesis_hash);
 
-        bank.finish_init(
-            genesis_config,
-            additional_builtins,
-            debug_do_not_add_builtins,
-        );
+        bank.finish_init(debug_do_not_add_builtins);
 
         // genesis needs stakes for all epochs up to the epoch implied by
         //  slot = 0 and genesis configuration
@@ -1263,9 +1250,6 @@ impl Bank {
             TransactionBatchProcessor::new_from(&parent.transaction_processor, slot, epoch)
         );
 
-        let (rewards_pool_pubkeys, rewards_pool_pubkeys_time_us) =
-            measure_us!(parent.rewards_pool_pubkeys.clone());
-
         let (transaction_debug_keys, transaction_debug_keys_time_us) =
             measure_us!(parent.transaction_debug_keys.clone());
 
@@ -1326,7 +1310,6 @@ impl Bank {
             hard_forks: parent.hard_forks.clone(),
             rewards: RwLock::new(vec![]),
             cluster_type: parent.cluster_type,
-            rewards_pool_pubkeys,
             transaction_debug_keys,
             transaction_log_collector_config,
             transaction_log_collector: Arc::new(RwLock::new(TransactionLogCollector::default())),
@@ -1439,7 +1422,6 @@ impl Bank {
                 stakes_cache_time_us,
                 epoch_stakes_time_us,
                 builtin_program_ids_time_us,
-                rewards_pool_pubkeys_time_us,
                 executor_cache_time_us: 0,
                 transaction_debug_keys_time_us,
                 transaction_log_collector_config_time_us,
@@ -1737,7 +1719,6 @@ impl Bank {
         runtime_config: Arc<RuntimeConfig>,
         fields: BankFieldsToDeserialize,
         debug_keys: Option<Arc<HashSet<Pubkey>>>,
-        additional_builtins: Option<&[BuiltinPrototype]>,
         debug_do_not_add_builtins: bool,
         accounts_data_size_initial: u64,
     ) -> Self {
@@ -1804,7 +1785,6 @@ impl Bank {
             is_delta: AtomicBool::new(fields.is_delta),
             rewards: RwLock::new(vec![]),
             cluster_type: Some(genesis_config.cluster_type),
-            rewards_pool_pubkeys: Arc::<HashSet<Pubkey>>::default(),
             transaction_debug_keys: debug_keys,
             transaction_log_collector_config: Arc::<RwLock<TransactionLogCollectorConfig>>::default(
             ),
@@ -1852,11 +1832,7 @@ impl Bank {
             .expect("new rayon threadpool");
         bank.recalculate_partitioned_rewards(null_tracer(), &thread_pool);
 
-        bank.finish_init(
-            genesis_config,
-            additional_builtins,
-            debug_do_not_add_builtins,
-        );
+        bank.finish_init(debug_do_not_add_builtins);
         bank.transaction_processor
             .fill_missing_sysvar_cache_entries(&bank);
 
@@ -2767,16 +2743,6 @@ impl Bank {
             )
         })?;
         Some(self.get_fee_for_message_with_lamports_per_signature(message, lamports_per_signature))
-    }
-
-    /// Returns true when startup accounts hash verification has completed or never had to run in background.
-    pub fn get_startup_verification_complete(&self) -> &Arc<AtomicBool> {
-        &self
-            .rc
-            .accounts
-            .accounts_db
-            .verify_accounts_hash_in_bg
-            .verified
     }
 
     pub fn get_fee_for_message_with_lamports_per_signature(
@@ -4092,19 +4058,11 @@ impl Bank {
         cost_tracker.set_limits(account_cost_limit, block_cost_limit, vote_cost_limit);
     }
 
-    fn finish_init(
-        &mut self,
-        genesis_config: &GenesisConfig,
-        additional_builtins: Option<&[BuiltinPrototype]>,
-        debug_do_not_add_builtins: bool,
-    ) {
+    fn finish_init(&mut self, debug_do_not_add_builtins: bool) {
         if let Some(compute_budget) = self.compute_budget {
             self.transaction_processor
                 .set_execution_cost(compute_budget.to_cost());
         }
-
-        self.rewards_pool_pubkeys =
-            Arc::new(genesis_config.rewards_pools.keys().cloned().collect());
 
         self.apply_feature_activations(
             ApplyFeatureActivationsCaller::FinishInit,
@@ -4134,10 +4092,7 @@ impl Bank {
         }
 
         if !debug_do_not_add_builtins {
-            for builtin in BUILTINS
-                .iter()
-                .chain(additional_builtins.unwrap_or(&[]).iter())
-            {
+            for builtin in BUILTINS {
                 // The builtin should be added if it has no enable feature ID
                 // and it has not been migrated to Core BPF.
                 //
@@ -4149,8 +4104,7 @@ impl Bank {
                         .unwrap_or(false)
                 };
                 if builtin.enable_feature_id.is_none() && !builtin_is_bpf(&builtin.program_id) {
-                    self.transaction_processor.add_builtin(
-                        self,
+                    self.add_builtin(
                         builtin.program_id,
                         builtin.name,
                         ProgramCacheEntry::new_builtin(0, builtin.name.len(), builtin.entrypoint),
@@ -4164,7 +4118,7 @@ impl Bank {
             }
         }
 
-        let simd_0296_active = self
+        let simd_0268_active = self
             .feature_set
             .is_active(&raise_cpi_nesting_limit_to_8::id());
 
@@ -4175,7 +4129,7 @@ impl Bank {
                         &self.feature_set.runtime_features(),
                         &self
                             .compute_budget()
-                            .unwrap_or(ComputeBudget::new_with_defaults(simd_0296_active))
+                            .unwrap_or(ComputeBudget::new_with_defaults(simd_0268_active))
                             .to_budget(),
                         false, /* deployment */
                         false, /* debugging_features */
@@ -4185,7 +4139,7 @@ impl Bank {
                 Some(Arc::new(create_program_runtime_environment_v2(
                     &self
                         .compute_budget()
-                        .unwrap_or(ComputeBudget::new_with_defaults(simd_0296_active))
+                        .unwrap_or(ComputeBudget::new_with_defaults(simd_0268_active))
                         .to_budget(),
                     false, /* debugging_features */
                 ))),
@@ -4597,7 +4551,6 @@ impl Bank {
         _ = self.verify_accounts(
             VerifyAccountsHashConfig {
                 require_rooted_bank: false,
-                run_in_background: false,
             },
             None,
         );
@@ -4605,37 +4558,25 @@ impl Bank {
 
     /// Verify the account state as part of startup, typically from a snapshot.
     ///
-    /// This fn calculates the accounts lt hash and compares it against the stored value in the
-    /// bank.  Normal validator operation will do this calculation in the background, and use the
-    /// account storage files for input. Tests/ledger-tool may opt to either do the calculation in
-    /// the foreground, or use the accounts index for input.
+    /// This fn compares the calculated accounts lt hash against the stored value in the bank.
+    ///
+    /// Normal validator operation will calculate the accounts lt hash during index generation.
+    /// Tests/ledger-tool may not have the calculated value from index generation (or the bank
+    /// being verified is different from the snapshot/startup bank), and thus will be calculated in
+    /// this function, using the accounts index for input, running in the foreground.
     ///
     /// Returns true if all is good.
-    /// Note, if calculation is running in the background, this fn will return as soon as the
-    /// calculation *begins*, not when it has completed.
     ///
     /// Only intended to be called at startup, or from tests/ledger-tool.
     #[must_use]
     fn verify_accounts(
         &self,
-        mut config: VerifyAccountsHashConfig,
-        duplicates_lt_hash: Option<Box<DuplicatesLtHash>>,
+        config: VerifyAccountsHashConfig,
+        calculated_accounts_lt_hash: Option<&AccountsLtHash>,
     ) -> bool {
         let accounts_db = &self.rc.accounts.accounts_db;
-        // Wait until initial hash calc is complete before starting a new hash calc.
-        // This should only occur when we halt at a slot in ledger-tool.
-        accounts_db
-            .verify_accounts_hash_in_bg
-            .join_background_thread();
 
         let slot = self.slot();
-
-        if duplicates_lt_hash.is_none() {
-            // Calculating the accounts lt hash from storages *requires* a duplicates_lt_hash.
-            // If it is None here, then we must use the index instead, which also means we
-            // cannot run in the background.
-            config.run_in_background = false;
-        }
 
         if config.require_rooted_bank && !accounts_db.accounts_index.is_alive_root(slot) {
             if let Some(parent) = self.parent() {
@@ -4643,10 +4584,8 @@ impl Bank {
                     "slot {slot} is not a root, so verify accounts hash on parent bank at slot {}",
                     parent.slot(),
                 );
-                // The duplicates_lt_hash is only valid for the current slot, so we must fall
-                // back to verifying the accounts lt hash with the index (which also means we
-                // cannot run in the background).
-                config.run_in_background = false;
+                // The calculated_accounts_lt_hash parameter is only valid for the current slot, so
+                // we must fall back to calculating the accounts lt hash with the index.
                 return parent.verify_accounts(config, None);
             } else {
                 // this will result in mismatch errors
@@ -4671,95 +4610,18 @@ impl Bank {
             is_ok
         }
 
-        // The snapshot storages must be captured *before* starting the background verification.
-        // Otherwise, it is possible that a delayed call to `get_snapshot_storages()` will *not*
-        // get the correct storages required to calculate and verify the accounts hashes.
-        let snapshot_storages = accounts_db.get_storages(RangeFull);
+        info!("Verifying accounts...");
+        let start = Instant::now();
         let expected_accounts_lt_hash = self.accounts_lt_hash.lock().unwrap().clone();
-        if config.run_in_background {
-            let accounts_db_ = Arc::clone(accounts_db);
-            accounts_db.verify_accounts_hash_in_bg.start(|| {
-                Builder::new()
-                    .name("solBgVerfyAccts".into())
-                    .spawn(move || {
-                        info!("Verifying accounts in background...");
-                        let start = Instant::now();
-                        let num_threads = accounts_db_
-                            .num_hash_threads
-                            .unwrap_or_else(accounts_db::default_num_hash_threads);
-                        let (calculated_accounts_lt_hash, lattice_verify_time) =
-                            meas_dur!(accounts_db_
-                                .calculate_accounts_lt_hash_at_startup_from_storages(
-                                    snapshot_storages.0.as_slice(),
-                                    &duplicates_lt_hash.unwrap(),
-                                    slot,
-                                    num_threads
-                                ));
-                        let is_ok =
-                            check_lt_hash(&expected_accounts_lt_hash, &calculated_accounts_lt_hash);
-                        accounts_db_
-                            .verify_accounts_hash_in_bg
-                            .background_finished();
-                        let total_time = start.elapsed();
-                        datapoint_info!(
-                            "startup_verify_accounts",
-                            ("total_us", total_time.as_micros(), i64),
-                            (
-                                "calculate_accounts_lt_hash_us",
-                                lattice_verify_time.as_micros(),
-                                i64
-                            ),
-                        );
-                        info!("Verifying accounts in background... Done in {total_time:?}");
-                        is_ok
-                    })
-                    .unwrap()
-            });
-            true // initial result is true. We haven't failed yet. If verification fails, we'll panic from bg thread.
+        let is_ok = if let Some(calculated_accounts_lt_hash) = calculated_accounts_lt_hash {
+            check_lt_hash(&expected_accounts_lt_hash, calculated_accounts_lt_hash)
         } else {
-            info!("Verifying accounts in foreground...");
-            let start = Instant::now();
-            let num_threads = NonZeroUsize::new(num_cpus::get()).unwrap();
-            let calculated_accounts_lt_hash = if let Some(duplicates_lt_hash) = duplicates_lt_hash {
-                accounts_db.calculate_accounts_lt_hash_at_startup_from_storages(
-                    snapshot_storages.0.as_slice(),
-                    &duplicates_lt_hash,
-                    slot,
-                    num_threads,
-                )
-            } else {
-                accounts_db.calculate_accounts_lt_hash_at_startup_from_index(&self.ancestors, slot)
-            };
-            let is_ok = check_lt_hash(&expected_accounts_lt_hash, &calculated_accounts_lt_hash);
-            self.set_initial_accounts_hash_verification_completed();
-            info!(
-                "Verifying accounts in foreground... Done in {:?}",
-                start.elapsed(),
-            );
-            is_ok
-        }
-    }
-
-    /// Specify that initial verification has completed.
-    /// Called internally when verification runs in the foreground thread.
-    /// Also has to be called by some tests which don't do verification on startup.
-    pub fn set_initial_accounts_hash_verification_completed(&self) {
-        self.rc
-            .accounts
-            .accounts_db
-            .verify_accounts_hash_in_bg
-            .verification_complete();
-    }
-
-    /// return true if bg hash verification is complete
-    /// return false if bg hash verification has not completed yet
-    /// if hash verification failed, a panic will occur
-    pub fn has_initial_accounts_hash_verification_completed(&self) -> bool {
-        self.rc
-            .accounts
-            .accounts_db
-            .verify_accounts_hash_in_bg
-            .check_complete()
+            let calculated_accounts_lt_hash =
+                accounts_db.calculate_accounts_lt_hash_at_startup_from_index(&self.ancestors, slot);
+            check_lt_hash(&expected_accounts_lt_hash, &calculated_accounts_lt_hash)
+        };
+        info!("Verifying accounts... Done in {:?}", start.elapsed());
+        is_ok
     }
 
     /// Get this bank's storages to use for snapshots.
@@ -4859,11 +4721,6 @@ impl Bank {
         self.rc
             .accounts
             .accounts_db
-            .verify_accounts_hash_in_bg
-            .join_background_thread();
-        self.rc
-            .accounts
-            .accounts_db
             .calculate_capitalization_at_startup_from_index(&self.ancestors, self.slot())
     }
 
@@ -4896,28 +4753,19 @@ impl Bank {
         skip_shrink: bool,
         force_clean: bool,
         latest_full_snapshot_slot: Slot,
-        duplicates_lt_hash: Option<Box<DuplicatesLtHash>>,
+        calculated_accounts_lt_hash: Option<&AccountsLtHash>,
     ) -> bool {
-        // If we verify the accounts using the lattice-based hash *and* with storages (as opposed
-        // to the index), then we rely on the DuplicatesLtHash as given by generate_index().  Since
-        // the duplicates are based on a specific set of storages, we must use the exact same
-        // storages to do the lattice-based accounts verification.  This means we must wait to
-        // clean/shrink until *after* we've gotten Arcs to the storages (this prevents their
-        // untimely removal).  Simply, we call `verify_accounts_hash()` before we call `clean` or
-        // `shrink`.
         let (verified_accounts, verify_accounts_time_us) = measure_us!({
             let should_verify_accounts = !self.rc.accounts.accounts_db.skip_initial_hash_calc;
             if should_verify_accounts {
                 self.verify_accounts(
                     VerifyAccountsHashConfig {
                         require_rooted_bank: false,
-                        run_in_background: true,
                     },
-                    duplicates_lt_hash,
+                    calculated_accounts_lt_hash,
                 )
             } else {
                 info!("Verifying accounts... Skipped.");
-                self.set_initial_accounts_hash_verification_completed();
                 true
             }
         });
@@ -5249,8 +5097,7 @@ impl Bank {
         program_id: Pubkey,
         builtin_function: BuiltinFunctionWithContext,
     ) {
-        self.transaction_processor.add_builtin(
-            self,
+        self.add_builtin(
             program_id,
             "mockup",
             ProgramCacheEntry::new_builtin(self.slot, 0, builtin_function),
@@ -5533,8 +5380,7 @@ impl Bank {
                     };
 
                 if should_enable_builtin_on_feature_transition {
-                    self.transaction_processor.add_builtin(
-                        self,
+                    self.add_builtin(
                         builtin.program_id,
                         builtin.name,
                         ProgramCacheEntry::new_builtin(
@@ -5671,8 +5517,54 @@ impl Bank {
     }
 
     pub fn add_builtin(&self, program_id: Pubkey, name: &str, builtin: ProgramCacheEntry) {
-        self.transaction_processor
-            .add_builtin(self, program_id, name, builtin)
+        debug!("Adding program {name} under {program_id:?}");
+        self.add_builtin_account(name, &program_id);
+        self.transaction_processor.add_builtin(program_id, builtin);
+        debug!("Added program {name} under {program_id:?}");
+    }
+
+    // NOTE: must hold idempotent for the same set of arguments
+    /// Add a builtin program account
+    fn add_builtin_account(&self, name: &str, program_id: &Pubkey) {
+        let existing_genuine_program =
+            self.get_account_with_fixed_root(program_id)
+                .and_then(|account| {
+                    // it's very unlikely to be squatted at program_id as non-system account because of burden to
+                    // find victim's pubkey/hash. So, when account.owner is indeed native_loader's, it's
+                    // safe to assume it's a genuine program.
+                    if native_loader::check_id(account.owner()) {
+                        Some(account)
+                    } else {
+                        // malicious account is pre-occupying at program_id
+                        self.burn_and_purge_account(program_id, account);
+                        None
+                    }
+                });
+
+        // introducing builtin program
+        if existing_genuine_program.is_some() {
+            // The existing account is sufficient
+            return;
+        }
+
+        assert!(
+            !self.freeze_started(),
+            "Can't change frozen bank by adding not-existing new builtin program ({name}, \
+             {program_id}). Maybe, inconsistent program activation is detected on snapshot \
+             restore?"
+        );
+
+        // Add a bogus executable builtin account, which will be loaded and ignored.
+        let (lamports, rent_epoch) =
+            self.inherit_specially_retained_account_fields(&existing_genuine_program);
+        let account: AccountSharedData = AccountSharedData::from(Account {
+            lamports,
+            data: name.as_bytes().to_vec(),
+            owner: solana_sdk_ids::native_loader::id(),
+            executable: true,
+            rent_epoch,
+        });
+        self.store_account_and_update_capitalization(program_id, &account);
     }
 
     pub fn get_bank_hash_stats(&self) -> BankHashStats {
@@ -5734,50 +5626,6 @@ impl TransactionProcessingCallback for Bank {
             .accounts
             .accounts_db
             .load_with_fixed_root(&self.ancestors, pubkey)
-    }
-
-    // NOTE: must hold idempotent for the same set of arguments
-    /// Add a builtin program account
-    fn add_builtin_account(&self, name: &str, program_id: &Pubkey) {
-        let existing_genuine_program =
-            self.get_account_with_fixed_root(program_id)
-                .and_then(|account| {
-                    // it's very unlikely to be squatted at program_id as non-system account because of burden to
-                    // find victim's pubkey/hash. So, when account.owner is indeed native_loader's, it's
-                    // safe to assume it's a genuine program.
-                    if native_loader::check_id(account.owner()) {
-                        Some(account)
-                    } else {
-                        // malicious account is pre-occupying at program_id
-                        self.burn_and_purge_account(program_id, account);
-                        None
-                    }
-                });
-
-        // introducing builtin program
-        if existing_genuine_program.is_some() {
-            // The existing account is sufficient
-            return;
-        }
-
-        assert!(
-            !self.freeze_started(),
-            "Can't change frozen bank by adding not-existing new builtin program ({name}, \
-             {program_id}). Maybe, inconsistent program activation is detected on snapshot \
-             restore?"
-        );
-
-        // Add a bogus executable builtin account, which will be loaded and ignored.
-        let (lamports, rent_epoch) =
-            self.inherit_specially_retained_account_fields(&existing_genuine_program);
-        let account: AccountSharedData = AccountSharedData::from(Account {
-            lamports,
-            data: name.as_bytes().to_vec(),
-            owner: solana_sdk_ids::native_loader::id(),
-            executable: true,
-            rent_epoch,
-        });
-        self.store_account_and_update_capitalization(program_id, &account);
     }
 
     fn inspect_account(&self, address: &Pubkey, account_state: AccountState, is_writable: bool) {
@@ -5864,9 +5712,8 @@ impl Bank {
             runtime_config,
             paths,
             None,
-            None,
             false,
-            Some(test_config.accounts_db_config),
+            test_config.accounts_db_config,
             None,
             Some(Pubkey::new_unique()),
             Arc::default(),
@@ -5887,9 +5734,8 @@ impl Bank {
             Arc::<RuntimeConfig>::default(),
             paths,
             None,
-            None,
             false,
-            Some(ACCOUNTS_DB_CONFIG_FOR_BENCHMARKS),
+            ACCOUNTS_DB_CONFIG_FOR_BENCHMARKS,
             None,
             Some(Pubkey::new_unique()),
             Arc::default(),
@@ -5956,16 +5802,6 @@ impl Bank {
             .accounts
             .accounts_db
             .flush_accounts_cache_slot_for_tests(self.slot())
-    }
-
-    /// This is only valid to call from tests.
-    /// block until initial accounts hash verification has completed
-    pub fn wait_for_initial_accounts_hash_verification_completed_for_tests(&self) {
-        self.rc
-            .accounts
-            .accounts_db
-            .verify_accounts_hash_in_bg
-            .join_background_thread()
     }
 
     pub fn get_sysvar_cache_for_tests(&self) -> SysvarCache {

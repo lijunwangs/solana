@@ -44,7 +44,10 @@ use {
         },
         utils::move_and_async_delete_path_contents,
     },
-    solana_client::connection_cache::{ConnectionCache, Protocol},
+    solana_client::{
+        client_option::ClientOption,
+        connection_cache::{ConnectionCache, Protocol},
+    },
     solana_clock::Slot,
     solana_cluster_type::ClusterType,
     solana_entry::poh::compute_hash_time,
@@ -83,7 +86,6 @@ use {
     },
     solana_measure::measure::Measure,
     solana_metrics::{datapoint_info, metrics::metrics_config_sanity_check},
-    solana_net_utils::multihomed_sockets::EgressSocketSelect,
     solana_poh::{
         poh_controller::PohController,
         poh_recorder::PohRecorder,
@@ -101,7 +103,7 @@ use {
         rpc::JsonRpcConfig,
         rpc_completed_slots_service::RpcCompletedSlotsService,
         rpc_pubsub_service::{PubSubConfig, PubSubService},
-        rpc_service::{ClientOption, JsonRpcService, JsonRpcServiceConfig},
+        rpc_service::{JsonRpcService, JsonRpcServiceConfig},
         rpc_subscriptions::RpcSubscriptions,
         transaction_notifier_interface::TransactionNotifierArc,
         transaction_status_service::TransactionStatusService,
@@ -308,7 +310,7 @@ pub struct ValidatorConfig {
     pub poh_pinned_cpu_core: usize,
     pub poh_hashes_per_batch: u64,
     pub process_ledger_before_services: bool,
-    pub accounts_db_config: Option<AccountsDbConfig>,
+    pub accounts_db_config: AccountsDbConfig,
     pub warp_slot: Option<Slot>,
     pub accounts_db_skip_shrink: bool,
     pub accounts_db_force_initial_clean: bool,
@@ -397,7 +399,7 @@ impl ValidatorConfig {
             validator_exit: Arc::new(RwLock::new(Exit::default())),
             validator_exit_backpressure: HashMap::default(),
             no_wait_for_vote_to_start_leader: true,
-            accounts_db_config: Some(ACCOUNTS_DB_CONFIG_FOR_TESTING),
+            accounts_db_config: ACCOUNTS_DB_CONFIG_FOR_TESTING,
             wait_to_vote_slot: None,
             runtime_config: RuntimeConfig::default(),
             banking_trace_dir_byte_limit: 0,
@@ -717,6 +719,10 @@ impl Validator {
         ed25519_sigverifier::init();
         info!("Initializing sigverify done.");
 
+        solana_accounts_db::validate_memlock_limit_for_disk_io(
+            config.accounts_db_config.memlock_budget_size,
+        )?;
+
         if !ledger_path.is_dir() {
             return Err(anyhow!(
                 "ledger directory does not exist or is not accessible: {ledger_path:?}"
@@ -885,11 +891,6 @@ impl Validator {
         cluster_info.set_entrypoints(cluster_entrypoints);
         cluster_info.restore_contact_info(ledger_path, config.contact_save_interval);
         cluster_info.set_bind_ip_addrs(node.bind_ip_addrs.clone());
-        let tvu_sockets_per_interface =
-            node.sockets.retransmit_sockets.len() / node.bind_ip_addrs.len();
-        cluster_info.init_egress_socket_select(Arc::new(EgressSocketSelect::new(
-            tvu_sockets_per_interface,
-        )));
         let cluster_info = Arc::new(cluster_info);
         let node_multihoming = Arc::new(NodeMultihoming::from(&node));
 
@@ -959,11 +960,9 @@ impl Validator {
         let prioritization_fee_cache = Arc::new(PrioritizationFeeCache::default());
 
         let leader_schedule_cache = Arc::new(leader_schedule_cache);
-        let startup_verification_complete;
         let (mut poh_recorder, entry_receiver) = {
             let bank = &bank_forks.read().unwrap().working_bank();
             let highest_frozen_bank = bank_forks.read().unwrap().highest_frozen_bank();
-            startup_verification_complete = Arc::clone(bank.get_startup_verification_complete());
             let first_alpenglow_slot = highest_frozen_bank.as_ref().and_then(|hfb| {
                 hfb.feature_set
                     .activated_slot(&agave_feature_set::alpenglow::id())
@@ -1251,7 +1250,6 @@ impl Validator {
                 validator_exit: config.validator_exit.clone(),
                 exit: exit.clone(),
                 override_health_check: rpc_override_health_check.clone(),
-                startup_verification_complete,
                 optimistically_confirmed_bank: optimistically_confirmed_bank.clone(),
                 send_transaction_service_config: config.send_transaction_service_config.clone(),
                 max_slots: max_slots.clone(),
@@ -1562,13 +1560,12 @@ impl Validator {
         {
             let vote_history = match process_blockstore.process_to_create_vote_history() {
                 Ok(vote_history) => {
-                    info!("Vote history: {:?}", vote_history);
+                    info!("Vote history: {vote_history:?}");
                     vote_history
                 }
                 Err(e) => {
                     warn!(
-                        "Unable to retrieve vote history: {:?} creating default vote history....",
-                        e
+                        "Unable to retrieve vote history: {e:?} creating default vote history...."
                     );
                     VoteHistory::default()
                 }
@@ -1577,14 +1574,11 @@ impl Validator {
         } else {
             let tower = match process_blockstore.process_to_create_tower() {
                 Ok(tower) => {
-                    info!("Tower state: {:?}", tower);
+                    info!("Tower state: {tower:?}");
                     tower
                 }
                 Err(e) => {
-                    warn!(
-                        "Unable to retrieve tower: {:?} creating default tower....",
-                        e
-                    );
+                    warn!("Unable to retrieve tower: {e:?} creating default tower....");
                     Tower::default()
                 }
             };
@@ -2173,7 +2167,7 @@ fn post_process_restored_vote_history(
             let message =
                 format!("Hard fork is detected; discarding vote_history restoration result: {vote_history:?}");
             datapoint_error!("vote_history_error", ("error", message, String),);
-            error!("{}", message);
+            error!("{message}");
 
             // unconditionally relax vote_history requirement
             should_require_vote_history = false;
@@ -2210,10 +2204,7 @@ fn post_process_restored_vote_history(
                     storage file has been copied to the correct directory. Aborting"
                 ));
             }
-            error!(
-                "Rebuilding an empty vote_history from root slot due to failed restore: {}",
-                err
-            );
+            error!("Rebuilding an empty vote_history from root slot due to failed restore: {err}");
 
             VoteHistory::new(*validator_identity, bank_forks.root())
         }
@@ -3023,11 +3014,7 @@ fn cleanup_accounts_paths(config: &ValidatorConfig) {
     for account_path in &config.account_paths {
         move_and_async_delete_path_contents(account_path);
     }
-    if let Some(shrink_paths) = config
-        .accounts_db_config
-        .as_ref()
-        .and_then(|config| config.shrink_paths.as_ref())
-    {
+    if let Some(shrink_paths) = &config.accounts_db_config.shrink_paths {
         for shrink_path in shrink_paths {
             move_and_async_delete_path_contents(shrink_path);
         }

@@ -723,18 +723,14 @@ impl ReplayStage {
                         Ok(tower) => tower,
                         Err(err) => {
                             error!(
-                                "Unable to load new tower when attempting to change identity from {} \
-                                to {} on ReplayStage startup, Exiting: {}",
-                                my_old_pubkey, my_pubkey, err
+                                "Unable to load new tower when attempting to change identity from {my_old_pubkey} \
+                                to {my_pubkey} on ReplayStage startup, Exiting: {err}"
                             );
                             // drop(_exit) will set the exit flag, eventually tearing down the entire process
                             return;
                         }
                     };
-                    warn!(
-                        "Identity changed during startup from {} to {}",
-                        my_old_pubkey, my_pubkey
-                    );
+                    warn!("Identity changed during startup from {my_old_pubkey} to {my_pubkey}");
                 }
             }
             let (mut progress, heaviest_subtree_fork_choice) =
@@ -1205,8 +1201,7 @@ impl ReplayStage {
                                     Err(err) => {
                                         error!(
                                             "Unable to load new tower when attempting to change \
-                                         identity from {} to {} on set-identity, Exiting: {}",
-                                            my_old_pubkey, my_pubkey, err
+                                         identity from {my_old_pubkey} to {my_pubkey} on set-identity, Exiting: {err}"
                                         );
                                         // drop(_exit) will set the exit flag, eventually tearing down the entire process
                                         return;
@@ -1215,7 +1210,7 @@ impl ReplayStage {
                                 // Ensure the validator can land votes with the new identity before
                                 // becoming leader
                                 has_new_vote_been_rooted = !wait_for_vote_to_start_leader;
-                                warn!("Identity changed from {} to {}", my_old_pubkey, my_pubkey);
+                                warn!("Identity changed from {my_old_pubkey} to {my_pubkey}");
                             }
 
                             if !poh_controller.has_pending_message() {
@@ -2146,10 +2141,7 @@ impl ReplayStage {
                 } else {
                     ""
                 };
-                info!(
-                    "LEADER CHANGE at slot: {} leader: {}{}",
-                    bank_slot, new_leader, msg
-                );
+                info!("LEADER CHANGE at slot: {bank_slot} leader: {new_leader}{msg}");
             }
         }
         current_leader.replace(new_leader.to_owned());
@@ -2217,21 +2209,13 @@ impl ReplayStage {
         maybe_my_leader_slot: Slot,
         has_new_vote_been_rooted: bool,
     ) -> bool {
-        if !parent_bank.has_initial_accounts_hash_verification_completed() {
-            info!("startup verification incomplete, so skipping my leader slot");
-            return false;
-        }
-
         if bank_forks
             .read()
             .unwrap()
             .get(maybe_my_leader_slot)
             .is_some()
         {
-            warn!(
-                "{} already have bank in forks at {}?",
-                my_pubkey, maybe_my_leader_slot
-            );
+            warn!("{my_pubkey} already have bank in forks at {maybe_my_leader_slot}?");
             return false;
         }
         trace!(
@@ -2249,12 +2233,7 @@ impl ReplayStage {
                 return false;
             }
 
-            trace!(
-                "{} leader {} at poh slot: {}",
-                my_pubkey,
-                next_leader,
-                maybe_my_leader_slot
-            );
+            trace!("{my_pubkey} leader {next_leader} at poh slot: {maybe_my_leader_slot}");
 
             // Poh: I guess I missed my slot
             // Alpenglow: It's not my slot yet
@@ -2262,7 +2241,7 @@ impl ReplayStage {
                 return false;
             }
         } else {
-            error!("{} No next leader found", my_pubkey);
+            error!("{my_pubkey} No next leader found");
             return false;
         }
         true
@@ -2318,10 +2297,7 @@ impl ReplayStage {
 
         let root_slot = bank_forks.read().unwrap().root();
         datapoint_info!("replay_stage-my_leader_slot", ("slot", my_leader_slot, i64),);
-        info!(
-            "new fork:{} parent:{} (leader) root:{}",
-            my_leader_slot, parent_slot, root_slot
-        );
+        info!("new fork:{my_leader_slot} parent:{parent_slot} (leader) root:{root_slot}");
 
         let root_distance = my_leader_slot - root_slot;
         let vote_only_bank = if root_distance > MAX_ROOT_DISTANCE_FOR_VOTE_ONLY {
@@ -2407,8 +2383,7 @@ impl ReplayStage {
                 // TODO: need to keep the ticks around for parent slots in previous epoch
                 // because reset below will delete those ticks
                 info!(
-                    "initiating alpenglow migration from maybe_start_leader() for slot {}",
-                    maybe_my_leader_slot
+                    "initiating alpenglow migration from maybe_start_leader() for slot {maybe_my_leader_slot}"
                 );
                 Self::initiate_alpenglow_migration(poh_recorder, is_alpenglow_migration_complete);
             }
@@ -2419,7 +2394,7 @@ impl ReplayStage {
             return None;
         }
 
-        trace!("{} reached_leader_slot", my_pubkey);
+        trace!("{my_pubkey} reached_leader_slot");
 
         let Some(parent_bank) = bank_forks.read().unwrap().get(parent_slot) else {
             warn!(
@@ -2675,8 +2650,7 @@ impl ReplayStage {
                     .activated_slot(&agave_feature_set::alpenglow::id());
                 if let Some(first_alpenglow_slot) = first_alpenglow_slot {
                     info!(
-                        "alpenglow feature detected in root bank {}, to be enabled on slot {}",
-                        new_root, first_alpenglow_slot
+                        "alpenglow feature detected in root bank {new_root}, to be enabled on slot {first_alpenglow_slot}"
                     );
                 }
             }
@@ -2760,11 +2734,6 @@ impl ReplayStage {
         has_new_vote_been_rooted: bool,
         wait_to_vote_slot: Option<Slot>,
     ) -> GenerateVoteTxResult {
-        if !bank.has_initial_accounts_hash_verification_completed() {
-            info!("startup verification incomplete, so unable to vote");
-            return GenerateVoteTxResult::WaitForStartupVerification;
-        }
-
         if authorized_voter_keypairs.is_empty() {
             return GenerateVoteTxResult::NonVoting;
         }
@@ -2783,8 +2752,7 @@ impl ReplayStage {
         let vote_state_view = match vote_account.vote_state_view() {
             None => {
                 warn!(
-                    "Vote account {} does not have a vote state.  Unable to vote",
-                    vote_account_pubkey,
+                    "Vote account {vote_account_pubkey} does not have a vote state.  Unable to vote"
                 );
                 return GenerateVoteTxResult::NoVoteState(*vote_account_pubkey);
             }
@@ -3108,7 +3076,7 @@ impl ReplayStage {
             total_stake,
             node_vote_state,
         )) {
-            trace!("lockouts_sender failed: {:?}", e);
+            trace!("lockouts_sender failed: {e:?}");
         }
     }
 
@@ -7971,8 +7939,6 @@ pub(crate) mod tests {
             ),
         );
 
-        bank0.set_initial_accounts_hash_verification_completed();
-
         let (voting_sender, voting_receiver) = unbounded();
 
         // Simulate landing a vote for slot 0 landing in slot 1
@@ -8475,8 +8441,6 @@ pub(crate) mod tests {
         )];
         let my_vote_pubkey = my_vote_keypair[0].pubkey();
         let bank0 = bank_forks.read().unwrap().get(0).unwrap();
-
-        bank0.set_initial_accounts_hash_verification_completed();
 
         // Add a new fork starting from 0 with bigger slot number, we assume it has a bigger
         // weight, but we cannot switch because of lockout.
@@ -9636,8 +9600,6 @@ pub(crate) mod tests {
         let working_bank = bank_forks.read().unwrap().working_bank();
         assert!(working_bank.is_complete());
         assert!(working_bank.is_frozen());
-        // Mark startup verification as complete to avoid skipping leader slots
-        working_bank.set_initial_accounts_hash_verification_completed();
 
         // Insert a block two slots greater than current bank. This slot does
         // not have a corresponding Bank in BankForks; this emulates a scenario

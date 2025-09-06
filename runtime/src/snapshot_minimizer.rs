@@ -667,18 +667,15 @@ mod tests {
             &RuntimeConfig::default(),
             None,
             None,
-            None,
             false,
             false,
             false,
-            Some(accounts_db_config),
+            accounts_db_config,
             None,
             Arc::default(),
         )
         .unwrap();
 
-        // Wait for the startup verification to complete.  If we don't panic, then we're good!
-        roundtrip_bank.wait_for_initial_accounts_hash_verification_completed_for_tests();
         assert_eq!(roundtrip_bank, *bank);
     }
 }
