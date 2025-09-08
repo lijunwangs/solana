@@ -4,6 +4,7 @@ use {
     std::{net::UdpSocket, sync::Arc},
     tokio::runtime::Handle as RuntimeHandle,
     tokio_util::sync::CancellationToken,
+    solana_gossip::node::NodeMultihoming,
 };
 
 /// [`ClientOption`] enum represents the available client types for TPU
@@ -14,5 +15,13 @@ use {
 ///   requires a reference to a [`Keypair`].
 pub enum ClientOption<'a> {
     ConnectionCache(Arc<ConnectionCache>),
-    TpuClientNext(&'a Keypair, UdpSocket, RuntimeHandle, CancellationToken),
+    TpuClientNext(
+        (
+            &'a Keypair,
+            Box<[UdpSocket]>,
+            RuntimeHandle,
+            CancellationToken,
+            Arc<NodeMultihoming>,
+        ),
+    ),
 }
