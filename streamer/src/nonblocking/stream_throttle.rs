@@ -240,13 +240,13 @@ pub mod test {
             DEFAULT_MAX_UNSTAKED_CONNECTIONS,
             DEFAULT_MAX_STREAMS_PER_MS,
         ));
-        // 50K packets per ms * 20% / 500 max unstaked connections
+        // 500 packets per ms * 50% * 100 (ms) / 2000 max unstaked connections
         assert_eq!(
             load_ema.available_load_capacity_in_throttling_duration(
                 ConnectionPeerType::Unstaked,
                 10000,
             ),
-            20
+            12
         );
     }
 
