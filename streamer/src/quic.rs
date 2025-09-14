@@ -848,6 +848,7 @@ mod test {
             staked_nodes,
             QuicServerParams {
                 max_connections_per_peer: 2,
+                max_unstaked_connections_per_ipaddr: 2,
                 ..QuicServerParams::default_for_tests()
             },
             cancel.clone(),
