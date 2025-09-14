@@ -11,7 +11,7 @@ use {
     },
 };
 
-const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 20;
+const MAX_UNSTAKED_STREAMS_PERCENT: u64 = 50;
 pub const STREAM_THROTTLING_INTERVAL_MS: u64 = 100;
 pub const STREAM_THROTTLING_INTERVAL: Duration =
     Duration::from_millis(STREAM_THROTTLING_INTERVAL_MS);

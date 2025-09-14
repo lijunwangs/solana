@@ -739,7 +739,7 @@ async fn setup_connection(
                             remote_pubkey: Some(pubkey),
                             peer_type,
                             total_stake,
-                            max_connections_per_peer: max_connections_per_peer,
+                            max_connections_per_peer,
                             stats: stats.clone(),
                             max_stake,
                             min_stake,
