@@ -507,7 +507,37 @@ enum ConnectionHandlerError {
 }
 
 #[derive(Clone)]
-struct NewConnectionHandlerParams {
+pub struct ConnectionStakeInfo {
+    pub pubkey: Pubkey,
+    pub stake: u64,
+    pub total_stake: u64,
+    pub max_stake: u64,
+    pub min_stake: u64,
+}
+
+#[derive(Clone)]
+pub struct QosParams {
+    pub stake_info: Option<ConnectionStakeInfo>,
+    pub peer_type: ConnectionPeerType,
+    pub max_connections_per_peer: usize,
+    pub stats: Arc<StreamerStats>,
+}
+
+pub trait Qos {
+    /// Derive the QosParams for a connection
+    fn derive_qos_params(&self, stake_info: Option<&ConnectionStakeInfo>, connection: &Connection) -> QosParams;
+
+    /// Try to add a new connection. If successful, return a CancellationToken and
+    /// a ConnectionStreamCounter to track the streams created on this connection.
+    fn try_add_connection(&self, connection: &Connection, params: QosParams) -> Option<(CancellationToken, ConnectionStreamCounter)>;
+
+    fn on_stream_opened(&self);
+    fn on_stream_closed(&self);
+    fn report_qos_stats(&self);
+}
+
+#[derive(Clone)]
+pub struct NewConnectionHandlerParams {
     packet_sender: Sender<PacketAccumulator>,
     remote_pubkey: Option<Pubkey>,
     peer_type: ConnectionPeerType,

@@ -190,13 +190,13 @@ impl StakedStreamLoadEMA {
 }
 
 #[derive(Debug)]
-pub(crate) struct ConnectionStreamCounter {
+pub struct ConnectionStreamCounter {
     pub(crate) stream_count: AtomicU64,
     last_throttling_instant: RwLock<tokio::time::Instant>,
 }
 
 impl ConnectionStreamCounter {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             stream_count: AtomicU64::default(),
             last_throttling_instant: RwLock::new(tokio::time::Instant::now()),
