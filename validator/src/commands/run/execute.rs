@@ -928,7 +928,9 @@ pub fn execute(
 
     let tpu_quic_server_config = QuicServerParams {
         max_connections_per_peer: tpu_max_connections_per_peer.try_into().unwrap(),
-        max_unstaked_connections_per_ipaddr: tpu_max_unstaked_connections_per_ipaddr,
+        max_unstaked_connections_per_ipaddr: tpu_max_unstaked_connections_per_ipaddr
+            .try_into()
+            .unwrap(),
         max_staked_connections: tpu_max_staked_connections.try_into().unwrap(),
         max_unstaked_connections: tpu_max_unstaked_connections.try_into().unwrap(),
         max_streams_per_ms,
