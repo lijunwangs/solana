@@ -26,7 +26,7 @@ use {
     solana_rpc::{rpc::JsonRpcConfig, rpc_pubsub_service::PubSubConfig},
     solana_runtime::snapshot_utils::{SnapshotVersion, SUPPORTED_ARCHIVE_COMPRESSION},
     solana_send_transaction_service::send_transaction_service::{
-        MAX_BATCH_SEND_RATE_MS, MAX_TRANSACTION_BATCH_SIZE,
+        Config as SendTransactionServiceConfig, MAX_BATCH_SEND_RATE_MS, MAX_TRANSACTION_BATCH_SIZE,
     },
     solana_signer::Signer,
     solana_streamer::socket::SocketAddrSpace,
@@ -62,6 +62,7 @@ pub mod json_rpc_config;
 pub mod pub_sub_config;
 pub mod rpc_bigtable_config;
 pub mod rpc_bootstrap_config;
+pub mod send_transaction_config;
 
 #[derive(Debug, PartialEq)]
 pub struct RunArgs {
@@ -74,6 +75,7 @@ pub struct RunArgs {
     pub blockstore_options: BlockstoreOptions,
     pub json_rpc_config: JsonRpcConfig,
     pub pub_sub_config: PubSubConfig,
+    pub send_transaction_service_config: SendTransactionServiceConfig,
 }
 
 impl FromClapArgMatches for RunArgs {
@@ -123,6 +125,9 @@ impl FromClapArgMatches for RunArgs {
             blockstore_options: BlockstoreOptions::from_clap_arg_match(matches)?,
             json_rpc_config: JsonRpcConfig::from_clap_arg_match(matches)?,
             pub_sub_config: PubSubConfig::from_clap_arg_match(matches)?,
+            send_transaction_service_config: SendTransactionServiceConfig::from_clap_arg_match(
+                matches,
+            )?,
         })
     }
 }
@@ -1074,81 +1079,6 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
             .help("Max encoding and decoding message size used in Bigtable Grpc client"),
     )
     .arg(
-        Arg::with_name("rpc_pubsub_worker_threads")
-            .long("rpc-pubsub-worker-threads")
-            .takes_value(true)
-            .value_name("NUMBER")
-            .validator(is_parsable::<usize>)
-            .default_value(&default_args.rpc_pubsub_worker_threads)
-            .help("PubSub worker threads"),
-    )
-    .arg(
-        Arg::with_name("rpc_pubsub_enable_block_subscription")
-            .long("rpc-pubsub-enable-block-subscription")
-            .requires("enable_rpc_transaction_history")
-            .takes_value(false)
-            .help("Enable the unstable RPC PubSub `blockSubscribe` subscription"),
-    )
-    .arg(
-        Arg::with_name("rpc_pubsub_enable_vote_subscription")
-            .long("rpc-pubsub-enable-vote-subscription")
-            .takes_value(false)
-            .help("Enable the unstable RPC PubSub `voteSubscribe` subscription"),
-    )
-    .arg(
-        Arg::with_name("rpc_pubsub_max_active_subscriptions")
-            .long("rpc-pubsub-max-active-subscriptions")
-            .takes_value(true)
-            .value_name("NUMBER")
-            .validator(is_parsable::<usize>)
-            .default_value(&default_args.rpc_pubsub_max_active_subscriptions)
-            .help(
-                "The maximum number of active subscriptions that RPC PubSub will accept across \
-                 all connections.",
-            ),
-    )
-    .arg(
-        Arg::with_name("rpc_pubsub_queue_capacity_items")
-            .long("rpc-pubsub-queue-capacity-items")
-            .takes_value(true)
-            .value_name("NUMBER")
-            .validator(is_parsable::<usize>)
-            .default_value(&default_args.rpc_pubsub_queue_capacity_items)
-            .help(
-                "The maximum number of notifications that RPC PubSub will store across all \
-                 connections.",
-            ),
-    )
-    .arg(
-        Arg::with_name("rpc_pubsub_queue_capacity_bytes")
-            .long("rpc-pubsub-queue-capacity-bytes")
-            .takes_value(true)
-            .value_name("BYTES")
-            .validator(is_parsable::<usize>)
-            .default_value(&default_args.rpc_pubsub_queue_capacity_bytes)
-            .help(
-                "The maximum total size of notifications that RPC PubSub will store across all \
-                 connections.",
-            ),
-    )
-    .arg(
-        Arg::with_name("rpc_pubsub_notification_threads")
-            .long("rpc-pubsub-notification-threads")
-            .requires("full_rpc_api")
-            .takes_value(true)
-            .value_name("NUM_THREADS")
-            .validator(is_parsable::<usize>)
-            .default_value_if(
-                "full_rpc_api",
-                None,
-                &default_args.rpc_pubsub_notification_threads,
-            )
-            .help(
-                "The maximum number of threads that RPC PubSub will use for generating \
-                 notifications. 0 will disable RPC PubSub notifications",
-            ),
-    )
-    .arg(
         Arg::with_name("rpc_send_transaction_retry_ms")
             .long("rpc-send-retry-ms")
             .value_name("MILLISECS")
@@ -1481,11 +1411,10 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
             .long("accounts-db-mark-obsolete-accounts")
             .help("Enables experimental obsolete account tracking")
             .long_help(
-                "Enables experimental obsolete account tracking. \
-                 This feature tracks obsolete accounts in the account storage entry allowing \
-                 for earlier cleaning of obsolete accounts in the storages and index. \
-                 At this time this feature is not compatible with booting from local \
-                 snapshot state and must unpack from archives.",
+                "Enables experimental obsolete account tracking. This feature tracks obsolete \
+                 accounts in the account storage entry allowing for earlier cleaning of obsolete \
+                 accounts in the storages and index. At this time this feature is not compatible \
+                 with booting from local snapshot state and must unpack from archives.",
             )
             .hidden(hidden_unless_forced()),
     )
@@ -1696,6 +1625,7 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
                  set,tpu-client-next is used by default.",
             ),
     )
+    .args(&pub_sub_config::args())
 }
 
 fn validators_set(
@@ -1762,6 +1692,7 @@ mod tests {
                         solana_rpc::rpc_pubsub_service::DEFAULT_QUEUE_CAPACITY_ITEMS,
                     ..PubSubConfig::default_for_tests()
                 },
+                send_transaction_service_config: SendTransactionServiceConfig::default(),
             }
         }
     }
@@ -1778,6 +1709,7 @@ mod tests {
                 blockstore_options: self.blockstore_options.clone(),
                 json_rpc_config: self.json_rpc_config.clone(),
                 pub_sub_config: self.pub_sub_config.clone(),
+                send_transaction_service_config: self.send_transaction_service_config.clone(),
             }
         }
     }

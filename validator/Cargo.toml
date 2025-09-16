@@ -31,6 +31,7 @@ libc = { workspace = true }
 libloading = { workspace = true }
 log = { workspace = true }
 num_cpus = { workspace = true }
+qualifier_attr = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
@@ -100,6 +101,7 @@ assert_cmd = { workspace = true }
 predicates = { workspace = true }
 pretty_assertions = { workspace = true }
 solana-account-decoder = { workspace = true }
+solana-core = { workspace = true, features = ["dev-context-only-utils"] }
 solana-program-option = { workspace = true }
 solana-program-pack = { workspace = true }
 solana-runtime = { workspace = true, features = ["dev-context-only-utils"] }

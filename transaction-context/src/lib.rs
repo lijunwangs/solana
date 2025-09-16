@@ -12,7 +12,6 @@ use {
     std::{
         cell::{Cell, UnsafeCell},
         collections::HashSet,
-        pin::Pin,
         rc::Rc,
     },
 };
@@ -20,6 +19,7 @@ use {
 use {solana_account::WritableAccount, solana_rent::Rent};
 
 pub mod transaction_accounts;
+pub mod vm_slice;
 
 pub const MAX_ACCOUNTS_PER_TRANSACTION: usize = 256;
 // This is one less than MAX_ACCOUNTS_PER_TRANSACTION because
@@ -109,7 +109,6 @@ impl InstructionAccount {
 /// This context is valid for the entire duration of a transaction being processed.
 #[derive(Debug)]
 pub struct TransactionContext {
-    account_keys: Pin<Box<[Pubkey]>>,
     accounts: Rc<TransactionAccounts>,
     instruction_stack_capacity: usize,
     instruction_trace_capacity: usize,
@@ -130,10 +129,8 @@ impl TransactionContext {
         instruction_stack_capacity: usize,
         instruction_trace_capacity: usize,
     ) -> Self {
-        let (account_keys, accounts): (Vec<_>, Vec<_>) = transaction_accounts.into_iter().unzip();
         Self {
-            account_keys: Pin::new(account_keys.into_boxed_slice()),
-            accounts: Rc::new(TransactionAccounts::new(accounts)),
+            accounts: Rc::new(TransactionAccounts::new(transaction_accounts)),
             instruction_stack_capacity,
             instruction_trace_capacity,
             instruction_stack: Vec::with_capacity(instruction_stack_capacity),
@@ -154,7 +151,12 @@ impl TransactionContext {
         let (accounts, _, _) = Rc::try_unwrap(self.accounts)
             .expect("transaction_context.accounts has unexpected outstanding refs")
             .take();
-        Ok(Vec::from(UnsafeCell::into_inner(accounts)))
+
+        Ok(UnsafeCell::into_inner(accounts)
+            .into_vec()
+            .into_iter()
+            .map(|(_, account)| account)
+            .collect())
     }
 
     #[cfg(not(target_os = "solana"))]
@@ -172,15 +174,15 @@ impl TransactionContext {
         &self,
         index_in_transaction: IndexOfAccount,
     ) -> Result<&Pubkey, InstructionError> {
-        self.account_keys
-            .get(index_in_transaction as usize)
-            .ok_or(InstructionError::NotEnoughAccountKeys)
+        self.accounts
+            .account_key(index_in_transaction)
+            .ok_or(InstructionError::MissingAccount)
     }
 
     /// Searches for an account by its key
     pub fn find_index_of_account(&self, pubkey: &Pubkey) -> Option<IndexOfAccount> {
-        self.account_keys
-            .iter()
+        self.accounts
+            .account_keys_iter()
             .position(|key| key == pubkey)
             .map(|index| index as IndexOfAccount)
     }
@@ -525,7 +527,7 @@ impl<'a> InstructionContext<'a> {
         expected_at_least: IndexOfAccount,
     ) -> Result<(), InstructionError> {
         if self.get_number_of_instruction_accounts() < expected_at_least {
-            Err(InstructionError::NotEnoughAccountKeys)
+            Err(InstructionError::MissingAccount)
         } else {
             Ok(())
         }
@@ -536,29 +538,12 @@ impl<'a> InstructionContext<'a> {
         self.instruction_data
     }
 
-    /// Searches for an instruction account by its key
-    pub fn find_index_of_instruction_account(
-        &self,
-        transaction_context: &TransactionContext,
-        pubkey: &Pubkey,
-    ) -> Option<IndexOfAccount> {
-        self.instruction_accounts
-            .iter()
-            .position(|instruction_account| {
-                transaction_context
-                    .account_keys
-                    .get(instruction_account.index_in_transaction as usize)
-                    == Some(pubkey)
-            })
-            .map(|index| index as IndexOfAccount)
-    }
-
     /// Translates the given instruction wide program_account_index into a transaction wide index
     pub fn get_index_of_program_account_in_transaction(
         &self,
     ) -> Result<IndexOfAccount, InstructionError> {
         if self.program_account_index_in_tx == u16::MAX {
-            Err(InstructionError::NotEnoughAccountKeys)
+            Err(InstructionError::MissingAccount)
         } else {
             Ok(self.program_account_index_in_tx)
         }
@@ -572,7 +557,7 @@ impl<'a> InstructionContext<'a> {
         Ok(self
             .instruction_accounts
             .get(instruction_account_index as usize)
-            .ok_or(InstructionError::NotEnoughAccountKeys)?
+            .ok_or(InstructionError::MissingAccount)?
             .index_in_transaction as IndexOfAccount)
     }
 
@@ -641,7 +626,7 @@ impl<'a> InstructionContext<'a> {
         let instruction_account = *self
             .instruction_accounts
             .get(index_in_instruction as usize)
-            .ok_or(InstructionError::NotEnoughAccountKeys)?;
+            .ok_or(InstructionError::MissingAccount)?;
 
         let account = self
             .transaction_context
@@ -1057,10 +1042,7 @@ impl From<TransactionContext> for ExecutionRecord {
         let (accounts, touched_flags, resize_delta) = Rc::try_unwrap(context.accounts)
             .expect("transaction_context.accounts has unexpected outstanding refs")
             .take();
-        let accounts = Vec::from(Pin::into_inner(context.account_keys))
-            .into_iter()
-            .zip(UnsafeCell::into_inner(accounts))
-            .collect();
+        let accounts = UnsafeCell::into_inner(accounts).into_vec();
         let touched_account_count = touched_flags
             .iter()
             .fold(0usize, |accumulator, was_touched| {
@@ -1156,12 +1138,12 @@ mod tests {
         let instruction_context = transaction_context.get_next_instruction_context().unwrap();
 
         let result = instruction_context.get_index_of_program_account_in_transaction();
-        assert_eq!(result, Err(InstructionError::NotEnoughAccountKeys));
+        assert_eq!(result, Err(InstructionError::MissingAccount));
 
         let result = instruction_context.get_program_key();
-        assert_eq!(result, Err(InstructionError::NotEnoughAccountKeys));
+        assert_eq!(result, Err(InstructionError::MissingAccount));
 
         let result = instruction_context.get_program_owner();
-        assert_eq!(result.err(), Some(InstructionError::NotEnoughAccountKeys));
+        assert_eq!(result.err(), Some(InstructionError::MissingAccount));
     }
 }

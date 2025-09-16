@@ -54,6 +54,7 @@ mod serde_snapshot_tests {
         stream: &mut BufReader<R>,
         account_paths: &[PathBuf],
         storage_and_next_append_vec_id: StorageAndNextAccountsFileId,
+        accounts_db_config: AccountsDbConfig,
     ) -> Result<AccountsDb, Error>
     where
         R: Read,
@@ -70,7 +71,7 @@ mod serde_snapshot_tests {
             storage_and_next_append_vec_id,
             None,
             false,
-            ACCOUNTS_DB_CONFIG_FOR_TESTING,
+            accounts_db_config,
             None,
             Arc::default(),
         )
@@ -81,11 +82,17 @@ mod serde_snapshot_tests {
         stream: &mut BufReader<R>,
         account_paths: &[PathBuf],
         storage_and_next_append_vec_id: StorageAndNextAccountsFileId,
+        accounts_db_config: AccountsDbConfig,
     ) -> Result<AccountsDb, Error>
     where
         R: Read,
     {
-        context_accountsdb_from_stream::<R>(stream, account_paths, storage_and_next_append_vec_id)
+        context_accountsdb_from_stream::<R>(
+            stream,
+            account_paths,
+            storage_and_next_append_vec_id,
+            accounts_db_config,
+        )
     }
 
     fn accountsdb_to_stream<W>(
@@ -152,6 +159,7 @@ mod serde_snapshot_tests {
         accounts: &AccountsDb,
         slot: Slot,
         storage_access: StorageAccess,
+        accounts_db_config: AccountsDbConfig,
     ) -> AccountsDb {
         let mut writer = Cursor::new(vec![]);
         let snapshot_storages = accounts.get_storages(..=slot).0;
@@ -170,8 +178,13 @@ mod serde_snapshot_tests {
         // Simulate obtaining a copy of the AppendVecs from a tarball
         let storage_and_next_append_vec_id =
             copy_append_vecs(accounts, copied_accounts.path(), storage_access).unwrap();
-        let mut accounts_db =
-            accountsdb_from_stream(&mut reader, &[], storage_and_next_append_vec_id).unwrap();
+        let mut accounts_db = accountsdb_from_stream(
+            &mut reader,
+            &[],
+            storage_and_next_append_vec_id,
+            accounts_db_config,
+        )
+        .unwrap();
 
         // The append vecs will be used from `copied_accounts` directly by the new AccountsDb so keep
         // its TempDir alive
@@ -245,6 +258,7 @@ mod serde_snapshot_tests {
                 &mut reader,
                 &daccounts_paths,
                 storage_and_next_append_vec_id,
+                ACCOUNTS_DB_CONFIG_FOR_TESTING,
             )
             .unwrap(),
         ));
@@ -276,7 +290,12 @@ mod serde_snapshot_tests {
         db.add_root_and_flush_write_cache(new_root);
 
         // Simulate reconstruction from snapshot
-        let db = reconstruct_accounts_db_via_serialization(&db, new_root, storage_access);
+        let db = reconstruct_accounts_db_via_serialization(
+            &db,
+            new_root,
+            storage_access,
+            ACCOUNTS_DB_CONFIG_FOR_TESTING,
+        );
 
         // Check root account exists
         db.assert_load_account(new_root, key2, 1);
@@ -290,18 +309,20 @@ mod serde_snapshot_tests {
 
     #[test_matrix(
         [StorageAccess::File, StorageAccess::Mmap],
+        [MarkObsoleteAccounts::Enabled, MarkObsoleteAccounts::Disabled],
         [MarkObsoleteAccounts::Enabled, MarkObsoleteAccounts::Disabled]
     )]
     fn test_accounts_db_serialize1(
         storage_access: StorageAccess,
-        mark_obsolete_accounts: MarkObsoleteAccounts,
+        mark_obsolete_accounts_initial: MarkObsoleteAccounts,
+        mark_obsolete_accounts_restore: MarkObsoleteAccounts,
     ) {
         for pass in 0..2 {
             solana_logger::setup();
             let accounts = AccountsDb::new_with_config(
                 Vec::new(),
                 AccountsDbConfig {
-                    mark_obsolete_accounts,
+                    mark_obsolete_accounts: mark_obsolete_accounts_initial,
                     ..ACCOUNTS_DB_CONFIG_FOR_TESTING
                 },
                 None,
@@ -376,8 +397,16 @@ mod serde_snapshot_tests {
             accounts.check_storage(1, 11, 21);
             accounts.check_storage(2, 31, 31);
 
-            let daccounts =
-                reconstruct_accounts_db_via_serialization(&accounts, latest_slot, storage_access);
+            let accounts_db_config = AccountsDbConfig {
+                mark_obsolete_accounts: mark_obsolete_accounts_restore,
+                ..ACCOUNTS_DB_CONFIG_FOR_TESTING
+            };
+            let daccounts = reconstruct_accounts_db_via_serialization(
+                &accounts,
+                latest_slot,
+                storage_access,
+                accounts_db_config,
+            );
 
             assert_eq!(
                 daccounts.write_version.load(Ordering::Acquire),
@@ -390,10 +419,17 @@ mod serde_snapshot_tests {
             daccounts.check_accounts(&pubkeys[35..], 0, 65, 37);
             daccounts.check_accounts(&pubkeys1, 1, 10, 1);
 
-            // With accounts marked obsolete in the storages, storages are shrunk when saved
-            if mark_obsolete_accounts == MarkObsoleteAccounts::Enabled {
+            // If accounts are marked obsolete at initial save time, then the accounts will be
+            // shrunk during snapshot archive
+            if mark_obsolete_accounts_initial == MarkObsoleteAccounts::Enabled {
                 daccounts.check_storage(0, 78, 78);
                 daccounts.check_storage(1, 11, 11);
+            // If accounts are marked obsolete at restore time, then the accounts will be marked
+            // obsolete and cleaned during snapshot restore but not removed from the storages until
+            // the next shrink
+            } else if mark_obsolete_accounts_restore == MarkObsoleteAccounts::Enabled {
+                daccounts.check_storage(0, 78, 100);
+                daccounts.check_storage(1, 11, 21);
             } else {
                 daccounts.check_storage(0, 100, 100);
                 daccounts.check_storage(1, 21, 21);
@@ -445,8 +481,12 @@ mod serde_snapshot_tests {
 
         accounts.print_accounts_stats("accounts_post_purge");
 
-        let accounts =
-            reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access);
+        let accounts = reconstruct_accounts_db_via_serialization(
+            &accounts,
+            current_slot,
+            storage_access,
+            ACCOUNTS_DB_CONFIG_FOR_TESTING,
+        );
 
         accounts.print_accounts_stats("reconstructed");
 
@@ -523,8 +563,17 @@ mod serde_snapshot_tests {
     fn test_accounts_purge_chained_purge_before_snapshot_restore(storage_access: StorageAccess) {
         solana_logger::setup();
         with_chained_zero_lamport_accounts(|accounts, current_slot| {
+            // If there is no latest full snapshot, zero lamport accounts can be cleaned and
+            // removed immediately. Set latest full snapshot slot to zero to avoid cleaning
+            // zero lamport accounts
+            accounts.set_latest_full_snapshot_slot(0);
             accounts.clean_accounts_for_tests();
-            reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access)
+            reconstruct_accounts_db_via_serialization(
+                &accounts,
+                current_slot,
+                storage_access,
+                ACCOUNTS_DB_CONFIG_FOR_TESTING,
+            )
         });
     }
 
@@ -533,12 +582,21 @@ mod serde_snapshot_tests {
     fn test_accounts_purge_chained_purge_after_snapshot_restore(storage_access: StorageAccess) {
         solana_logger::setup();
         with_chained_zero_lamport_accounts(|accounts, current_slot| {
-            let accounts =
-                reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access);
+            let accounts = reconstruct_accounts_db_via_serialization(
+                &accounts,
+                current_slot,
+                storage_access,
+                ACCOUNTS_DB_CONFIG_FOR_TESTING,
+            );
             accounts.print_accounts_stats("after_reconstruct");
             accounts.set_latest_full_snapshot_slot(0);
             accounts.clean_accounts_for_tests();
-            reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access)
+            reconstruct_accounts_db_via_serialization(
+                &accounts,
+                current_slot,
+                storage_access,
+                ACCOUNTS_DB_CONFIG_FOR_TESTING,
+            )
         });
     }
 
@@ -600,8 +658,12 @@ mod serde_snapshot_tests {
         accounts.add_root_and_flush_write_cache(current_slot);
 
         accounts.print_count_and_status("before reconstruct");
-        let accounts =
-            reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access);
+        let accounts = reconstruct_accounts_db_via_serialization(
+            &accounts,
+            current_slot,
+            storage_access,
+            ACCOUNTS_DB_CONFIG_FOR_TESTING,
+        );
         accounts.set_latest_full_snapshot_slot(0);
         accounts.print_count_and_status("before purge zero");
         accounts.clean_accounts_for_tests();
@@ -706,8 +768,12 @@ mod serde_snapshot_tests {
         // So, prevent that from happening by introducing refcount
         ((current_slot - 1)..=current_slot).for_each(|slot| accounts.flush_root_write_cache(slot));
         accounts.clean_accounts_for_tests();
-        let accounts =
-            reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access);
+        let accounts = reconstruct_accounts_db_via_serialization(
+            &accounts,
+            current_slot,
+            storage_access,
+            ACCOUNTS_DB_CONFIG_FOR_TESTING,
+        );
 
         // Set snapshot to zero to avoid cleaning zero-lamport pubkey1
         accounts.set_latest_full_snapshot_slot(0);
@@ -799,8 +865,12 @@ mod serde_snapshot_tests {
 
             let accounts_lt_hash_pre = accounts
                 .calculate_accounts_lt_hash_at_startup_from_index(&no_ancestors, current_slot);
-            let accounts =
-                reconstruct_accounts_db_via_serialization(&accounts, current_slot, storage_access);
+            let accounts = reconstruct_accounts_db_via_serialization(
+                &accounts,
+                current_slot,
+                storage_access,
+                ACCOUNTS_DB_CONFIG_FOR_TESTING,
+            );
             let accounts_lt_hash_post = accounts
                 .calculate_accounts_lt_hash_at_startup_from_index(&no_ancestors, current_slot);
             assert_eq!(accounts_lt_hash_pre, accounts_lt_hash_post);

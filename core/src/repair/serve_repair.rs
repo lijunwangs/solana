@@ -273,7 +273,7 @@ type PingCache = ping_pong::PingCache<REPAIR_PING_TOKEN_SIZE>;
 #[cfg_attr(
     feature = "frozen-abi",
     derive(AbiEnumVisitor, AbiExample),
-    frozen_abi(digest = "4n6BDVREW7eS2xD3otZD7DKYhh3PWYYfZW2QmZ74zSmg")
+    frozen_abi(digest = "4zhY22Ens7hwEGMfq6wLyb9viynpcUYrSUCYnpgAS9rC")
 )]
 #[derive(Debug, Deserialize, Serialize)]
 pub enum RepairProtocol {
@@ -2078,7 +2078,7 @@ mod tests {
         let GenesisConfigInfo { genesis_config, .. } = create_genesis_config(10_000);
         let bank = Bank::new_for_tests(&genesis_config);
         let bank_forks = BankForks::new_rw_arc(bank);
-        let cluster_slots = Arc::new(ClusterSlots::default());
+        let cluster_slots = Arc::new(ClusterSlots::default_for_tests());
         let cluster_info = Arc::new(new_test_cluster_info());
         let serve_repair = ServeRepair::new_for_test(
             cluster_info.clone(),
@@ -2402,7 +2402,7 @@ mod tests {
         let GenesisConfigInfo { genesis_config, .. } = create_genesis_config(10_000);
         let bank = Bank::new_for_tests(&genesis_config);
         let bank_forks = BankForks::new_rw_arc(bank);
-        let cluster_slots = Arc::new(ClusterSlots::default());
+        let cluster_slots = Arc::new(ClusterSlots::default_for_tests());
         let cluster_info = Arc::new(new_test_cluster_info());
         let me = cluster_info.my_contact_info();
         let (repair_request_quic_sender, _) = tokio::sync::mpsc::channel(/*buffer:*/ 128);

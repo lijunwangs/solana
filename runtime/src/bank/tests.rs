@@ -124,7 +124,7 @@ use {
     },
     spl_generic_token::token,
     std::{
-        collections::{HashMap, HashSet},
+        collections::{BTreeMap, HashMap, HashSet},
         convert::TryInto,
         fs::File,
         io::Read,
@@ -3213,7 +3213,7 @@ fn test_bank_vote_accounts() {
         },
         10,
         vote_instruction::CreateVoteAccountConfig {
-            space: VoteStateVersions::vote_state_size_of(true) as u64,
+            space: VoteStateV3::size_of() as u64,
             ..vote_instruction::CreateVoteAccountConfig::default()
         },
     );
@@ -3295,7 +3295,7 @@ fn test_bank_cloned_stake_delegations() {
         },
         vote_balance,
         vote_instruction::CreateVoteAccountConfig {
-            space: VoteStateVersions::vote_state_size_of(true) as u64,
+            space: VoteStateV3::size_of() as u64,
             ..vote_instruction::CreateVoteAccountConfig::default()
         },
     );
@@ -3600,7 +3600,7 @@ fn test_add_builtin() {
         },
         1,
         vote_instruction::CreateVoteAccountConfig {
-            space: VoteStateVersions::vote_state_size_of(true) as u64,
+            space: VoteStateV3::size_of() as u64,
             ..vote_instruction::CreateVoteAccountConfig::default()
         },
     );
@@ -3647,7 +3647,7 @@ fn test_add_duplicate_static_program() {
         },
         1,
         vote_instruction::CreateVoteAccountConfig {
-            space: VoteStateVersions::vote_state_size_of(true) as u64,
+            space: VoteStateV3::size_of() as u64,
             ..vote_instruction::CreateVoteAccountConfig::default()
         },
     );
@@ -5315,22 +5315,26 @@ fn test_fuzz_instructions() {
 // added feature.
 #[test]
 fn test_bank_hash_consistency() {
-    let account = AccountSharedData::new(1_000_000_000_000, 0, &system_program::id());
-    let mut genesis_config = GenesisConfig::new(&[(Pubkey::from([42; 32]), account)], &[]);
-    // Override the creation time to ensure bank hash consistency
-    genesis_config.creation_time = 0;
-    genesis_config.cluster_type = ClusterType::MainnetBeta;
+    let genesis_config = GenesisConfig {
+        // Override the creation time to ensure bank hash consistency
+        creation_time: 0,
+        accounts: BTreeMap::from([(
+            Pubkey::from([42; 32]),
+            Account::new(1_000_000_000_000, 0, &system_program::id()),
+        )]),
+        cluster_type: ClusterType::MainnetBeta,
+        ..GenesisConfig::default()
+    };
 
     // Set the feature set to all enabled so that we detect any inconsistencies
     // in the hash computation that may arise from feature set changes
     let feature_set = FeatureSet::all_enabled();
 
-    let mut bank = Arc::new(Bank::new_with_paths(
+    let mut bank = Arc::new(Bank::new_from_genesis(
         &genesis_config,
         Arc::new(RuntimeConfig::default()),
         vec![],
         None,
-        false,
         BankTestConfig::default().accounts_db_config,
         None,
         Some(Pubkey::from([42; 32])),
@@ -6384,7 +6388,7 @@ fn test_bpf_loader_upgradeable_deploy_with_max_len(formalize_loaded_transaction_
         Some(&mint_keypair.pubkey()),
     );
     assert_eq!(
-        TransactionError::InstructionError(0, InstructionError::NotEnoughAccountKeys),
+        TransactionError::InstructionError(0, InstructionError::MissingAccount),
         bank_client
             .send_and_confirm_message(&[&mint_keypair], message)
             .unwrap_err()
@@ -6859,7 +6863,7 @@ fn test_compute_active_feature_set() {
     assert!(new_activations.contains(&test_feature));
 
     // Actually activate the pending activation
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::NewFromParent, true);
+    bank.compute_and_apply_new_feature_activations();
     let feature = feature::from_account(&bank.get_account(&test_feature).expect("get_account"))
         .expect("from_account");
     assert_eq!(feature.activated_at, Some(1));
@@ -6893,7 +6897,7 @@ fn test_reserved_account_keys() {
         &test_feature_id,
         &feature::create_account(&Feature::default(), 42),
     );
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::NewFromParent, true);
+    bank.compute_and_apply_new_feature_activations();
 
     assert_eq!(
         bank.get_reserved_account_keys().len(),
@@ -6932,16 +6936,16 @@ fn test_block_limits() {
         &feature_set::raise_block_limits_to_100m::id(),
         &feature::create_account(&Feature::default(), 42),
     );
-    // apply_feature_activations for `FinishInit` will not cause the block limit to be updated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::FinishInit, true);
+    // compute_and_apply_features_after_snapshot_restore will not cause the block limit to be updated
+    bank.compute_and_apply_features_after_snapshot_restore();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_block_limit(),
         MAX_BLOCK_UNITS,
         "before activating the feature, bank should have old/default limit"
     );
 
-    // apply_feature_activations for `NewFromParent` will cause feature to be activated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::NewFromParent, true);
+    // compute_and_apply_new_feature_activations will cause feature to be activated
+    bank.compute_and_apply_new_feature_activations();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_block_limit(),
         MAX_BLOCK_UNITS_SIMD_0286,
@@ -6967,16 +6971,16 @@ fn test_block_limits() {
         &feature::create_account(&Feature::default(), 42),
     );
 
-    // apply_feature_activations for `FinishInit` will not cause the block limit to be updated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::FinishInit, true);
+    // compute_and_apply_features_after_snapshot_restore will not cause the block limit to be updated
+    bank.compute_and_apply_features_after_snapshot_restore();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_account_limit(),
         MAX_WRITABLE_ACCOUNT_UNITS,
         "before activating the feature, bank should have old/default limit"
     );
 
-    // apply_feature_activations for `NewFromParent` will cause feature to be activated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::NewFromParent, true);
+    // compute_and_apply_new_feature_activations will cause feature to be activated
+    bank.compute_and_apply_new_feature_activations();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_account_limit(),
         MAX_WRITABLE_ACCOUNT_UNITS_SIMD_0306_SECOND,
@@ -6992,16 +6996,16 @@ fn test_block_limits() {
         &feature_set::raise_account_cu_limit::id(),
         &feature::create_account(&Feature::default(), 42),
     );
-    // apply_feature_activations for `FinishInit` will not cause the block limit to be updated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::FinishInit, true);
+    // compute_and_apply_features_after_snapshot_restore will not cause the block limit to be updated
+    bank.compute_and_apply_features_after_snapshot_restore();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_account_limit(),
         MAX_WRITABLE_ACCOUNT_UNITS,
         "before activating the feature, bank should have old/default limit"
     );
 
-    // apply_feature_activations for `NewFromParent` will cause feature to be activated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::NewFromParent, true);
+    // compute_and_apply_new_feature_activations will cause feature to be activated
+    bank.compute_and_apply_new_feature_activations();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_block_limit(),
         MAX_BLOCK_UNITS,
@@ -7018,16 +7022,16 @@ fn test_block_limits() {
         &feature_set::raise_block_limits_to_100m::id(),
         &feature::create_account(&Feature::default(), 42),
     );
-    // apply_feature_activations for `FinishInit` will not cause the block limit to be updated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::FinishInit, true);
+    // compute_and_apply_features_after_snapshot_restore will not cause the block limit to be updated
+    bank.compute_and_apply_features_after_snapshot_restore();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_block_limit(),
         MAX_BLOCK_UNITS,
         "before activating the feature, bank should have old/default limit"
     );
 
-    // apply_feature_activations for `NewFromParent` will cause feature to be activated
-    bank.apply_feature_activations(ApplyFeatureActivationsCaller::NewFromParent, true);
+    // compute_and_apply_new_feature_activations will cause feature to be activated
+    bank.compute_and_apply_new_feature_activations();
     assert_eq!(
         bank.read_cost_tracker().unwrap().get_block_limit(),
         MAX_BLOCK_UNITS_SIMD_0286,
@@ -7417,8 +7421,7 @@ fn test_invoke_non_program_account_owned_by_a_builtin(
 #[test]
 fn test_debug_bank() {
     let (genesis_config, _mint_keypair) = create_genesis_config(50000);
-    let mut bank = Bank::new_for_tests(&genesis_config);
-    bank.finish_init(false);
+    let bank = Bank::new_for_tests(&genesis_config);
     let debug = format!("{bank:#?}");
     assert!(!debug.is_empty());
 }
@@ -8245,12 +8248,11 @@ fn test_epoch_schedule_from_genesis_config() {
 
     genesis_config.epoch_schedule = EpochSchedule::custom(8192, 100, true);
 
-    let bank = Arc::new(Bank::new_with_paths(
+    let bank = Arc::new(Bank::new_from_genesis(
         &genesis_config,
         Arc::<RuntimeConfig>::default(),
         Vec::new(),
         None,
-        false,
         ACCOUNTS_DB_CONFIG_FOR_TESTING,
         None,
         None,
@@ -8274,12 +8276,11 @@ where
         &validator_keypairs,
         vec![LAMPORTS_PER_SOL; 2],
     );
-    let bank = Arc::new(Bank::new_with_paths(
+    let bank = Arc::new(Bank::new_from_genesis(
         &genesis_config,
         Arc::<RuntimeConfig>::default(),
         Vec::new(),
         None,
-        false,
         ACCOUNTS_DB_CONFIG_FOR_TESTING,
         None,
         None,
@@ -8360,7 +8361,7 @@ fn test_vote_epoch_panic() {
         },
         1_000_000_000,
         vote_instruction::CreateVoteAccountConfig {
-            space: VoteStateVersions::vote_state_size_of(true) as u64,
+            space: VoteStateV3::size_of() as u64,
             ..vote_instruction::CreateVoteAccountConfig::default()
         },
     ));
@@ -11134,7 +11135,6 @@ fn test_squash_timing_add_assign() {
         squash_accounts_ms: 1,
         squash_accounts_cache_ms: 2,
         squash_accounts_index_ms: 3,
-        squash_accounts_store_ms: 4,
         squash_cache_ms: 5,
     };
 
@@ -11142,7 +11142,6 @@ fn test_squash_timing_add_assign() {
         squash_accounts_ms: 2,
         squash_accounts_cache_ms: 2 * 2,
         squash_accounts_index_ms: 3 * 2,
-        squash_accounts_store_ms: 4 * 2,
         squash_cache_ms: 5 * 2,
     };
 
@@ -11375,7 +11374,7 @@ fn test_system_instruction_unsigned_transaction() {
 
 #[test]
 fn test_calc_vote_accounts_to_store_empty() {
-    let vote_account_rewards = DashMap::default();
+    let vote_account_rewards = HashMap::default();
     let result = Bank::calc_vote_accounts_to_store(vote_account_rewards);
     assert_eq!(
         result.accounts_with_rewards.len(),
@@ -11386,7 +11385,7 @@ fn test_calc_vote_accounts_to_store_empty() {
 
 #[test]
 fn test_calc_vote_accounts_to_store_overflow() {
-    let vote_account_rewards = DashMap::default();
+    let mut vote_account_rewards = HashMap::default();
     let pubkey = solana_pubkey::new_rand();
     let mut vote_account = AccountSharedData::default();
     vote_account.set_lamports(u64::MAX);
@@ -11411,7 +11410,7 @@ fn test_calc_vote_accounts_to_store_normal() {
     let pubkey = solana_pubkey::new_rand();
     for commission in 0..2 {
         for vote_rewards in 0..2 {
-            let vote_account_rewards = DashMap::default();
+            let mut vote_account_rewards = HashMap::default();
             let mut vote_account = AccountSharedData::default();
             vote_account.set_lamports(1);
             vote_account_rewards.insert(
@@ -11980,10 +11979,7 @@ fn test_loader_v3_to_v4_migration(formalize_loaded_transaction_data_size: bool) 
         AccountMeta::new_readonly(upgrade_authority_keypair.pubkey(), true),
     ];
     for (instruction_accounts, expected_error) in [
-        (
-            case_too_few_accounts,
-            InstructionError::NotEnoughAccountKeys,
-        ),
+        (case_too_few_accounts, InstructionError::MissingAccount),
         (case_readonly_programdata, InstructionError::InvalidArgument),
         (
             case_incorrect_authority,
@@ -12391,7 +12387,7 @@ fn test_apply_builtin_program_feature_transitions_for_new_epoch() {
 
     let mut bank = Bank::new_for_tests(&genesis_config);
     bank.feature_set = Arc::new(FeatureSet::all_enabled());
-    bank.finish_init(false);
+    bank.compute_and_apply_genesis_features();
 
     // Overwrite precompile accounts to simulate a cluster which already added precompiles.
     for precompile in get_precompiles() {
@@ -12413,11 +12409,7 @@ fn test_apply_builtin_program_feature_transitions_for_new_epoch() {
     bank.freeze();
 
     // Simulate crossing an epoch boundary for a new bank
-    let only_apply_transitions_for_new_features = true;
-    bank.apply_builtin_program_feature_transitions(
-        only_apply_transitions_for_new_features,
-        &AHashSet::new(),
-    );
+    bank.compute_and_apply_new_feature_activations();
 }
 
 #[test]
@@ -12426,7 +12418,7 @@ fn test_startup_from_snapshot_after_precompile_transition() {
 
     let mut bank = Bank::new_for_tests(&genesis_config);
     bank.feature_set = Arc::new(FeatureSet::all_enabled());
-    bank.finish_init(false);
+    bank.compute_and_apply_genesis_features();
 
     // Overwrite precompile accounts to simulate a cluster which already added precompiles.
     for precompile in get_precompiles() {
@@ -12437,7 +12429,7 @@ fn test_startup_from_snapshot_after_precompile_transition() {
     bank.freeze();
 
     // Simulate starting up from snapshot finishing the initialization for a frozen bank
-    bank.finish_init(false);
+    bank.compute_and_apply_features_after_snapshot_restore();
 }
 
 #[test]

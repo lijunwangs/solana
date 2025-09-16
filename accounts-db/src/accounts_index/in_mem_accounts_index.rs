@@ -4,7 +4,7 @@ use {
             account_map_entry::{
                 AccountMapEntry, AccountMapEntryMeta, PreAllocatedAccountMapEntry,
             },
-            DiskIndexValue, IndexValue, RefCount, SlotList, UpsertReclaim,
+            DiskIndexValue, IndexValue, ReclaimsSlotList, RefCount, SlotList, UpsertReclaim,
         },
         bucket_map_holder::{Age, AtomicAge, BucketMapHolder},
         bucket_map_holder_stats::BucketMapHolderStats,
@@ -272,7 +272,10 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                     Self::update_stat(&self.stats().load_disk_missing_count, 1);
                 }
             }
-            entry_disk
+            entry_disk.map(|(slot_list, ref_count)| {
+                // SAFETY: ref_count must've come from in-mem first, so converting back is safe.
+                (slot_list, ref_count as RefCount)
+            })
         })
     }
 
@@ -519,7 +522,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
         pubkey: &Pubkey,
         new_value: PreAllocatedAccountMapEntry<T>,
         other_slot: Option<Slot>,
-        reclaims: &mut SlotList<T>,
+        reclaims: &mut ReclaimsSlotList<T>,
         reclaim: UpsertReclaim,
     ) {
         let (slot, account_info) = new_value.into();
@@ -579,7 +582,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                             // not on disk, so insert new thing
                             self.stats().inc_insert();
                             Arc::new(AccountMapEntry::new(
-                                vec![],
+                                SlotList::new(),
                                 0,
                                 AccountMapEntryMeta::new_dirty(&self.storage, true),
                             ))
@@ -629,7 +632,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
         current: &AccountMapEntry<T>,
         new_value: (Slot, T),
         other_slot: Option<Slot>,
-        reclaims: &mut SlotList<T>,
+        reclaims: &mut ReclaimsSlotList<T>,
         reclaim: UpsertReclaim,
     ) -> usize {
         let mut slot_list = current.slot_list.write().unwrap();
@@ -667,7 +670,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
     /// - If UpsertReclaim is ReclaimOldSlots, remove all uncached entries older than `slot`
     ///   and add them to reclaims
     ///
-    /// Returns the reference count change as an `i64`. The reference count change
+    /// Returns the reference count change as an `i32`. The reference count change
     /// is the number of entries added (1) - the number of uncached entries removed
     /// or replaced
     fn update_slot_list(
@@ -675,9 +678,9 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
         slot: Slot,
         account_info: T,
         other_slot: Option<Slot>,
-        reclaims: &mut SlotList<T>,
+        reclaims: &mut ReclaimsSlotList<T>,
         reclaim: UpsertReclaim,
-    ) -> i64 {
+    ) -> i32 {
         let mut ref_count_change = 1;
 
         // Cached accounts are not expected by this function, use cache_entry_at_slot instead
@@ -825,7 +828,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                     occupied.get(),
                     (slot, account_info),
                     None, // should be None because we don't expect a different slot # during index generation
-                    &mut Vec::default(),
+                    &mut ReclaimsSlotList::new(),
                     UpsertReclaim::IgnoreReclaims,
                 );
 
@@ -856,7 +859,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                         // None because we are inserting the first element in the slot list for this pubkey.
                         // There can be no 'other' slot in the list.
                         None,
-                        &mut Vec::default(),
+                        &mut ReclaimsSlotList::new(),
                         UpsertReclaim::IgnoreReclaims,
                     );
                     vacant.insert(disk_entry);
@@ -910,7 +913,8 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
 
     /// assumes 1 entry in the slot list. Ignores overhead of the HashMap and such
     pub const fn approx_size_of_one_entry() -> usize {
-        size_of::<(Slot, T)>() + size_of::<Pubkey>() + size_of::<AccountMapEntry<T>>()
+        // with only one entry in the slot list, it is stored inline in the SmallVec
+        size_of::<Pubkey>() + size_of::<AccountMapEntry<T>>()
     }
 
     fn should_evict_based_on_age(
@@ -1068,10 +1072,11 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
         let mut num_existed_in_mem = 0;
         let mut num_existed_on_disk = 0;
 
+        let storage = self.storage.as_ref();
         let duplicates = duplicates_put_on_disk
             .into_iter()
             .chain(duplicates.into_iter().map(|(slot, key, info)| {
-                let entry = PreAllocatedAccountMapEntry::new(slot, info, &self.storage, true);
+                let entry = PreAllocatedAccountMapEntry::new(slot, info, storage, true);
                 match self.insert_new_entry_if_missing_with_lock(key, entry) {
                     InsertNewEntryResults::DidNotExist => {
                         num_did_not_exist += 1;
@@ -1242,7 +1247,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> InMemAccountsIndex<T,
                                                 .iter()
                                                 .map(|(slot, info)| (*slot, (*info).into()))
                                                 .collect::<Vec<_>>(),
-                                            ref_count,
+                                            ref_count.into(), // ref count on disk is u64
                                         ),
                                     )
                                 };
@@ -1470,7 +1475,7 @@ mod tests {
 
         // Insert an entry manually
         let entry = Arc::new(AccountMapEntry::new(
-            vec![(0, 42)],
+            SlotList::from([(0, 42)]),
             1,
             AccountMapEntryMeta::new_dirty(&accounts_index.storage, true),
         ));
@@ -1555,8 +1560,8 @@ mod tests {
         let at_new_slot = (new_slot, info);
         let unique_other_slot = new_slot + 1;
         for other_slot in [Some(new_slot), Some(unique_other_slot), None] {
-            let mut reclaims = Vec::default();
-            let mut slot_list = Vec::default();
+            let mut reclaims = ReclaimsSlotList::new();
+            let mut slot_list = SlotList::new();
             // upserting into empty slot_list, so always addref
             assert_eq!(
                 InMemAccountsIndex::<u64, u64>::update_slot_list(
@@ -1570,15 +1575,15 @@ mod tests {
                 1,
                 "other_slot: {other_slot:?}"
             );
-            assert_eq!(slot_list, vec![at_new_slot]);
+            assert_eq!(slot_list, SlotList::from([at_new_slot]));
             assert!(reclaims.is_empty());
         }
 
         // replace other
-        let mut slot_list = vec![(unique_other_slot, other_value)];
-        let expected_reclaims = slot_list.clone();
+        let mut slot_list = SlotList::from([(unique_other_slot, other_value)]);
+        let expected_reclaims = ReclaimsSlotList::from(slot_list.as_slice());
         let other_slot = Some(unique_other_slot);
-        let mut reclaims = Vec::default();
+        let mut reclaims = ReclaimsSlotList::new();
         assert_eq!(
             // upserting into slot_list that does NOT contain an entry at 'new_slot'
             // but, it DOES contain an entry at other_slot, so we do NOT add-ref. The assumption is that 'other_slot' is going away
@@ -1594,7 +1599,7 @@ mod tests {
             0,
             "other_slot: {other_slot:?}"
         );
-        assert_eq!(slot_list, vec![at_new_slot]);
+        assert_eq!(slot_list, SlotList::from([at_new_slot]));
         assert_eq!(reclaims, expected_reclaims);
 
         // nothing will exist at this slot
@@ -1658,10 +1663,10 @@ mod tests {
                     let mut slot_list = content_source_indexes
                         .iter()
                         .map(|i| possible_initial_slot_list_contents[*i])
-                        .collect::<Vec<_>>();
+                        .collect::<SlotList<_>>();
                     let mut expected = slot_list.clone();
                     let original = slot_list.clone();
-                    let mut reclaims = Vec::default();
+                    let mut reclaims = ReclaimsSlotList::new();
 
                     let result = InMemAccountsIndex::<u64, u64>::update_slot_list(
                         &mut slot_list,
@@ -1673,7 +1678,7 @@ mod tests {
                     );
 
                     // calculate expected reclaims
-                    let mut expected_reclaims = Vec::default();
+                    let mut expected_reclaims = ReclaimsSlotList::new();
                     expected.retain(|(slot, info)| {
                         let retain = slot != &new_slot && Some(*slot) != other_slot;
                         if !retain {
@@ -1684,7 +1689,7 @@ mod tests {
                     expected.push((new_slot, info));
 
                     // Calculate the expected ref count change. It is expected to be 1 - the number of reclaims
-                    let expected_result = 1 - expected_reclaims.len() as i64;
+                    let expected_result = 1 - expected_reclaims.len() as i32;
                     assert_eq!(
                         expected_result, result,
                         "return value different. other: {other_slot:?}, {expected:?}, \
@@ -1718,7 +1723,7 @@ mod tests {
             let bucket = new_for_test::<u64>();
             let startup = false;
             let current_age = 0;
-            let one_element_slot_list = vec![(0, 0)];
+            let one_element_slot_list = SlotList::from([(0, 0)]);
             let one_element_slot_list_entry = Arc::new(AccountMapEntry::new(
                 one_element_slot_list,
                 ref_count,
@@ -1751,7 +1756,7 @@ mod tests {
             .collect::<Vec<_>>();
         let accounts = (0..=255)
             .map(|age| {
-                let one_element_slot_list = vec![(0, 0)];
+                let one_element_slot_list = SlotList::from([(0, 0)]);
                 let one_element_slot_list_entry = Arc::new(AccountMapEntry::new(
                     one_element_slot_list,
                     ref_count,
@@ -1805,7 +1810,7 @@ mod tests {
         let mut startup = false;
         let mut current_age = 0;
         let ref_count = 1;
-        let one_element_slot_list = vec![(0, 0)];
+        let one_element_slot_list = SlotList::from([(0, 0)]);
         let one_element_slot_list_entry = Arc::new(AccountMapEntry::new(
             one_element_slot_list,
             ref_count,
@@ -1818,7 +1823,7 @@ mod tests {
                 .should_evict_from_mem(
                     current_age,
                     &Arc::new(AccountMapEntry::new(
-                        vec![],
+                        SlotList::new(),
                         ref_count,
                         AccountMapEntryMeta::default()
                     )),
@@ -1846,7 +1851,7 @@ mod tests {
                 .should_evict_from_mem(
                     current_age,
                     &Arc::new(AccountMapEntry::new(
-                        vec![(0, 0), (1, 1)],
+                        SlotList::from_iter([(0, 0u64), (1, 1)]),
                         ref_count,
                         AccountMapEntryMeta::default()
                     )),
@@ -1865,7 +1870,7 @@ mod tests {
                     .should_evict_from_mem(
                         current_age,
                         &Arc::new(AccountMapEntry::new(
-                            vec![(0, 0.0)],
+                            SlotList::from([(0, 0.0)]),
                             ref_count,
                             AccountMapEntryMeta::default()
                         )),
@@ -1952,8 +1957,8 @@ mod tests {
         let at_new_slot = (new_slot, info);
         let unique_other_slot = new_slot + 1;
         for other_slot in [Some(new_slot), Some(unique_other_slot), None] {
-            let mut reclaims = Vec::default();
-            let mut slot_list = Vec::default();
+            let mut reclaims = ReclaimsSlotList::new();
+            let mut slot_list = SlotList::new();
             // upserting into empty slot_list, so always addref
             assert_eq!(
                 InMemAccountsIndex::<u64, u64>::update_slot_list(
@@ -1967,15 +1972,15 @@ mod tests {
                 1,
                 "other_slot: {other_slot:?}"
             );
-            assert_eq!(slot_list, vec![at_new_slot]);
+            assert_eq!(slot_list, SlotList::from([at_new_slot]));
             assert!(reclaims.is_empty());
         }
 
         // replace other
-        let mut slot_list = vec![(unique_other_slot, other_value)];
-        let expected_reclaims = slot_list.clone();
+        let mut slot_list = SlotList::from([(unique_other_slot, other_value)]);
+        let expected_reclaims = ReclaimsSlotList::from(slot_list.as_slice());
         let other_slot = Some(unique_other_slot);
-        let mut reclaims = Vec::default();
+        let mut reclaims = ReclaimsSlotList::new();
         assert_eq!(
             // upserting into slot_list that does NOT contain an entry at 'new_slot'
             // but, it DOES contain an entry at other_slot, so we do NOT add-ref. The assumption is that 'other_slot' is going away
@@ -1991,7 +1996,7 @@ mod tests {
             0,
             "other_slot: {other_slot:?}"
         );
-        assert_eq!(slot_list, vec![at_new_slot]);
+        assert_eq!(slot_list, SlotList::from([at_new_slot]));
         assert_eq!(reclaims, expected_reclaims);
 
         // nothing will exist at this slot
@@ -2061,10 +2066,10 @@ mod tests {
                     let mut slot_list = content_source_indexes
                         .iter()
                         .map(|i| possible_initial_slot_list_contents[*i])
-                        .collect::<Vec<_>>();
+                        .collect::<SlotList<_>>();
                     let mut expected = slot_list.clone();
                     let original = slot_list.clone();
-                    let mut reclaims = Vec::default();
+                    let mut reclaims = ReclaimsSlotList::new();
 
                     let result = InMemAccountsIndex::<u64, u64>::update_slot_list(
                         &mut slot_list,
@@ -2076,9 +2081,9 @@ mod tests {
                     );
 
                     // calculate expected reclaims
-                    let mut expected_reclaims = Vec::default();
+                    let mut expected_reclaims = ReclaimsSlotList::new();
                     expected.retain(|(slot, info)| {
-                        let retain = slot > &new_slot;
+                        let retain = *slot > new_slot;
                         if !retain {
                             expected_reclaims.push((*slot, *info));
                         }
@@ -2087,7 +2092,7 @@ mod tests {
                     expected.push((new_slot, info));
 
                     // Calculate the expected ref count change. It is expected to be 1 - the number of reclaims
-                    let expected_result = 1 - expected_reclaims.len() as i64;
+                    let expected_result = 1 - expected_reclaims.len() as i32;
                     assert_eq!(
                         expected_result, result,
                         "return value different. other: {other_slot:?}, {expected:?}, \
@@ -2121,8 +2126,8 @@ mod tests {
     fn test_update_slot_list_new_slot_duplicate_panic(slot_to_replace: u64) {
         let new_slot = 1; // This slot already exists in the list
         let old_slot = 2; // This slot already exists in the list
-        let mut slot_list = vec![(new_slot, 0), (old_slot, 0)];
-        let mut reclaims = Vec::default();
+        let mut slot_list = SlotList::from_iter([(new_slot, 0u64), (old_slot, 0)]);
+        let mut reclaims = ReclaimsSlotList::new();
         let new_info = 1;
 
         // Attempt to update the slot list with a duplicate slot, which should trigger the panic
@@ -2212,7 +2217,7 @@ mod tests {
     fn test_lock_and_update_slot_list() {
         let test = AccountMapEntry::<u64>::default();
         let info = 65;
-        let mut reclaims = Vec::default();
+        let mut reclaims = ReclaimsSlotList::new();
         // first upsert, should increase
         let len = InMemAccountsIndex::<u64, u64>::lock_and_update_slot_list(
             &test,

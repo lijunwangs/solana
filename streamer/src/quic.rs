@@ -156,12 +156,11 @@ impl NotifyKeyUpdate for EndpointKeyUpdater {
 pub struct StreamerStats {
     pub(crate) total_connections: AtomicUsize,
     pub(crate) total_new_connections: AtomicUsize,
-    pub(crate) total_streams: AtomicUsize,
+    pub(crate) active_streams: AtomicUsize,
     pub(crate) total_new_streams: AtomicUsize,
     pub(crate) invalid_stream_size: AtomicUsize,
     pub(crate) total_packets_allocated: AtomicUsize,
     pub(crate) total_packet_batches_allocated: AtomicUsize,
-    pub(crate) total_chunks_received: AtomicUsize,
     pub(crate) total_staked_chunks_received: AtomicUsize,
     pub(crate) total_unstaked_chunks_received: AtomicUsize,
     pub(crate) total_packet_batch_send_err: AtomicUsize,
@@ -239,7 +238,7 @@ impl StreamerStats {
             ),
             (
                 "active_streams",
-                self.total_streams.load(Ordering::Relaxed),
+                self.active_streams.load(Ordering::Relaxed),
                 i64
             ),
             (
@@ -426,11 +425,6 @@ impl StreamerStats {
                 "chunks_processed_by_batcher",
                 self.total_chunks_processed_by_batcher
                     .swap(0, Ordering::Relaxed),
-                i64
-            ),
-            (
-                "chunks_received",
-                self.total_chunks_received.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
@@ -638,10 +632,11 @@ impl Default for QuicServerParams {
     }
 }
 
-#[cfg(feature = "dev-context-only-utils")]
 impl QuicServerParams {
+    #[cfg(feature = "dev-context-only-utils")]
     pub const DEFAULT_NUM_SERVER_THREADS_FOR_TEST: NonZeroUsize = NonZeroUsize::new(8).unwrap();
 
+    #[cfg(feature = "dev-context-only-utils")]
     pub fn default_for_tests() -> Self {
         // Shrink the channel size to avoid a massive allocation for tests
         Self {
@@ -649,6 +644,11 @@ impl QuicServerParams {
             num_threads: Self::DEFAULT_NUM_SERVER_THREADS_FOR_TEST,
             ..Self::default()
         }
+    }
+
+    pub(crate) fn max_concurrent_connections(&self) -> usize {
+        let conns = self.max_staked_connections + self.max_unstaked_connections;
+        conns + conns / 4
     }
 }
 
