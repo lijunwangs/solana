@@ -579,6 +579,16 @@ impl StreamerStats {
                 i64
             ),
             (
+                "open_staked_connections",
+                self.open_staked_connections.load(Ordering::Relaxed),
+                i64
+            ),
+            (
+                "open_unstaked_connections",
+                self.open_unstaked_connections.load(Ordering::Relaxed),
+                i64
+            ),
+            (
                 "refused_connections_too_many_open_connections",
                 self.refused_connections_too_many_open_connections
                     .swap(0, Ordering::Relaxed),
