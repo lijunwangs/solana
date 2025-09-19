@@ -210,6 +210,8 @@ pub struct StreamerStats {
     pub(crate) connection_rate_limiter_length: AtomicUsize,
     // All connections in various states such as Incoming, Connecting, Connection
     pub(crate) open_connections: AtomicUsize,
+    pub(crate) open_staked_connections: AtomicUsize,
+    pub(crate) open_unstaked_connections: AtomicUsize,
     pub(crate) refused_connections_too_many_open_connections: AtomicUsize,
     pub(crate) outstanding_incoming_connection_attempts: AtomicUsize,
     pub(crate) total_incoming_connection_attempts: AtomicUsize,
