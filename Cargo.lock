@@ -1513,12 +1513,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build-print"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a2128d00b7061b82b72844a351e80acd29e05afc60e9261e2ac90dca9ecc2ac"
-
-[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7676,16 +7670,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "solana-build-alpenglow-vote"
-version = "3.1.0"
-dependencies = [
- "build-print",
- "glob",
- "serde",
- "toml 0.8.23",
-]
-
-[[package]]
 name = "solana-builtins"
 version = "3.1.0"
 dependencies = [
@@ -9654,7 +9638,6 @@ dependencies = [
  "solana-account 3.0.0",
  "solana-accounts-db",
  "solana-bls-signatures 0.3.0",
- "solana-build-alpenglow-vote",
  "solana-client",
  "solana-client-traits",
  "solana-clock 3.0.0",
@@ -10951,7 +10934,6 @@ dependencies = [
  "solana-bls-signatures 0.3.0",
  "solana-bpf-loader-program",
  "solana-bucket-map",
- "solana-build-alpenglow-vote",
  "solana-builtins",
  "solana-client-traits",
  "solana-clock 3.0.0",

@@ -685,8 +685,7 @@ mod tests {
             bank::{Bank, NewBankOptions},
             bank_forks::BankForks,
             genesis_utils::{
-                create_genesis_config_with_alpenglow_vote_accounts_no_program,
-                ValidatorVoteKeypairs,
+                create_genesis_config_with_alpenglow_vote_accounts, ValidatorVoteKeypairs,
             },
         },
         solana_signer::Signer,
@@ -716,7 +715,7 @@ mod tests {
     }
 
     fn create_bank_forks(validator_keypairs: &[ValidatorVoteKeypairs]) -> Arc<RwLock<BankForks>> {
-        let genesis = create_genesis_config_with_alpenglow_vote_accounts_no_program(
+        let genesis = create_genesis_config_with_alpenglow_vote_accounts(
             1_000_000_000,
             validator_keypairs,
             vec![100; validator_keypairs.len()],

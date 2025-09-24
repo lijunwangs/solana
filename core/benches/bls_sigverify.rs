@@ -10,7 +10,7 @@ use {
         bank::Bank,
         bank_forks::BankForks,
         genesis_utils::{
-            create_genesis_config_with_alpenglow_vote_accounts_no_program, ValidatorVoteKeypairs,
+            create_genesis_config_with_alpenglow_vote_accounts, ValidatorVoteKeypairs,
         },
     },
     solana_votor_messages::{
@@ -45,7 +45,7 @@ fn setup_bls_sigverify_stage() -> BenchSetup {
         .map(|_| ValidatorVoteKeypairs::new_rand())
         .collect();
     let stakes_vec = vec![1_000; validator_keypairs.len()];
-    let genesis = create_genesis_config_with_alpenglow_vote_accounts_no_program(
+    let genesis = create_genesis_config_with_alpenglow_vote_accounts(
         1_000_000_000,
         &validator_keypairs,
         stakes_vec,

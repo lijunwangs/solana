@@ -111,7 +111,7 @@ pub fn create_genesis_config_with_vote_accounts(
         voting_keypairs,
         stakes,
         ClusterType::Development,
-        None,
+        false,
     )
 }
 
@@ -119,14 +119,13 @@ pub fn create_genesis_config_with_alpenglow_vote_accounts(
     mint_lamports: u64,
     voting_keypairs: &[impl Borrow<ValidatorVoteKeypairs>],
     stakes: Vec<u64>,
-    alpenglow_so_path: &str,
 ) -> GenesisConfigInfo {
     create_genesis_config_with_vote_accounts_and_cluster_type(
         mint_lamports,
         voting_keypairs,
         stakes,
         ClusterType::Development,
-        Some(alpenglow_so_path),
+        true,
     )
 }
 
@@ -135,7 +134,7 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
     voting_keypairs: &[impl Borrow<ValidatorVoteKeypairs>],
     stakes: Vec<u64>,
     cluster_type: ClusterType,
-    alpenglow_so_path: Option<&str>,
+    is_alpenglow: bool,
 ) -> GenesisConfigInfo {
     assert!(!voting_keypairs.is_empty());
     assert_eq!(voting_keypairs.len(), stakes.len());
@@ -157,7 +156,7 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
         Rent::free(),               // most tests don't expect rent
         cluster_type,
         vec![],
-        alpenglow_so_path,
+        is_alpenglow,
     );
 
     let mut genesis_config_info = GenesisConfigInfo {
@@ -175,7 +174,7 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
 
         // Create accounts
         let node_account = Account::new(VALIDATOR_LAMPORTS, 0, &system_program::id());
-        let vote_account = if alpenglow_so_path.is_some() {
+        let vote_account = if is_alpenglow {
             vote_state::create_v4_account_with_authorized(
                 &node_pubkey,
                 &vote_pubkey,
@@ -187,7 +186,7 @@ pub fn create_genesis_config_with_vote_accounts_and_cluster_type(
         } else {
             vote_state::create_account(&vote_pubkey, &node_pubkey, 0, *stake)
         };
-        let stake_account = if alpenglow_so_path.is_some() {
+        let stake_account = if is_alpenglow {
             Account::from(stake_state::create_alpenglow_account(
                 &stake_pubkey,
                 &vote_pubkey,
@@ -235,21 +234,7 @@ pub fn create_genesis_config_with_leader(
         mint_lamports,
         validator_pubkey,
         validator_stake_lamports,
-        None,
-    )
-}
-
-#[cfg(feature = "dev-context-only-utils")]
-pub fn create_genesis_config_with_alpenglow_vote_accounts_no_program(
-    mint_lamports: u64,
-    voting_keypairs: &[impl Borrow<ValidatorVoteKeypairs>],
-    stakes: Vec<u64>,
-) -> GenesisConfigInfo {
-    create_genesis_config_with_alpenglow_vote_accounts(
-        mint_lamports,
-        voting_keypairs,
-        stakes,
-        build_alpenglow_vote::ALPENGLOW_VOTE_SO_PATH,
+        false,
     )
 }
 
@@ -258,7 +243,6 @@ pub fn create_genesis_config_with_leader_enable_alpenglow(
     mint_lamports: u64,
     validator_pubkey: &Pubkey,
     validator_stake_lamports: u64,
-    alpenglow_so_path: Option<&str>,
 ) -> GenesisConfigInfo {
     // Use deterministic keypair so we don't get confused by randomness in tests
     let mint_keypair = Keypair::from_seed(&[
@@ -272,7 +256,7 @@ pub fn create_genesis_config_with_leader_enable_alpenglow(
         mint_lamports,
         validator_pubkey,
         validator_stake_lamports,
-        alpenglow_so_path,
+        true,
     )
 }
 
@@ -281,7 +265,7 @@ pub fn create_genesis_config_with_leader_with_mint_keypair(
     mint_lamports: u64,
     validator_pubkey: &Pubkey,
     validator_stake_lamports: u64,
-    alpenglow_so_path: Option<&str>,
+    is_alpenglow: bool,
 ) -> GenesisConfigInfo {
     // Use deterministic keypair so we don't get confused by randomness in tests
     let voting_keypair = Keypair::from_seed(&[
@@ -306,7 +290,7 @@ pub fn create_genesis_config_with_leader_with_mint_keypair(
         Rent::free(),               // most tests don't expect rent
         ClusterType::Development,
         vec![],
-        alpenglow_so_path,
+        is_alpenglow,
     );
 
     GenesisConfigInfo {
@@ -444,9 +428,9 @@ pub fn create_genesis_config_with_leader_ex_no_features(
     rent: Rent,
     cluster_type: ClusterType,
     mut initial_accounts: Vec<(Pubkey, AccountSharedData)>,
-    alpenglow_so_path: Option<&str>,
+    is_alpenglow: bool,
 ) -> GenesisConfig {
-    let validator_vote_account = if alpenglow_so_path.is_some() {
+    let validator_vote_account = if is_alpenglow {
         vote_state::create_v4_account_with_authorized(
             validator_pubkey,
             validator_vote_account_pubkey,
@@ -464,7 +448,7 @@ pub fn create_genesis_config_with_leader_ex_no_features(
         )
     };
 
-    let validator_stake_account = if alpenglow_so_path.is_some() {
+    let validator_stake_account = if is_alpenglow {
         stake_state::create_alpenglow_account(
             validator_stake_account_pubkey,
             validator_vote_account_pubkey,
@@ -519,10 +503,6 @@ pub fn create_genesis_config_with_leader_ex_no_features(
 
     solana_stake_program::add_genesis_accounts(&mut genesis_config);
 
-    if let Some(alpenglow_so_path) = alpenglow_so_path {
-        include_alpenglow_bpf_program(&mut genesis_config, alpenglow_so_path);
-    }
-
     genesis_config
 }
 
@@ -540,7 +520,7 @@ pub fn create_genesis_config_with_leader_ex(
     rent: Rent,
     cluster_type: ClusterType,
     initial_accounts: Vec<(Pubkey, AccountSharedData)>,
-    alpenglow_so_path: Option<&str>,
+    is_alpenglow: bool,
 ) -> GenesisConfig {
     let mut genesis_config = create_genesis_config_with_leader_ex_no_features(
         mint_lamports,
@@ -555,11 +535,11 @@ pub fn create_genesis_config_with_leader_ex(
         rent,
         cluster_type,
         initial_accounts,
-        alpenglow_so_path,
+        is_alpenglow,
     );
 
     if genesis_config.cluster_type == ClusterType::Development {
-        if alpenglow_so_path.is_some() {
+        if is_alpenglow {
             activate_all_features_alpenglow(&mut genesis_config);
         } else {
             activate_all_features(&mut genesis_config);
