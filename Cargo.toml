@@ -51,6 +51,7 @@ members = [
     "ledger-tool",
     "local-cluster",
     "low-pass-filter",
+    "mcp/mcp-reconstruction",
     "measure",
     "memory-management",
     "merkle-tree",

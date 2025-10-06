@@ -4550,6 +4550,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b87248edafb776e59e6ee64a79086f65890d3510f2c656c000bf2a7e8a0aea40"
 
 [[package]]
+name = "mcp-reconstruction"
+version = "3.1.0"
+dependencies = [
+ "agave-transaction-view",
+ "solana-core",
+ "solana-fee-structure",
+ "solana-runtime",
+ "solana-runtime-transaction",
+ "solana-svm-transaction",
+ "solana-transaction",
+]
+
+[[package]]
 name = "memchr"
 version = "2.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
