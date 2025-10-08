@@ -537,19 +537,26 @@ pub trait Qos<P: ConnectionQosParams> {
 
     /// Try to add a new connection. If successful, return a CancellationToken and
     /// a ConnectionStreamCounter to track the streams created on this connection.
-    async fn try_add_connection(
+    fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: P,
-    ) -> Option<(
-        Arc<AtomicU64>,
-        tokio_util::sync::CancellationToken,
-        Arc<ConnectionStreamCounter>,
-    )>;
+    ) -> impl std::future::Future<
+        Output = Option<(
+            Arc<AtomicU64>,
+            tokio_util::sync::CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        )>,
+    > + Send;
 
-    fn on_stream_opened(&self);
-    fn on_stream_closed(&self);
+    /// The maximum number of streams that can be opened per throttling interval
+    /// on this connection.
+    fn max_streams_per_throttling_interval(&self, params: &P) -> u64;
+
+    fn on_stream_accepted(&self, params: &P);
+    fn on_stream_error(&self, params: &P);
+    fn on_stream_closed(&self, params: &P);
     fn report_qos_stats(&self);
 }
 

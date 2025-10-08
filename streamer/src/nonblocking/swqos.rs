@@ -28,7 +28,6 @@ use {
 };
 
 pub struct SwQos {
-    max_streams_per_ms: u64,
     max_staked_connections: usize,
     max_unstaked_connections: usize,
     max_connections_per_peer: usize,
@@ -77,7 +76,6 @@ impl SwQos {
         stats: Arc<StreamerStats>,
     ) -> Self {
         Self {
-            max_streams_per_ms,
             max_staked_connections,
             max_unstaked_connections,
             max_connections_per_peer,
@@ -263,48 +261,76 @@ impl Qos<SwQosParams> for SwQos {
         )
     }
 
-    async fn try_add_connection(
+    fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: SwQosParams,
-    ) -> Option<(
-        Arc<AtomicU64>,
-        CancellationToken,
-        Arc<ConnectionStreamCounter>,
-    )> {
-        const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
+    ) -> impl std::future::Future<
+        Output = Option<(
+            Arc<AtomicU64>,
+            tokio_util::sync::CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        )>,
+    > + Send {
+        async move {
+            const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
 
-        match params.peer_type() {
-            ConnectionPeerType::Staked(stake) => {
-                let mut connection_table_l = self.staked_connection_table.lock().await;
+            match params.peer_type() {
+                ConnectionPeerType::Staked(stake) => {
+                    let mut connection_table_l = self.staked_connection_table.lock().await;
 
-                if connection_table_l.total_size >= self.max_staked_connections {
-                    let num_pruned =
-                        connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
-                    self.stats
-                        .num_evictions
-                        .fetch_add(num_pruned, Ordering::Relaxed);
-                }
-
-                if connection_table_l.total_size < self.max_staked_connections {
-                    if let Ok((last_update, cancel_connection, stream_counter)) = self
-                        .handle_and_cache_new_connection(
-                            client_connection_tracker,
-                            connection,
-                            connection_table_l,
-                            &params,
-                        )
-                    {
+                    if connection_table_l.total_size >= self.max_staked_connections {
+                        let num_pruned =
+                            connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
                         self.stats
-                            .connection_added_from_staked_peer
-                            .fetch_add(1, Ordering::Relaxed);
-                        return Some((last_update, cancel_connection, stream_counter));
+                            .num_evictions
+                            .fetch_add(num_pruned, Ordering::Relaxed);
                     }
-                } else {
-                    // If we couldn't prune a connection in the staked connection table, let's
-                    // put this connection in the unstaked connection table. If needed, prune a
-                    // connection from the unstaked connection table.
+
+                    if connection_table_l.total_size < self.max_staked_connections {
+                        if let Ok((last_update, cancel_connection, stream_counter)) = self
+                            .handle_and_cache_new_connection(
+                                client_connection_tracker,
+                                connection,
+                                connection_table_l,
+                                &params,
+                            )
+                        {
+                            self.stats
+                                .connection_added_from_staked_peer
+                                .fetch_add(1, Ordering::Relaxed);
+                            return Some((last_update, cancel_connection, stream_counter));
+                        }
+                    } else {
+                        // If we couldn't prune a connection in the staked connection table, let's
+                        // put this connection in the unstaked connection table. If needed, prune a
+                        // connection from the unstaked connection table.
+                        if let Ok((last_update, cancel_connection, stream_counter)) = self
+                            .prune_unstaked_connections_and_add_new_connection(
+                                client_connection_tracker,
+                                connection,
+                                self.unstaked_connection_table.clone(),
+                                self.max_unstaked_connections,
+                                &params,
+                            )
+                            .await
+                        {
+                            self.stats
+                                .connection_added_from_staked_peer
+                                .fetch_add(1, Ordering::Relaxed);
+                            return Some((last_update, cancel_connection, stream_counter));
+                        } else {
+                            self.stats
+                                .connection_add_failed_on_pruning
+                                .fetch_add(1, Ordering::Relaxed);
+                            self.stats
+                                .connection_add_failed_staked_node
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                }
+                ConnectionPeerType::Unstaked => {
                     if let Ok((last_update, cancel_connection, stream_counter)) = self
                         .prune_unstaked_connections_and_add_new_connection(
                             client_connection_tracker,
@@ -316,53 +342,38 @@ impl Qos<SwQosParams> for SwQos {
                         .await
                     {
                         self.stats
-                            .connection_added_from_staked_peer
+                            .connection_added_from_unstaked_peer
                             .fetch_add(1, Ordering::Relaxed);
                         return Some((last_update, cancel_connection, stream_counter));
                     } else {
                         self.stats
-                            .connection_add_failed_on_pruning
-                            .fetch_add(1, Ordering::Relaxed);
-                        self.stats
-                            .connection_add_failed_staked_node
+                            .connection_add_failed_unstaked_node
                             .fetch_add(1, Ordering::Relaxed);
                     }
                 }
             }
-            ConnectionPeerType::Unstaked => {
-                if let Ok((last_update, cancel_connection, stream_counter)) = self
-                    .prune_unstaked_connections_and_add_new_connection(
-                        client_connection_tracker,
-                        connection,
-                        self.unstaked_connection_table.clone(),
-                        self.max_unstaked_connections,
-                        &params,
-                    )
-                    .await
-                {
-                    self.stats
-                        .connection_added_from_unstaked_peer
-                        .fetch_add(1, Ordering::Relaxed);
-                    return Some((last_update, cancel_connection, stream_counter));
-                } else {
-                    self.stats
-                        .connection_add_failed_unstaked_node
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-            }
+            None
         }
-        None
     }
 
-    fn on_stream_opened(&self) {
-        todo!()
+    fn on_stream_accepted(&self, params: &SwQosParams) {
+        self.staked_stream_load_ema.increment_load(params.peer_type);
     }
 
-    fn on_stream_closed(&self) {
-        todo!()
+    fn on_stream_error(&self, _params: &SwQosParams) {
+        self.staked_stream_load_ema.update_ema_if_needed();
+    }
+
+    fn on_stream_closed(&self, _params: &SwQosParams) {
+        self.staked_stream_load_ema.update_ema_if_needed();
     }
 
     fn report_qos_stats(&self) {
         todo!()
+    }
+
+    fn max_streams_per_throttling_interval(&self, params: &SwQosParams) -> u64 {
+        self.staked_stream_load_ema
+            .available_load_capacity_in_throttling_duration(params.peer_type, params.total_stake)
     }
 }

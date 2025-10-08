@@ -5,7 +5,7 @@ use {
                 ClientConnectionTracker, ConnectionHandlerError, ConnectionPeerType,
                 ConnectionQosParams, ConnectionStakeInfo, ConnectionTable, ConnectionTableKey, Qos,
             },
-            stream_throttle::ConnectionStreamCounter,
+            stream_throttle::{ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL},
         },
         quic::StreamerStats,
         streamer::StakedNodes,
@@ -49,9 +49,14 @@ impl SimpleQos {
         connection: &Connection,
         mut connection_table_l: MutexGuard<ConnectionTable>,
         params: &SimpleQosParams,
-    ) -> Result<(Arc<AtomicU64>,
-        tokio_util::sync::CancellationToken,
-        Arc<ConnectionStreamCounter>), ConnectionHandlerError> {
+    ) -> Result<
+        (
+            Arc<AtomicU64>,
+            tokio_util::sync::CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        ),
+        ConnectionHandlerError,
+    > {
         let remote_addr = connection.remote_address();
 
         debug!(
@@ -135,57 +140,66 @@ impl Qos<SimpleQosParams> for SimpleQos {
         }
     }
 
-    async fn try_add_connection(
+    fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: SimpleQosParams,
-    ) -> Option<(
-        Arc<AtomicU64>,
-        tokio_util::sync::CancellationToken,
-        Arc<ConnectionStreamCounter>,
-    )> {
-        const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
-        match params.peer_type() {
-            ConnectionPeerType::Staked(stake) => {
-                let mut connection_table_l = self.staked_connection_table.lock().await;
+    ) -> impl std::future::Future<
+        Output = Option<(
+            Arc<AtomicU64>,
+            tokio_util::sync::CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        )>,
+    > + Send {
+        async move {
+            const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
+            match params.peer_type() {
+                ConnectionPeerType::Staked(stake) => {
+                    let mut connection_table_l = self.staked_connection_table.lock().await;
 
-                if connection_table_l.total_size >= self.max_staked_connections {
-                    let num_pruned =
-                        connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
-                    self.stats
-                        .num_evictions
-                        .fetch_add(num_pruned, Ordering::Relaxed);
-                }
-
-                if connection_table_l.total_size < self.max_staked_connections {
-                    if let Ok((last_update, cancel_connection, stream_counter)) = self.handle_and_cache_new_connection(
-                        client_connection_tracker,
-                        connection,
-                        connection_table_l,
-                        &params,
-                    ) {
+                    if connection_table_l.total_size >= self.max_staked_connections {
+                        let num_pruned =
+                            connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
                         self.stats
-                            .connection_added_from_staked_peer
-                            .fetch_add(1, Ordering::Relaxed);
-                        return Some((last_update, cancel_connection, stream_counter));
+                            .num_evictions
+                            .fetch_add(num_pruned, Ordering::Relaxed);
                     }
+
+                    if connection_table_l.total_size < self.max_staked_connections {
+                        if let Ok((last_update, cancel_connection, stream_counter)) = self
+                            .handle_and_cache_new_connection(
+                                client_connection_tracker,
+                                connection,
+                                connection_table_l,
+                                &params,
+                            )
+                        {
+                            self.stats
+                                .connection_added_from_staked_peer
+                                .fetch_add(1, Ordering::Relaxed);
+                            return Some((last_update, cancel_connection, stream_counter));
+                        }
+                    }
+                    None
                 }
-                None
+                ConnectionPeerType::Unstaked => None,
             }
-            ConnectionPeerType::Unstaked => None,
         }
     }
 
-    fn on_stream_opened(&self) {
-        todo!()
-    }
+    fn on_stream_accepted(&self, _params: &SimpleQosParams) {}
 
-    fn on_stream_closed(&self) {
-        todo!()
-    }
+    fn on_stream_error(&self, _params: &SimpleQosParams) {}
+
+    fn on_stream_closed(&self, _params: &SimpleQosParams) {}
 
     fn report_qos_stats(&self) {
         todo!()
+    }
+
+    fn max_streams_per_throttling_interval(&self, _params: &SimpleQosParams) -> u64 {
+        let interval_ms = STREAM_THROTTLING_INTERVAL.as_millis() as u64;
+        (self.max_streams_per_second * interval_ms / 1000).max(1)
     }
 }
