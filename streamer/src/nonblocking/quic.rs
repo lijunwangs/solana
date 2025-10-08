@@ -73,11 +73,12 @@ pub const ALPN_TPU_PROTOCOL_ID: &[u8] = b"solana-tpu";
 const CONNECTION_CLOSE_CODE_DROPPED_ENTRY: u32 = 1;
 const CONNECTION_CLOSE_REASON_DROPPED_ENTRY: &[u8] = b"dropped";
 
-const CONNECTION_CLOSE_CODE_DISALLOWED: u32 = 2;
-const CONNECTION_CLOSE_REASON_DISALLOWED: &[u8] = b"disallowed";
+pub(crate) const CONNECTION_CLOSE_CODE_DISALLOWED: u32 = 2;
+pub(crate) const CONNECTION_CLOSE_REASON_DISALLOWED: &[u8] = b"disallowed";
 
-const CONNECTION_CLOSE_CODE_EXCEED_MAX_STREAM_COUNT: u32 = 3;
-const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] = b"exceed_max_stream_count";
+pub(crate) const CONNECTION_CLOSE_CODE_EXCEED_MAX_STREAM_COUNT: u32 = 3;
+pub(crate) const CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT: &[u8] =
+    b"exceed_max_stream_count";
 
 const CONNECTION_CLOSE_CODE_TOO_MANY: u32 = 4;
 const CONNECTION_CLOSE_REASON_TOO_MANY: &[u8] = b"too_many";
@@ -230,8 +231,8 @@ pub fn spawn_server(
 /// litter the code with open connection tracking. This is added into the
 /// connection table as part of the ConnectionEntry. The reference is auto
 /// reduced when it is dropped.
-struct ClientConnectionTracker {
-    stats: Arc<StreamerStats>,
+pub struct ClientConnectionTracker {
+    pub(crate) stats: Arc<StreamerStats>,
 }
 
 /// This is required by ConnectionEntry for supporting debug format.
@@ -458,7 +459,7 @@ pub fn get_remote_pubkey(connection: &Connection) -> Option<Pubkey> {
         .and_then(get_pubkey_from_tls_certificate)
 }
 
-fn get_connection_stake(
+pub fn get_connection_stake(
     connection: &Connection,
     staked_nodes: &RwLock<StakedNodes>,
 ) -> Option<(Pubkey, u64, u64, u64, u64)> {
@@ -474,7 +475,10 @@ fn get_connection_stake(
     ))
 }
 
-fn compute_max_allowed_uni_streams(peer_type: ConnectionPeerType, total_stake: u64) -> usize {
+pub(crate) fn compute_max_allowed_uni_streams(
+    peer_type: ConnectionPeerType,
+    total_stake: u64,
+) -> usize {
     match peer_type {
         ConnectionPeerType::Staked(peer_stake) => {
             // No checked math for f64 type. So let's explicitly check for 0 here
@@ -501,7 +505,7 @@ fn compute_max_allowed_uni_streams(peer_type: ConnectionPeerType, total_stake: u
     }
 }
 
-enum ConnectionHandlerError {
+pub(crate) enum ConnectionHandlerError {
     ConnectionAddError,
     MaxStreamError,
 }
@@ -515,21 +519,30 @@ pub struct ConnectionStakeInfo {
     pub min_stake: u64,
 }
 
-#[derive(Clone)]
-pub struct QosParams {
-    pub stake_info: Option<ConnectionStakeInfo>,
-    pub peer_type: ConnectionPeerType,
-    pub max_connections_per_peer: usize,
-    pub stats: Arc<StreamerStats>,
+pub trait ConnectionQosParams {
+    fn stake_info(&self) -> Option<ConnectionStakeInfo>;
+    fn peer_type(&self) -> ConnectionPeerType;
+    fn max_connections_per_peer(&self) -> usize;
+    fn stats(&self) -> Arc<StreamerStats>;
 }
 
-pub trait Qos {
+pub trait Qos<P: ConnectionQosParams> {
     /// Derive the QosParams for a connection
-    fn derive_qos_params(&self, stake_info: Option<&ConnectionStakeInfo>, connection: &Connection) -> QosParams;
+    fn derive_qos_params(
+        &self,
+        stake_info: Option<ConnectionStakeInfo>,
+        connection: &Connection,
+        staked_nodes: &RwLock<StakedNodes>,
+    ) -> P;
 
     /// Try to add a new connection. If successful, return a CancellationToken and
     /// a ConnectionStreamCounter to track the streams created on this connection.
-    fn try_add_connection(&self, connection: &Connection, params: QosParams) -> Option<(CancellationToken, ConnectionStreamCounter)>;
+    async fn try_add_connection(
+        &self,
+        client_connection_tracker: ClientConnectionTracker,
+        connection: &quinn::Connection,
+        params: P,
+    ) -> Option<(tokio_util::sync::CancellationToken, ConnectionStreamCounter)>;
 
     fn on_stream_opened(&self);
     fn on_stream_closed(&self);
@@ -702,7 +715,7 @@ fn compute_receive_window_ratio_for_staked_node(max_stake: u64, min_stake: u64, 
     }
 }
 
-fn compute_recieve_window(
+pub(crate) fn compute_recieve_window(
     max_stake: u64,
     min_stake: u64,
     peer_type: ConnectionPeerType,
@@ -1444,13 +1457,13 @@ impl Drop for ConnectionEntry {
 }
 
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
-enum ConnectionTableKey {
+pub(crate) enum ConnectionTableKey {
     IP(IpAddr),
     Pubkey(Pubkey),
 }
 
 impl ConnectionTableKey {
-    fn new(ip: IpAddr, maybe_pubkey: Option<Pubkey>) -> Self {
+    pub(crate) fn new(ip: IpAddr, maybe_pubkey: Option<Pubkey>) -> Self {
         maybe_pubkey.map_or(ConnectionTableKey::IP(ip), |pubkey| {
             ConnectionTableKey::Pubkey(pubkey)
         })
@@ -1458,22 +1471,22 @@ impl ConnectionTableKey {
 }
 
 // Map of IP to list of connection entries
-struct ConnectionTable {
-    table: IndexMap<ConnectionTableKey, Vec<ConnectionEntry>>,
-    total_size: usize,
+pub(crate) struct ConnectionTable {
+    pub(crate) table: IndexMap<ConnectionTableKey, Vec<ConnectionEntry>>,
+    pub(crate) total_size: usize,
 }
 
 // Prune the connection which has the oldest update
 // Return number pruned
 impl ConnectionTable {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             table: IndexMap::default(),
             total_size: 0,
         }
     }
 
-    fn prune_oldest(&mut self, max_size: usize) -> usize {
+    pub(crate) fn prune_oldest(&mut self, max_size: usize) -> usize {
         let mut num_pruned = 0;
         let key = |(_, connections): &(_, &Vec<_>)| {
             connections.iter().map(ConnectionEntry::last_update).min()
@@ -1495,7 +1508,7 @@ impl ConnectionTable {
     // lowest stake, and returns the number of pruned connections.
     // If the stakes of all the sampled connections are higher than the
     // threshold_stake, rejects the pruning attempt, and returns 0.
-    fn prune_random(&mut self, sample_size: usize, threshold_stake: u64) -> usize {
+    pub(crate) fn prune_random(&mut self, sample_size: usize, threshold_stake: u64) -> usize {
         let num_pruned = std::iter::once(self.table.len())
             .filter(|&size| size > 0)
             .flat_map(|size| {
@@ -1517,7 +1530,7 @@ impl ConnectionTable {
         num_pruned
     }
 
-    fn try_add_connection(
+    pub(crate) fn try_add_connection(
         &mut self,
         key: ConnectionTableKey,
         port: u16,
@@ -1567,7 +1580,12 @@ impl ConnectionTable {
     }
 
     // Returns number of connections that were removed
-    fn remove_connection(&mut self, key: ConnectionTableKey, port: u16, stable_id: usize) -> usize {
+    pub(crate) fn remove_connection(
+        &mut self,
+        key: ConnectionTableKey,
+        port: u16,
+        stable_id: usize,
+    ) -> usize {
         if let Entry::Occupied(mut e) = self.table.entry(key) {
             let e_ref = e.get_mut();
             let old_size = e_ref.len();
