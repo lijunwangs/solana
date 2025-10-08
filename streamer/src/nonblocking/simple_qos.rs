@@ -12,7 +12,10 @@ use {
     },
     quinn::Connection,
     solana_time_utils as timing,
-    std::sync::{atomic::Ordering, Arc, RwLock},
+    std::sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock,
+    },
     tokio::sync::{Mutex, MutexGuard},
 };
 
@@ -45,10 +48,10 @@ impl SimpleQos {
         client_connection_tracker: ClientConnectionTracker,
         connection: &Connection,
         mut connection_table_l: MutexGuard<ConnectionTable>,
-        connection_table: Arc<Mutex<ConnectionTable>>,
         params: &SimpleQosParams,
-    ) -> Result<(), ConnectionHandlerError> {
-
+    ) -> Result<(Arc<AtomicU64>,
+        tokio_util::sync::CancellationToken,
+        Arc<ConnectionStreamCounter>), ConnectionHandlerError> {
         let remote_addr = connection.remote_address();
 
         debug!(
@@ -70,7 +73,7 @@ impl SimpleQos {
         {
             drop(connection_table_l);
 
-            Ok(())
+            Ok((last_update, cancel_connection, stream_counter))
         } else {
             self.stats
                 .connection_add_failed
@@ -85,7 +88,6 @@ struct SimpleQosParams {
     max_connections_per_peer: usize,
     stats: Arc<StreamerStats>,
     remote_pubkey: Option<solana_pubkey::Pubkey>,
-
 }
 
 impl ConnectionQosParams for SimpleQosParams {
@@ -115,11 +117,15 @@ impl Qos<SimpleQosParams> for SimpleQos {
     ) -> SimpleQosParams {
         // Based on QosMode::SimpleStreamsPerSecond branch in original code
         // All connections get the same limit regardless of stake
-        let (peer_type, remote_pubkey) = stake_info
-            .as_ref()
-            .map_or((ConnectionPeerType::Unstaked, None), |stake_info| {
-                (ConnectionPeerType::Staked(stake_info.stake), Some(stake_info.pubkey))
-            });
+        let (peer_type, remote_pubkey) =
+            stake_info
+                .as_ref()
+                .map_or((ConnectionPeerType::Unstaked, None), |stake_info| {
+                    (
+                        ConnectionPeerType::Staked(stake_info.stake),
+                        Some(stake_info.pubkey),
+                    )
+                });
 
         SimpleQosParams {
             peer_type,
@@ -134,9 +140,12 @@ impl Qos<SimpleQosParams> for SimpleQos {
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: SimpleQosParams,
-    ) -> Option<(tokio_util::sync::CancellationToken, ConnectionStreamCounter)> {
+    ) -> Option<(
+        Arc<AtomicU64>,
+        tokio_util::sync::CancellationToken,
+        Arc<ConnectionStreamCounter>,
+    )> {
         const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
-
         match params.peer_type() {
             ConnectionPeerType::Staked(stake) => {
                 let mut connection_table_l = self.staked_connection_table.lock().await;
@@ -150,16 +159,16 @@ impl Qos<SimpleQosParams> for SimpleQos {
                 }
 
                 if connection_table_l.total_size < self.max_staked_connections {
-                    if let Ok(()) = self.handle_and_cache_new_connection(
+                    if let Ok((last_update, cancel_connection, stream_counter)) = self.handle_and_cache_new_connection(
                         client_connection_tracker,
                         connection,
                         connection_table_l,
-                        self.staked_connection_table.clone(),
                         &params,
                     ) {
                         self.stats
                             .connection_added_from_staked_peer
                             .fetch_add(1, Ordering::Relaxed);
+                        return Some((last_update, cancel_connection, stream_counter));
                     }
                 }
                 None

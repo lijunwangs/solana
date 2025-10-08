@@ -542,7 +542,11 @@ pub trait Qos<P: ConnectionQosParams> {
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: P,
-    ) -> Option<(tokio_util::sync::CancellationToken, ConnectionStreamCounter)>;
+    ) -> Option<(
+        Arc<AtomicU64>,
+        tokio_util::sync::CancellationToken,
+        Arc<ConnectionStreamCounter>,
+    )>;
 
     fn on_stream_opened(&self);
     fn on_stream_closed(&self);
@@ -1472,7 +1476,7 @@ impl ConnectionTableKey {
 
 // Map of IP to list of connection entries
 pub(crate) struct ConnectionTable {
-    pub(crate) table: IndexMap<ConnectionTableKey, Vec<ConnectionEntry>>,
+    table: IndexMap<ConnectionTableKey, Vec<ConnectionEntry>>,
     pub(crate) total_size: usize,
 }
 

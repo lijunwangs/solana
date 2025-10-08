@@ -19,8 +19,12 @@ use {
     percentage::Percentage,
     quinn::{Connection, VarInt},
     solana_time_utils as timing,
-    std::sync::{atomic::Ordering, Arc, RwLock},
+    std::sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, RwLock,
+    },
     tokio::sync::{Mutex, MutexGuard},
+    tokio_util::sync::CancellationToken,
 };
 
 pub struct SwQos {
@@ -95,9 +99,15 @@ impl SwQos {
         client_connection_tracker: ClientConnectionTracker,
         connection: &Connection,
         mut connection_table_l: MutexGuard<ConnectionTable>,
-        connection_table: Arc<Mutex<ConnectionTable>>,
         params: &SwQosParams,
-    ) -> Result<(), ConnectionHandlerError> {
+    ) -> Result<
+        (
+            Arc<AtomicU64>,
+            CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        ),
+        ConnectionHandlerError,
+    > {
         if let Ok(max_uni_streams) = VarInt::from_u64(compute_max_allowed_uni_streams(
             params.peer_type(),
             params.total_stake,
@@ -134,7 +144,7 @@ impl SwQos {
                 }
                 connection.set_max_concurrent_uni_streams(max_uni_streams);
 
-                Ok(())
+                Ok((last_update, cancel_connection, stream_counter))
             } else {
                 self.stats
                     .connection_add_failed
@@ -176,17 +186,22 @@ impl SwQos {
         connection_table: Arc<Mutex<ConnectionTable>>,
         max_connections: usize,
         params: &SwQosParams,
-    ) -> Result<(), ConnectionHandlerError> {
+    ) -> Result<
+        (
+            Arc<AtomicU64>,
+            CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        ),
+        ConnectionHandlerError,
+    > {
         let stats = params.stats.clone();
         if max_connections > 0 {
-            let connection_table_clone = connection_table.clone();
             let mut connection_table = connection_table.lock().await;
             self.prune_unstaked_connection_table(&mut connection_table, max_connections, stats);
             self.handle_and_cache_new_connection(
                 client_connection_tracker,
                 connection,
                 connection_table,
-                connection_table_clone,
                 params,
             )
         } else {
@@ -253,7 +268,11 @@ impl Qos<SwQosParams> for SwQos {
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: SwQosParams,
-    ) -> Option<(tokio_util::sync::CancellationToken, ConnectionStreamCounter)> {
+    ) -> Option<(
+        Arc<AtomicU64>,
+        CancellationToken,
+        Arc<ConnectionStreamCounter>,
+    )> {
         const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
 
         match params.peer_type() {
@@ -269,22 +288,24 @@ impl Qos<SwQosParams> for SwQos {
                 }
 
                 if connection_table_l.total_size < self.max_staked_connections {
-                    if let Ok(()) = self.handle_and_cache_new_connection(
-                        client_connection_tracker,
-                        connection,
-                        connection_table_l,
-                        self.staked_connection_table.clone(),
-                        &params,
-                    ) {
+                    if let Ok((last_update, cancel_connection, stream_counter)) = self
+                        .handle_and_cache_new_connection(
+                            client_connection_tracker,
+                            connection,
+                            connection_table_l,
+                            &params,
+                        )
+                    {
                         self.stats
                             .connection_added_from_staked_peer
                             .fetch_add(1, Ordering::Relaxed);
+                        return Some((last_update, cancel_connection, stream_counter));
                     }
                 } else {
                     // If we couldn't prune a connection in the staked connection table, let's
                     // put this connection in the unstaked connection table. If needed, prune a
                     // connection from the unstaked connection table.
-                    if let Ok(()) = self
+                    if let Ok((last_update, cancel_connection, stream_counter)) = self
                         .prune_unstaked_connections_and_add_new_connection(
                             client_connection_tracker,
                             connection,
@@ -297,6 +318,7 @@ impl Qos<SwQosParams> for SwQos {
                         self.stats
                             .connection_added_from_staked_peer
                             .fetch_add(1, Ordering::Relaxed);
+                        return Some((last_update, cancel_connection, stream_counter));
                     } else {
                         self.stats
                             .connection_add_failed_on_pruning
@@ -308,7 +330,7 @@ impl Qos<SwQosParams> for SwQos {
                 }
             }
             ConnectionPeerType::Unstaked => {
-                if let Ok(()) = self
+                if let Ok((last_update, cancel_connection, stream_counter)) = self
                     .prune_unstaked_connections_and_add_new_connection(
                         client_connection_tracker,
                         connection,
@@ -321,6 +343,7 @@ impl Qos<SwQosParams> for SwQos {
                     self.stats
                         .connection_added_from_unstaked_peer
                         .fetch_add(1, Ordering::Relaxed);
+                    return Some((last_update, cancel_connection, stream_counter));
                 } else {
                     self.stats
                         .connection_add_failed_unstaked_node
