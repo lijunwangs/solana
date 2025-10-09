@@ -1,29 +1,18 @@
 //! Contains utility functions to create server and client for test purposes.
 use {
-    super::quic::{spawn_server, SpawnNonBlockingServerResult, ALPN_TPU_PROTOCOL_ID},
-    crate::{
-        quic::{QuicServerParams, StreamerStats},
-        streamer::StakedNodes,
-    },
-    crossbeam_channel::{unbounded, Receiver},
-    quinn::{
+    super::quic::{spawn_server, SpawnNonBlockingServerResult, ALPN_TPU_PROTOCOL_ID}, crate::{
+        nonblocking::swqos::SwQos, quic::{QuicServerParams, StreamerStats}, streamer::StakedNodes
+    }, crossbeam_channel::{unbounded, Receiver}, quinn::{
         crypto::rustls::QuicClientConfig, ClientConfig, Connection, EndpointConfig, IdleTimeout,
         TokioRuntime, TransportConfig,
-    },
-    solana_keypair::Keypair,
-    solana_net_utils::sockets::{
+    }, rustls::quic, solana_keypair::Keypair, solana_net_utils::sockets::{
         bind_to_localhost_unique, localhost_port_range_for_tests, multi_bind_in_range_with_config,
         SocketConfiguration as SocketConfig,
-    },
-    solana_perf::packet::PacketBatch,
-    solana_quic_definitions::{QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT, QUIC_SEND_FAIRNESS},
-    solana_tls_utils::{new_dummy_x509_certificate, tls_client_config_builder},
-    std::{
+    }, solana_perf::packet::PacketBatch, solana_quic_definitions::{QUIC_KEEP_ALIVE, QUIC_MAX_TIMEOUT, QUIC_SEND_FAIRNESS}, solana_tls_utils::{new_dummy_x509_certificate, tls_client_config_builder}, std::{
         net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
         sync::{atomic::AtomicBool, Arc, RwLock},
         time::{Duration, Instant},
-    },
-    tokio::{task::JoinHandle, time::sleep},
+    }, tokio::{task::JoinHandle, time::sleep}
 };
 
 pub fn get_client_config(keypair: &Keypair) -> ClientConfig {
@@ -92,6 +81,14 @@ pub fn setup_quic_server_with_sockets(
     let server_address = sockets[0].local_addr().unwrap();
     let staked_nodes = Arc::new(RwLock::new(option_staked_nodes.unwrap_or_default()));
 
+    let swqos = SwQos::new(
+        quic_server_params.max_streams_per_ms,
+        quic_server_params.max_staked_connections,
+        quic_server_params.max_unstaked_connections,
+        quic_server_params.max_connections_per_peer,
+        Arc::new(StreamerStats::default())
+    );
+
     let SpawnNonBlockingServerResult {
         endpoints: _,
         stats,
@@ -104,6 +101,7 @@ pub fn setup_quic_server_with_sockets(
         sender,
         exit.clone(),
         staked_nodes,
+        Arc::new(swqos),
         quic_server_params,
     )
     .unwrap();

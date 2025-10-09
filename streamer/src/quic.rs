@@ -628,7 +628,7 @@ pub struct QuicServerParams {
     pub coalesce: Duration,
     pub coalesce_channel_size: usize,
     pub num_threads: NonZeroUsize,
-    pub qos_mode: QosMode,
+    pub max_streams_per_ms: u64,
 }
 
 impl Default for QuicServerParams {
@@ -642,9 +642,7 @@ impl Default for QuicServerParams {
             coalesce: DEFAULT_TPU_COALESCE,
             coalesce_channel_size: DEFAULT_MAX_COALESCE_CHANNEL_SIZE,
             num_threads: NonZeroUsize::new(num_cpus::get().min(1)).expect("1 is non-zero"),
-            qos_mode: QosMode::StakeWeighted {
-                max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS,
-            },
+            max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS,
         }
     }
 }

@@ -176,7 +176,7 @@ pub fn spawn_server<Q, P>(
     quic_server_params: QuicServerParams,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError>
 where
-    Q: Qos<P> + Send + Sync + Clone + 'static,
+    Q: Qos<P> + Send + Sync  + 'static,
     P: ConnectionQosParams + Send + Sync + 'static,
 {
     let sockets: Vec<_> = sockets.into_iter().collect();
@@ -184,13 +184,13 @@ where
     let QuicServerParams {
         max_unstaked_connections,
         max_staked_connections,
-        max_connections_per_peer,
+        max_connections_per_peer: _,
         max_connections_per_ipaddr_per_min,
         wait_for_chunk_timeout,
         coalesce,
         coalesce_channel_size,
         num_threads: _,
-        qos_mode,
+        max_streams_per_ms: _,
     } = quic_server_params;
     let concurrent_connections = max_staked_connections + max_unstaked_connections;
     let max_concurrent_connections = concurrent_connections + concurrent_connections / 4;
@@ -291,7 +291,7 @@ async fn run_server<Q, P>(
     max_concurrent_connections: usize,
     qos: Arc<Q>,
 ) where
-    Q: Qos<P> + Send + Sync + Clone + 'static,
+    Q: Qos<P> + Send + Sync  + 'static,
     P: ConnectionQosParams + Send + Sync + 'static,
 {
     let rate_limiter = Arc::new(ConnectionRateLimiter::new(
@@ -561,7 +561,7 @@ async fn setup_connection<Q, P>(
     wait_for_chunk_timeout: Duration,
     qos: Arc<Q>,
 ) where
-    Q: Qos<P> + Send + Sync + Clone + 'static,
+    Q: Qos<P> + Send + Sync + 'static,
     P: ConnectionQosParams + Send + Sync + 'static,
 {
     const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
@@ -833,7 +833,7 @@ async fn handle_connection<Q, P>(
     qos: Arc<Q>,
     stream_counter: Arc<ConnectionStreamCounter>,
 ) where
-    Q: Qos<P> + Send + Sync + Clone + 'static,
+    Q: Qos<P> + Send + Sync + 'static,
     P: ConnectionQosParams + Send + Sync + 'static,
 {
     let peer_type = params.peer_type();
