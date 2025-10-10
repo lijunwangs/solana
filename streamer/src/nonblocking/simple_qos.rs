@@ -137,6 +137,7 @@ impl Qos<SimpleQosParams> for SimpleQos {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
@@ -196,6 +197,7 @@ impl Qos<SimpleQosParams> for SimpleQos {
         (self.max_streams_per_second * interval_ms / 1000).max(1)
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn remove_connection(
         &self,
         params: &SimpleQosParams,

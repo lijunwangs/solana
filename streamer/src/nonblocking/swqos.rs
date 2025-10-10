@@ -305,6 +305,7 @@ impl Qos<SwQosParams> for SwQos {
         )
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
@@ -421,6 +422,7 @@ impl Qos<SwQosParams> for SwQos {
             .available_load_capacity_in_throttling_duration(params.peer_type, params.total_stake)
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn remove_connection(
         &self,
         params: &SwQosParams,
