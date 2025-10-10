@@ -338,7 +338,7 @@ impl Qos<SwQosParams> for SwQos {
                                 client_connection_tracker,
                                 connection,
                                 connection_table_l,
-                                &params,
+                                params,
                             )
                         {
                             self.stats
@@ -357,7 +357,7 @@ impl Qos<SwQosParams> for SwQos {
                                 connection,
                                 self.unstaked_connection_table.clone(),
                                 self.max_unstaked_connections,
-                                &params,
+                                params,
                             )
                             .await
                         {
@@ -383,7 +383,7 @@ impl Qos<SwQosParams> for SwQos {
                             connection,
                             self.unstaked_connection_table.clone(),
                             self.max_unstaked_connections,
-                            &params,
+                            params,
                         )
                         .await
                     {

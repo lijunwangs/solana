@@ -169,7 +169,7 @@ impl Qos<SimpleQosParams> for SimpleQos {
                                 client_connection_tracker,
                                 connection,
                                 connection_table_l,
-                                &params,
+                                params,
                             )
                         {
                             self.stats
