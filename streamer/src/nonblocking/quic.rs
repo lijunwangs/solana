@@ -53,7 +53,6 @@ use {
         // (i.e. lock order is always async Mutex -> RwLock). Also, be careful not to
         // introduce any other awaits while holding the RwLock.
         select,
-        sync::Mutex,
         task::JoinHandle,
         time::{sleep, timeout},
     },
@@ -483,17 +482,18 @@ pub(crate) trait Qos<P: ConnectionQosParams> {
 
     /// Try to add a new connection. If successful, return a CancellationToken and
     /// a ConnectionStreamCounter to track the streams created on this connection.
-    async fn try_add_connection(
+    fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
-        params: &P,
-    ) -> Option<(
-        Arc<AtomicU64>,
-        tokio_util::sync::CancellationToken,
-        Arc<ConnectionStreamCounter>,
-        Arc<Mutex<ConnectionTable>>,
-    )>;
+        params: &mut P,
+    ) -> impl std::future::Future<
+        Output = Option<(
+            Arc<AtomicU64>,
+            tokio_util::sync::CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        )>,
+    > + Send;
 
     /// The maximum number of streams that can be opened per throttling interval
     /// on this connection.
@@ -502,6 +502,11 @@ pub(crate) trait Qos<P: ConnectionQosParams> {
     fn on_stream_accepted(&self, params: &P);
     fn on_stream_error(&self, params: &P);
     fn on_stream_closed(&self, params: &P);
+    fn remove_connection(
+        &self,
+        params: &P,
+        connection: Connection,
+    ) -> impl std::future::Future<Output = usize> + Send;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -556,17 +561,16 @@ async fn setup_connection<Q, P>(
                     return;
                 }
 
-                let params = qos.derive_qos_params(&new_connection, &staked_nodes);
-                if let Some((last_update, cancel_connection, stream_counter, connection_table)) =
-                    qos.try_add_connection(client_connection_tracker, &new_connection, &params)
-                        .await
+                let mut params = qos.derive_qos_params(&new_connection, &staked_nodes);
+                if let Some((last_update, cancel_connection, stream_counter)) = qos
+                    .try_add_connection(client_connection_tracker, &new_connection, &mut params)
+                    .await
                 {
                     tokio::spawn(handle_connection(
                         packet_sender.clone(),
                         new_connection,
                         stats,
                         last_update,
-                        connection_table,
                         cancel_connection,
                         params.clone(),
                         wait_for_chunk_timeout,
@@ -780,7 +784,6 @@ async fn handle_connection<Q, P>(
     connection: Connection,
     stats: Arc<StreamerStats>,
     last_update: Arc<AtomicU64>,
-    connection_table: Arc<Mutex<ConnectionTable>>,
     cancel: CancellationToken,
     params: P,
     wait_for_chunk_timeout: Duration,
@@ -932,12 +935,7 @@ async fn handle_connection<Q, P>(
         qos.on_stream_closed(&params);
     }
 
-    let stable_id = connection.stable_id();
-    let removed_connection_count = connection_table.lock().await.remove_connection(
-        ConnectionTableKey::new(remote_addr.ip(), params.remote_pubkey()),
-        remote_addr.port(),
-        stable_id,
-    );
+    let removed_connection_count = qos.remove_connection(&params, connection).await;
     if removed_connection_count > 0 {
         stats
             .connection_removed

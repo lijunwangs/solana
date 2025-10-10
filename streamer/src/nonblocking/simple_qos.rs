@@ -88,7 +88,7 @@ impl SimpleQos {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct SimpleQosParams {
     peer_type: ConnectionPeerType,
     max_connections_per_peer: usize,
@@ -137,53 +137,51 @@ impl Qos<SimpleQosParams> for SimpleQos {
         }
     }
 
-    async fn try_add_connection(
+    fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
-        params: &SimpleQosParams,
-    ) -> Option<(
-        Arc<AtomicU64>,
-        tokio_util::sync::CancellationToken,
-        Arc<ConnectionStreamCounter>,
-        Arc<Mutex<ConnectionTable>>,
-    )> {
-        const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
-        match params.peer_type() {
-            ConnectionPeerType::Staked(stake) => {
-                let mut connection_table_l = self.staked_connection_table.lock().await;
+        params: &mut SimpleQosParams,
+    ) -> impl std::future::Future<
+        Output = Option<(
+            Arc<AtomicU64>,
+            tokio_util::sync::CancellationToken,
+            Arc<ConnectionStreamCounter>,
+        )>,
+    > + Send {
+        async move {
+            const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
+            match params.peer_type() {
+                ConnectionPeerType::Staked(stake) => {
+                    let mut connection_table_l = self.staked_connection_table.lock().await;
 
-                if connection_table_l.total_size >= self.max_staked_connections {
-                    let num_pruned =
-                        connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
-                    self.stats
-                        .num_evictions
-                        .fetch_add(num_pruned, Ordering::Relaxed);
-                }
-
-                if connection_table_l.total_size < self.max_staked_connections {
-                    if let Ok((last_update, cancel_connection, stream_counter)) = self
-                        .handle_and_cache_new_connection(
-                            client_connection_tracker,
-                            connection,
-                            connection_table_l,
-                            &params,
-                        )
-                    {
+                    if connection_table_l.total_size >= self.max_staked_connections {
+                        let num_pruned =
+                            connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
                         self.stats
-                            .connection_added_from_staked_peer
-                            .fetch_add(1, Ordering::Relaxed);
-                        return Some((
-                            last_update,
-                            cancel_connection,
-                            stream_counter,
-                            self.staked_connection_table.clone(),
-                        ));
+                            .num_evictions
+                            .fetch_add(num_pruned, Ordering::Relaxed);
                     }
+
+                    if connection_table_l.total_size < self.max_staked_connections {
+                        if let Ok((last_update, cancel_connection, stream_counter)) = self
+                            .handle_and_cache_new_connection(
+                                client_connection_tracker,
+                                connection,
+                                connection_table_l,
+                                &params,
+                            )
+                        {
+                            self.stats
+                                .connection_added_from_staked_peer
+                                .fetch_add(1, Ordering::Relaxed);
+                            return Some((last_update, cancel_connection, stream_counter));
+                        }
+                    }
+                    None
                 }
-                None
+                ConnectionPeerType::Unstaked => None,
             }
-            ConnectionPeerType::Unstaked => None,
         }
     }
 
@@ -196,5 +194,22 @@ impl Qos<SimpleQosParams> for SimpleQos {
     fn max_streams_per_throttling_interval(&self, _params: &SimpleQosParams) -> u64 {
         let interval_ms = STREAM_THROTTLING_INTERVAL.as_millis() as u64;
         (self.max_streams_per_second * interval_ms / 1000).max(1)
+    }
+
+    fn remove_connection(
+        &self,
+        params: &SimpleQosParams,
+        connection: Connection,
+    ) -> impl std::future::Future<Output = usize> + Send {
+        async move {
+            let stable_id = connection.stable_id();
+            let remote_addr = connection.remote_address();
+
+            self.staked_connection_table.lock().await.remove_connection(
+                ConnectionTableKey::new(remote_addr.ip(), params.remote_pubkey()),
+                remote_addr.port(),
+                stable_id,
+            )
+        }
     }
 }
