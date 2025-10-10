@@ -2,9 +2,8 @@ use {
     crate::{
         nonblocking::{
             connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter},
-            stream_throttle::{
-                ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL,
-            },
+            stream_throttle::{ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL},
+            swqos::SwQos,
         },
         quic::{configure_server, QuicServerError, QuicServerParams, StreamerStats},
         streamer::StakedNodes,
@@ -22,9 +21,8 @@ use {
     solana_perf::packet::{BytesPacket, BytesPacketBatch, PacketBatch, PACKETS_PER_BATCH},
     solana_pubkey::Pubkey,
     solana_quic_definitions::{
-        QUIC_MAX_STAKED_CONCURRENT_STREAMS,
-        QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_CONCURRENT_STREAMS,
-        QUIC_TOTAL_STAKED_CONCURRENT_STREAMS,
+        QUIC_MAX_STAKED_CONCURRENT_STREAMS, QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
+        QUIC_MIN_STAKED_CONCURRENT_STREAMS, QUIC_TOTAL_STAKED_CONCURRENT_STREAMS,
     },
     solana_signature::Signature,
     solana_time_utils as timing,
@@ -55,7 +53,7 @@ use {
         // (i.e. lock order is always async Mutex -> RwLock). Also, be careful not to
         // introduce any other awaits while holding the RwLock.
         select,
-        sync::{Mutex},
+        sync::Mutex,
         task::JoinHandle,
         time::{sleep, timeout},
     },
@@ -138,20 +136,15 @@ pub struct SpawnNonBlockingServerResult {
 }
 
 #[deprecated(since = "3.0.0", note = "Use spawn_server instead")]
-pub fn spawn_server_multi<Q, P>(
+pub fn spawn_server_multi(
     name: &'static str,
     sockets: impl IntoIterator<Item = UdpSocket>,
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
-    qos: Arc<Q>,
     quic_server_params: QuicServerParams,
-) -> Result<SpawnNonBlockingServerResult, QuicServerError>
-where
-    Q: Qos<P> + Send + Sync + Clone + 'static,
-    P: ConnectionQosParams + Send + Sync + 'static,
-{
+) -> Result<SpawnNonBlockingServerResult, QuicServerError> {
     spawn_server(
         name,
         sockets,
@@ -159,26 +152,32 @@ where
         packet_sender,
         exit,
         staked_nodes,
-        qos,
         quic_server_params,
     )
 }
 
 /// Spawn a streamer instance in the current tokio runtime.
-pub fn spawn_server<Q, P>(
+pub fn spawn_server(
     name: &'static str,
     sockets: impl IntoIterator<Item = UdpSocket>,
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
     exit: Arc<AtomicBool>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
-    qos: Arc<Q>,
     quic_server_params: QuicServerParams,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError>
 where
-    Q: Qos<P> + Send + Sync  + 'static,
-    P: ConnectionQosParams + Send + Sync + 'static,
 {
+    let stats = Arc::<StreamerStats>::default();
+
+    let swqos = Arc::new(SwQos::new(
+        quic_server_params.max_streams_per_ms,
+        quic_server_params.max_staked_connections,
+        quic_server_params.max_unstaked_connections,
+        quic_server_params.max_connections_per_peer,
+        stats.clone(),
+    ));
+
     let sockets: Vec<_> = sockets.into_iter().collect();
     info!("Start {name} quic server on {sockets:?}");
     let QuicServerParams {
@@ -208,7 +207,6 @@ where
             .map_err(QuicServerError::EndpointFailed)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let stats = Arc::<StreamerStats>::default();
     let handle = tokio::spawn(run_server(
         name,
         endpoints.clone(),
@@ -221,7 +219,7 @@ where
         coalesce,
         coalesce_channel_size,
         max_concurrent_connections,
-        qos, // Pass concrete type instead of enum
+        swqos,
     ));
     Ok(SpawnNonBlockingServerResult {
         endpoints,
@@ -291,7 +289,7 @@ async fn run_server<Q, P>(
     max_concurrent_connections: usize,
     qos: Arc<Q>,
 ) where
-    Q: Qos<P> + Send + Sync  + 'static,
+    Q: Qos<P> + Send + Sync + 'static,
     P: ConnectionQosParams + Send + Sync + 'static,
 {
     let rate_limiter = Arc::new(ConnectionRateLimiter::new(
@@ -472,41 +470,31 @@ pub(crate) enum ConnectionHandlerError {
     MaxStreamError,
 }
 
-#[derive(Clone)]
-pub struct ConnectionStakeInfo {
-    pub pubkey: Pubkey,
-    pub stake: u64,
-    pub total_stake: u64,
-    pub max_stake: u64,
-    pub min_stake: u64,
-}
-
-pub trait ConnectionQosParams: Clone + Send + Sync {
+pub(crate) trait ConnectionQosParams: Clone + Send + Sync {
     fn peer_type(&self) -> ConnectionPeerType;
     fn max_connections_per_peer(&self) -> usize;
     fn remote_pubkey(&self) -> Option<solana_pubkey::Pubkey>;
     fn total_stake(&self) -> u64;
 }
 
-pub trait Qos<P: ConnectionQosParams> {
+pub(crate) trait Qos<P: ConnectionQosParams> {
     /// Derive the QosParams for a connection
     fn derive_qos_params(&self, connection: &Connection, staked_nodes: &RwLock<StakedNodes>) -> P;
 
     /// Try to add a new connection. If successful, return a CancellationToken and
     /// a ConnectionStreamCounter to track the streams created on this connection.
-    fn try_add_connection(
+    async fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: &P,
-    ) -> impl std::future::Future<
-        Output = Option<(
+    ) ->
+        Option<(
             Arc<AtomicU64>,
             tokio_util::sync::CancellationToken,
             Arc<ConnectionStreamCounter>,
             Arc<Mutex<ConnectionTable>>,
-        )>,
-    > + Send;
+        )>;
 
     /// The maximum number of streams that can be opened per throttling interval
     /// on this connection.
@@ -515,38 +503,6 @@ pub trait Qos<P: ConnectionQosParams> {
     fn on_stream_accepted(&self, params: &P);
     fn on_stream_error(&self, params: &P);
     fn on_stream_closed(&self, params: &P);
-    fn report_qos_stats(&self);
-}
-
-#[derive(Clone)]
-pub struct NewConnectionHandlerParams {
-    packet_sender: Sender<PacketAccumulator>,
-    remote_pubkey: Option<Pubkey>,
-    peer_type: ConnectionPeerType,
-    total_stake: u64,
-    max_connections_per_peer: usize,
-    stats: Arc<StreamerStats>,
-    max_stake: u64,
-    min_stake: u64,
-}
-
-impl NewConnectionHandlerParams {
-    fn new_unstaked(
-        packet_sender: Sender<PacketAccumulator>,
-        max_connections_per_peer: usize,
-        stats: Arc<StreamerStats>,
-    ) -> NewConnectionHandlerParams {
-        NewConnectionHandlerParams {
-            packet_sender,
-            remote_pubkey: None,
-            peer_type: ConnectionPeerType::Unstaked,
-            total_stake: 0,
-            max_connections_per_peer,
-            stats,
-            max_stake: 0,
-            min_stake: 0,
-        }
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -564,7 +520,6 @@ async fn setup_connection<Q, P>(
     Q: Qos<P> + Send + Sync + 'static,
     P: ConnectionQosParams + Send + Sync + 'static,
 {
-    const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
     let from = connecting.remote_address();
     let res = timeout(QUIC_CONNECTION_HANDSHAKE_TIMEOUT, connecting).await;
     stats
@@ -603,9 +558,9 @@ async fn setup_connection<Q, P>(
                 }
 
                 let params = qos.derive_qos_params(&new_connection, &staked_nodes);
-                if let Some((last_update, cancel_connection, stream_counter, connection_table)) = qos
-                    .try_add_connection(client_connection_tracker, &new_connection, &params)
-                    .await
+                if let Some((last_update, cancel_connection, stream_counter, connection_table)) =
+                    qos.try_add_connection(client_connection_tracker, &new_connection, &params)
+                        .await
                 {
                     tokio::spawn(handle_connection(
                         packet_sender.clone(),
@@ -2132,40 +2087,6 @@ pub mod test {
             compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 10000),
             QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
         );
-    }
-
-    #[test]
-    fn test_cacluate_receive_window_ratio_for_staked_node() {
-        let mut max_stake = 10000;
-        let mut min_stake = 0;
-        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, min_stake);
-        assert_eq!(ratio, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO);
-
-        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake);
-        let max_ratio = QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO;
-        assert_eq!(ratio, max_ratio);
-
-        let ratio =
-            compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake / 2);
-        let average_ratio =
-            (QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO + QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO) / 2;
-        assert_eq!(ratio, average_ratio);
-
-        max_stake = 10000;
-        min_stake = 10000;
-        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake);
-        assert_eq!(ratio, max_ratio);
-
-        max_stake = 0;
-        min_stake = 0;
-        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake);
-        assert_eq!(ratio, max_ratio);
-
-        max_stake = 1000;
-        min_stake = 10;
-        let ratio =
-            compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake + 10);
-        assert_eq!(ratio, max_ratio);
     }
 
     #[tokio::test(flavor = "multi_thread")]

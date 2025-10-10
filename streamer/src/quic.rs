@@ -605,18 +605,6 @@ pub fn spawn_server_multi(
     )
 }
 
-#[derive(Clone, Debug)]
-pub enum QosMode {
-    /// The maximum number of streams per millisecond across all connections
-    StakeWeighted {
-        max_streams_per_ms: u64,
-    },
-    // The maximum number of streams per second allowed for each peer
-    SimpleStreamsPerSecond {
-        max_streams_per_second: u64,
-    },
-}
-
 #[derive(Clone)]
 pub struct QuicServerParams {
     pub max_connections_per_peer: usize,

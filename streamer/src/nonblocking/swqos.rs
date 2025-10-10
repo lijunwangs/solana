@@ -19,8 +19,7 @@ use {
     quinn::{Connection, VarInt, VarIntBoundsExceeded},
     solana_packet::PACKET_DATA_SIZE,
     solana_quic_definitions::{
-        QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO,
-        QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
+        QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
         QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
     },
     solana_time_utils as timing,
@@ -44,7 +43,7 @@ pub struct SwQos {
 
 // QoS Params for Stake weighted QoS
 #[derive(Debug, Clone)]
-struct SwQosParams {
+pub struct SwQosParams {
     peer_type: ConnectionPeerType,
     max_connections_per_peer: usize,
     max_stake: u64,
@@ -303,20 +302,19 @@ impl Qos<SwQosParams> for SwQos {
         )
     }
 
-    fn try_add_connection(
+    async fn try_add_connection(
         &self,
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: &SwQosParams,
-    ) -> impl std::future::Future<
-        Output = Option<(
+    ) -> 
+        Option<(
             Arc<AtomicU64>,
             tokio_util::sync::CancellationToken,
             Arc<ConnectionStreamCounter>,
             Arc<Mutex<ConnectionTable>>,
-        )>,
-    > + Send {
-        async move {
+        )>
+    {
             const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
 
             match params.peer_type() {
@@ -343,7 +341,12 @@ impl Qos<SwQosParams> for SwQos {
                             self.stats
                                 .connection_added_from_staked_peer
                                 .fetch_add(1, Ordering::Relaxed);
-                            return Some((last_update, cancel_connection, stream_counter, self.staked_connection_table.clone()));
+                            return Some((
+                                last_update,
+                                cancel_connection,
+                                stream_counter,
+                                self.staked_connection_table.clone(),
+                            ));
                         }
                     } else {
                         // If we couldn't prune a connection in the staked connection table, let's
@@ -362,7 +365,12 @@ impl Qos<SwQosParams> for SwQos {
                             self.stats
                                 .connection_added_from_staked_peer
                                 .fetch_add(1, Ordering::Relaxed);
-                            return Some((last_update, cancel_connection, stream_counter, self.unstaked_connection_table.clone()));
+                            return Some((
+                                last_update,
+                                cancel_connection,
+                                stream_counter,
+                                self.unstaked_connection_table.clone(),
+                            ));
                         } else {
                             self.stats
                                 .connection_add_failed_on_pruning
@@ -387,7 +395,12 @@ impl Qos<SwQosParams> for SwQos {
                         self.stats
                             .connection_added_from_unstaked_peer
                             .fetch_add(1, Ordering::Relaxed);
-                        return Some((last_update, cancel_connection, stream_counter, self.unstaked_connection_table.clone()));
+                        return Some((
+                            last_update,
+                            cancel_connection,
+                            stream_counter,
+                            self.unstaked_connection_table.clone(),
+                        ));
                     } else {
                         self.stats
                             .connection_add_failed_unstaked_node
@@ -396,7 +409,6 @@ impl Qos<SwQosParams> for SwQos {
                 }
             }
             None
-        }
     }
 
     fn on_stream_accepted(&self, params: &SwQosParams) {
@@ -411,12 +423,46 @@ impl Qos<SwQosParams> for SwQos {
         self.staked_stream_load_ema.update_ema_if_needed();
     }
 
-    fn report_qos_stats(&self) {
-        todo!()
-    }
-
     fn max_streams_per_throttling_interval(&self, params: &SwQosParams) -> u64 {
         self.staked_stream_load_ema
             .available_load_capacity_in_throttling_duration(params.peer_type, params.total_stake)
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use super::*;
+    #[test]
+    fn test_cacluate_receive_window_ratio_for_staked_node() {
+        let mut max_stake = 10000;
+        let mut min_stake = 0;
+        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, min_stake);
+        assert_eq!(ratio, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO);
+
+        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake);
+        let max_ratio = QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO;
+        assert_eq!(ratio, max_ratio);
+
+        let ratio =
+            compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake / 2);
+        let average_ratio =
+            (QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO + QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO) / 2;
+        assert_eq!(ratio, average_ratio);
+
+        max_stake = 10000;
+        min_stake = 10000;
+        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake);
+        assert_eq!(ratio, max_ratio);
+
+        max_stake = 0;
+        min_stake = 0;
+        let ratio = compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake);
+        assert_eq!(ratio, max_ratio);
+
+        max_stake = 1000;
+        min_stake = 10;
+        let ratio =
+            compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake + 10);
+        assert_eq!(ratio, max_ratio);
     }
 }
