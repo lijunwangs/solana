@@ -488,13 +488,12 @@ pub(crate) trait Qos<P: ConnectionQosParams> {
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: &P,
-    ) ->
-        Option<(
-            Arc<AtomicU64>,
-            tokio_util::sync::CancellationToken,
-            Arc<ConnectionStreamCounter>,
-            Arc<Mutex<ConnectionTable>>,
-        )>;
+    ) -> Option<(
+        Arc<AtomicU64>,
+        tokio_util::sync::CancellationToken,
+        Arc<ConnectionStreamCounter>,
+        Arc<Mutex<ConnectionTable>>,
+    )>;
 
     /// The maximum number of streams that can be opened per throttling interval
     /// on this connection.

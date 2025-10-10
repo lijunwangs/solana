@@ -142,51 +142,49 @@ impl Qos<SimpleQosParams> for SimpleQos {
         client_connection_tracker: ClientConnectionTracker,
         connection: &quinn::Connection,
         params: &SimpleQosParams,
-    ) -> 
-        Option<(
-            Arc<AtomicU64>,
-            tokio_util::sync::CancellationToken,
-            Arc<ConnectionStreamCounter>,
-            Arc<Mutex<ConnectionTable>>,
-        )>
-    {
-            const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
-            match params.peer_type() {
-                ConnectionPeerType::Staked(stake) => {
-                    let mut connection_table_l = self.staked_connection_table.lock().await;
+    ) -> Option<(
+        Arc<AtomicU64>,
+        tokio_util::sync::CancellationToken,
+        Arc<ConnectionStreamCounter>,
+        Arc<Mutex<ConnectionTable>>,
+    )> {
+        const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
+        match params.peer_type() {
+            ConnectionPeerType::Staked(stake) => {
+                let mut connection_table_l = self.staked_connection_table.lock().await;
 
-                    if connection_table_l.total_size >= self.max_staked_connections {
-                        let num_pruned =
-                            connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
-                        self.stats
-                            .num_evictions
-                            .fetch_add(num_pruned, Ordering::Relaxed);
-                    }
-
-                    if connection_table_l.total_size < self.max_staked_connections {
-                        if let Ok((last_update, cancel_connection, stream_counter)) = self
-                            .handle_and_cache_new_connection(
-                                client_connection_tracker,
-                                connection,
-                                connection_table_l,
-                                &params,
-                            )
-                        {
-                            self.stats
-                                .connection_added_from_staked_peer
-                                .fetch_add(1, Ordering::Relaxed);
-                            return Some((
-                                last_update,
-                                cancel_connection,
-                                stream_counter,
-                                self.staked_connection_table.clone(),
-                            ));
-                        }
-                    }
-                    None
+                if connection_table_l.total_size >= self.max_staked_connections {
+                    let num_pruned =
+                        connection_table_l.prune_random(PRUNE_RANDOM_SAMPLE_SIZE, stake);
+                    self.stats
+                        .num_evictions
+                        .fetch_add(num_pruned, Ordering::Relaxed);
                 }
-                ConnectionPeerType::Unstaked => None,
+
+                if connection_table_l.total_size < self.max_staked_connections {
+                    if let Ok((last_update, cancel_connection, stream_counter)) = self
+                        .handle_and_cache_new_connection(
+                            client_connection_tracker,
+                            connection,
+                            connection_table_l,
+                            &params,
+                        )
+                    {
+                        self.stats
+                            .connection_added_from_staked_peer
+                            .fetch_add(1, Ordering::Relaxed);
+                        return Some((
+                            last_update,
+                            cancel_connection,
+                            stream_counter,
+                            self.staked_connection_table.clone(),
+                        ));
+                    }
+                }
+                None
             }
+            ConnectionPeerType::Unstaked => None,
+        }
     }
 
     fn on_stream_accepted(&self, _params: &SimpleQosParams) {}
