@@ -2,10 +2,10 @@ use {
     crate::{
         nonblocking::{
             quic::{
-                compute_max_allowed_uni_streams, get_connection_stake, ClientConnectionTracker,
-                ConnectionHandlerError, ConnectionPeerType, ConnectionQosParams, ConnectionTable,
-                ConnectionTableKey, Qos, CONNECTION_CLOSE_CODE_DISALLOWED,
-                CONNECTION_CLOSE_CODE_EXCEED_MAX_STREAM_COUNT, CONNECTION_CLOSE_REASON_DISALLOWED,
+                get_connection_stake, ClientConnectionTracker, ConnectionHandlerError,
+                ConnectionPeerType, ConnectionQosParams, ConnectionTable, ConnectionTableKey, Qos,
+                CONNECTION_CLOSE_CODE_DISALLOWED, CONNECTION_CLOSE_CODE_EXCEED_MAX_STREAM_COUNT,
+                CONNECTION_CLOSE_REASON_DISALLOWED,
                 CONNECTION_CLOSE_REASON_EXCEED_MAX_STREAM_COUNT,
             },
             stream_throttle::{
@@ -19,7 +19,9 @@ use {
     quinn::{Connection, VarInt, VarIntBoundsExceeded},
     solana_packet::PACKET_DATA_SIZE,
     solana_quic_definitions::{
-        QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO, QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO,
+        QUIC_MAX_STAKED_CONCURRENT_STREAMS, QUIC_MAX_STAKED_RECEIVE_WINDOW_RATIO,
+        QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS, QUIC_MIN_STAKED_CONCURRENT_STREAMS,
+        QUIC_MIN_STAKED_RECEIVE_WINDOW_RATIO, QUIC_TOTAL_STAKED_CONCURRENT_STREAMS,
         QUIC_UNSTAKED_RECEIVE_WINDOW_RATIO,
     },
     solana_time_utils as timing,
@@ -121,7 +123,7 @@ fn compute_receive_window_ratio_for_staked_node(max_stake: u64, min_stake: u64, 
     }
 }
 
-pub(crate) fn compute_recieve_window(
+fn compute_recieve_window(
     max_stake: u64,
     min_stake: u64,
     peer_type: ConnectionPeerType,
@@ -135,6 +137,33 @@ pub(crate) fn compute_recieve_window(
                 compute_receive_window_ratio_for_staked_node(max_stake, min_stake, peer_stake);
             VarInt::from_u64(PACKET_DATA_SIZE as u64 * ratio)
         }
+    }
+}
+
+fn compute_max_allowed_uni_streams(peer_type: ConnectionPeerType, total_stake: u64) -> usize {
+    match peer_type {
+        ConnectionPeerType::Staked(peer_stake) => {
+            // No checked math for f64 type. So let's explicitly check for 0 here
+            if total_stake == 0 || peer_stake > total_stake {
+                warn!(
+                    "Invalid stake values: peer_stake: {peer_stake:?}, total_stake: \
+                     {total_stake:?}"
+                );
+
+                QUIC_MIN_STAKED_CONCURRENT_STREAMS
+            } else {
+                let delta = (QUIC_TOTAL_STAKED_CONCURRENT_STREAMS
+                    - QUIC_MIN_STAKED_CONCURRENT_STREAMS) as f64;
+
+                (((peer_stake as f64 / total_stake as f64) * delta) as usize
+                    + QUIC_MIN_STAKED_CONCURRENT_STREAMS)
+                    .clamp(
+                        QUIC_MIN_STAKED_CONCURRENT_STREAMS,
+                        QUIC_MAX_STAKED_CONCURRENT_STREAMS,
+                    )
+            }
+        }
+        ConnectionPeerType::Unstaked => QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS,
     }
 }
 
@@ -450,6 +479,7 @@ impl Qos<SwQosParams> for SwQos {
 #[cfg(test)]
 pub mod test {
     use super::*;
+
     #[test]
     fn test_cacluate_receive_window_ratio_for_staked_node() {
         let mut max_stake = 10000;
@@ -482,5 +512,33 @@ pub mod test {
         let ratio =
             compute_receive_window_ratio_for_staked_node(max_stake, min_stake, max_stake + 10);
         assert_eq!(ratio, max_ratio);
+    }
+
+    #[test]
+
+    fn test_max_allowed_uni_streams() {
+        assert_eq!(
+            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 0),
+            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
+        );
+        assert_eq!(
+            compute_max_allowed_uni_streams(ConnectionPeerType::Staked(10), 0),
+            QUIC_MIN_STAKED_CONCURRENT_STREAMS
+        );
+        let delta =
+            (QUIC_TOTAL_STAKED_CONCURRENT_STREAMS - QUIC_MIN_STAKED_CONCURRENT_STREAMS) as f64;
+        assert_eq!(
+            compute_max_allowed_uni_streams(ConnectionPeerType::Staked(1000), 10000),
+            QUIC_MAX_STAKED_CONCURRENT_STREAMS,
+        );
+        assert_eq!(
+            compute_max_allowed_uni_streams(ConnectionPeerType::Staked(100), 10000),
+            ((delta / (100_f64)) as usize + QUIC_MIN_STAKED_CONCURRENT_STREAMS)
+                .min(QUIC_MAX_STAKED_CONCURRENT_STREAMS)
+        );
+        assert_eq!(
+            compute_max_allowed_uni_streams(ConnectionPeerType::Unstaked, 10000),
+            QUIC_MAX_UNSTAKED_CONCURRENT_STREAMS
+        );
     }
 }
