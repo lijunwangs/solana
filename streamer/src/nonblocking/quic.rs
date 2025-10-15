@@ -23,7 +23,10 @@ use {
     solana_measure::measure::Measure,
     solana_net_utils::token_bucket::TokenBucket,
     solana_packet::{Meta, PACKET_DATA_SIZE},
-    solana_perf::packet::{BytesPacket, BytesPacketBatch, PacketBatch, PACKETS_PER_BATCH},
+    solana_perf::packet::{
+        BytesPacket, BytesPacketBatch, BytesPacketBatchWithClientId, BytesPacketWithClientId,
+        PacketBatch, PACKETS_PER_BATCH,
+    },
     solana_pubkey::Pubkey,
     solana_signature::Signature,
     solana_tls_utils::get_pubkey_from_tls_certificate,
@@ -99,6 +102,7 @@ struct PacketAccumulator {
     pub meta: Meta,
     pub chunks: SmallVec<[Bytes; 2]>,
     pub start_time: Instant,
+    pub remote_pubkey: Option<Pubkey>, // Add this field
 }
 
 impl PacketAccumulator {
@@ -107,6 +111,16 @@ impl PacketAccumulator {
             meta,
             chunks: SmallVec::default(),
             start_time: Instant::now(),
+            remote_pubkey: None, // Initialize as None
+        }
+    }
+
+    fn with_remote_pubkey(meta: Meta, remote_pubkey: Option<Pubkey>) -> Self {
+        Self {
+            meta,
+            chunks: SmallVec::default(),
+            start_time: Instant::now(),
+            remote_pubkey,
         }
     }
 }
@@ -273,6 +287,7 @@ where
                 stats,
                 quic_server_params.coalesce,
                 cancel,
+                quic_server_params.send_client_id,
             );
         }
     });
@@ -479,6 +494,7 @@ where
                         quic_server_params.clone(),
                         qos.clone(),
                         tasks.clone(),
+                        quic_server_params.send_client_id,
                     ));
                 }
                 Err(err) => {
@@ -554,6 +570,7 @@ async fn setup_connection<Q, C>(
     server_params: Arc<QuicStreamerConfig>,
     qos: Arc<Q>,
     tasks: TaskTracker,
+    send_client_id: bool,
 ) where
     Q: QosController<C> + Send + Sync + 'static,
     C: ConnectionContext + Send + Sync + 'static,
@@ -615,6 +632,7 @@ async fn setup_connection<Q, C>(
                         conn_context.clone(),
                         qos,
                         cancel_connection,
+                        send_client_id,
                     ));
                 }
             }
@@ -675,12 +693,27 @@ fn run_packet_batch_sender(
     stats: Arc<StreamerStats>,
     coalesce: Duration,
     cancel: CancellationToken,
+    send_client_id: bool, // Add this parameter
 ) {
     trace!("enter packet_batch_sender");
     let mut batch_start_time = Instant::now();
     loop {
         let mut packet_perf_measure: Vec<([u8; 64], Instant)> = Vec::default();
-        let mut packet_batch = BytesPacketBatch::with_capacity(PACKETS_PER_BATCH);
+
+        // Create the appropriate batch type based on configuration
+        let mut regular_batch = if !send_client_id {
+            Some(BytesPacketBatch::with_capacity(PACKETS_PER_BATCH))
+        } else {
+            None
+        };
+        let mut enhanced_batch = if send_client_id {
+            Some(BytesPacketBatchWithClientId::with_capacity(
+                PACKETS_PER_BATCH,
+            ))
+        } else {
+            None
+        };
+
         let mut total_bytes: usize = 0;
 
         stats
@@ -694,14 +727,29 @@ fn run_packet_batch_sender(
             if cancel.is_cancelled() {
                 return;
             }
+
             let elapsed = batch_start_time.elapsed();
-            if packet_batch.len() >= PACKETS_PER_BATCH
-                || (!packet_batch.is_empty() && elapsed >= coalesce)
-            {
-                let len = packet_batch.len();
+            let batch_len = if send_client_id {
+                enhanced_batch.as_ref().unwrap().len()
+            } else {
+                regular_batch.as_ref().unwrap().len()
+            };
+
+            if batch_len >= PACKETS_PER_BATCH || (batch_len > 0 && elapsed >= coalesce) {
+                let len = batch_len;
                 track_streamer_fetch_packet_performance(&packet_perf_measure, &stats);
 
-                if let Err(e) = packet_sender.try_send(packet_batch.into()) {
+                let send_result = if send_client_id {
+                    // Send enhanced batch
+                    let batch = enhanced_batch.take().unwrap();
+                    packet_sender.try_send(PacketBatch::WithClientId(batch))
+                } else {
+                    // Send regular batch
+                    let batch = regular_batch.take().unwrap();
+                    packet_sender.try_send(PacketBatch::Bytes(batch))
+                };
+
+                if let Err(e) = send_result {
                     stats
                         .total_packet_batch_send_err
                         .fetch_add(1, Ordering::Relaxed);
@@ -730,7 +778,7 @@ fn run_packet_batch_sender(
                 break;
             }
 
-            let timeout_res = if !packet_batch.is_empty() {
+            let timeout_res = if batch_len > 0 {
                 // If we get here, elapsed < coalesce (see above if condition)
                 packet_receiver.recv_timeout(coalesce - elapsed)
             } else {
@@ -747,8 +795,7 @@ fn run_packet_batch_sender(
             };
 
             if let Ok(mut packet_accumulator) = timeout_res {
-                // Start the timeout from when the packet batch first becomes non-empty
-                if packet_batch.is_empty() {
+                if batch_len == 0 {
                     batch_start_time = Instant::now();
                 }
 
@@ -780,7 +827,16 @@ fn run_packet_batch_sender(
                     // we set the PERF_TRACK_PACKET on
                     packet.meta_mut().set_track_performance(true);
                 }
-                packet_batch.push(packet);
+
+                // Add to the appropriate batch type
+                if send_client_id {
+                    let enhanced_packet =
+                        BytesPacketWithClientId::new(packet, packet_accumulator.remote_pubkey);
+                    enhanced_batch.as_mut().unwrap().push(enhanced_packet);
+                } else {
+                    regular_batch.as_mut().unwrap().push(packet);
+                }
+
                 stats
                     .total_chunks_processed_by_batcher
                     .fetch_add(num_chunks, Ordering::Relaxed);
@@ -826,6 +882,7 @@ async fn handle_connection<Q, C>(
     context: C,
     qos: Arc<Q>,
     cancel: CancellationToken,
+    send_client_id: bool,
 ) where
     Q: QosController<C> + Send + Sync + 'static,
     C: ConnectionContext + Send + Sync + 'static,
@@ -862,7 +919,11 @@ async fn handle_connection<Q, C>(
         let mut meta = Meta::default();
         meta.set_socket_addr(&remote_addr);
         meta.set_from_staked_node(matches!(peer_type, ConnectionPeerType::Staked(_)));
-        let mut accum = PacketAccumulator::new(meta);
+        let mut accum = if send_client_id {
+            PacketAccumulator::with_remote_pubkey(meta, context.remote_pubkey())
+        } else {
+            PacketAccumulator::new(meta)
+        };
 
         // Virtually all small transactions will fit in 1 chunk. Larger transactions will fit in 1
         // or 2 chunks if the first chunk starts towards the end of a datagram. A small number of
@@ -1513,6 +1574,7 @@ pub mod test {
                     stats,
                     DEFAULT_TPU_COALESCE,
                     cancel,
+                    false, // Pass the send_client_id flag here
                 );
             }
         });
@@ -1528,6 +1590,7 @@ pub mod test {
                 meta,
                 chunks: smallvec::smallvec![bytes],
                 start_time: Instant::now(),
+                remote_pubkey: None,
             };
             ptk_sender.send(packet_accum).unwrap();
         }
