@@ -63,7 +63,7 @@ use {
         snapshot_utils::{self, BANK_SNAPSHOTS_DIR},
     },
     solana_signer::Signer,
-    solana_streamer::quic::{QuicServerParams, SimpleQosQuicServerParams, DEFAULT_TPU_COALESCE},
+    solana_streamer::quic::{QuicServerParams, DEFAULT_TPU_COALESCE},
     solana_tpu_client::tpu_client::DEFAULT_TPU_ENABLE_UDP,
     solana_turbine::{
         broadcast_stage::BroadcastStageType,
@@ -957,16 +957,14 @@ pub fn execute(
         ..Default::default()
     };
 
-    let vote_quic_server_config = SimpleQosQuicServerParams {
-        quic_server_params: QuicServerParams {
-            max_connections_per_peer: 1,
-            max_staked_connections: tpu_max_fwd_staked_connections.try_into().unwrap(),
-            max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
-            coalesce: tpu_coalesce,
-            num_threads: tpu_vote_transaction_receive_threads,
-            ..Default::default()
-        },
+    let vote_quic_server_config = QuicServerParams {
+        max_connections_per_peer: 1,
+        max_staked_connections: tpu_max_fwd_staked_connections.try_into().unwrap(),
+        max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
+        coalesce: tpu_coalesce,
+        num_threads: tpu_vote_transaction_receive_threads,
         max_streams_per_second: MAX_VOTES_PER_SECOND,
+        ..Default::default()
     };
 
     let validator = match Validator::new(
