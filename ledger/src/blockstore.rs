@@ -4121,7 +4121,7 @@ impl Blockstore {
                         BlockComponent::from_bytes_multiple(&payload)
                             .map(|cs| {
                                 cs.into_iter()
-                                    .filter_map(|bc| bc.into_entry_batch())
+                                    .filter_map(|bc| bc.as_entry_batch_owned())
                                     .flatten()
                                     .collect_vec()
                             })
