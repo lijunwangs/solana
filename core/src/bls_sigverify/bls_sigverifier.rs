@@ -109,6 +109,7 @@ impl BLSSigVerifier {
         let mut votes_to_verify = Vec::new();
         let mut certs_to_verify = Vec::new();
         let mut consensus_metrics_to_send = Vec::new();
+        let mut last_voted_slots: HashMap<Pubkey, Slot> = HashMap::new();
 
         let root_bank = self.sharable_banks.root();
         if self.last_checked_root_slot < root_bank.slot() {
@@ -166,6 +167,11 @@ impl BLSSigVerifier {
                     };
 
                     // Capture votes received metrics before old messages are potentially discarded below.
+                    let slot = vote_message.vote.slot();
+                    if vote_message.vote.is_notarization_or_finalization() {
+                        let existing_slot = last_voted_slots.entry(*solana_pubkey).or_insert(slot);
+                        *existing_slot = (*existing_slot).max(slot);
+                    }
                     consensus_metrics_to_send.push(ConsensusMetricsEvent::Vote {
                         id: *solana_pubkey,
                         vote: vote_message.vote,
@@ -220,6 +226,11 @@ impl BLSSigVerifier {
         votes_result?;
         certs_result?;
 
+        // Send to RPC service for last voted tracking
+        self.alpenglow_last_voted
+            .update_last_voted(&last_voted_slots);
+
+        // Send to metrics service for metrics aggregation
         if self
             .consensus_metrics_sender
             .send((Instant::now(), consensus_metrics_to_send))
@@ -294,10 +305,6 @@ impl BLSSigVerifier {
                 }
             }
         }
-
-        // Send to RPC service for last voted tracking
-        self.alpenglow_last_voted
-            .update_last_voted(&verified_votes_by_pubkey);
 
         // Send votes
         for (pubkey, slots) in verified_votes_by_pubkey {
