@@ -577,9 +577,7 @@ pub enum PacketBatchParIter<'a> {
     WithClientId(
         rayon::iter::Map<
             WithClientIdPacketParIter<'a>,
-            fn(
-                <WithClientIdPacketParIter<'a> as ParallelIterator>::Item,
-            ) -> PacketRef<'a>,
+            fn(<WithClientIdPacketParIter<'a> as ParallelIterator>::Item) -> PacketRef<'a>,
         >,
     ),
 }
@@ -647,9 +645,7 @@ pub enum PacketBatchParIterMut<'a> {
     WithClientId(
         rayon::iter::Map<
             WithClientIdPacketParIterMut<'a>,
-            fn(
-                <WithClientIdPacketParIterMut<'a> as ParallelIterator>::Item,
-            ) -> PacketRefMut<'a>,
+            fn(<WithClientIdPacketParIterMut<'a> as ParallelIterator>::Item) -> PacketRefMut<'a>,
         >,
     ),
 }

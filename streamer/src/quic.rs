@@ -639,6 +639,8 @@ pub struct QuicServerParams {
     pub coalesce_channel_size: usize,
     pub num_threads: NonZeroUsize,
     pub max_streams_per_ms: u64,
+    /// Controls if to send the client Id (client's public key) along with packet batches.
+    pub send_client_id: bool,
 }
 
 impl Default for QuicServerParams {
@@ -653,6 +655,7 @@ impl Default for QuicServerParams {
             coalesce_channel_size: DEFAULT_MAX_COALESCE_CHANNEL_SIZE,
             num_threads: NonZeroUsize::new(num_cpus::get().min(1)).expect("1 is non-zero"),
             max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS,
+            send_client_id: false, // Default to false for backward compatibility
         }
     }
 }
@@ -689,6 +692,12 @@ impl QuicServerParams {
     pub(crate) fn max_concurrent_connections(&self) -> usize {
         let conns = self.max_staked_connections + self.max_unstaked_connections;
         conns + conns / 4
+    }
+
+    // Add convenience method
+    pub fn with_client_id(mut self, include_client_id: bool) -> Self {
+        self.send_client_id = include_client_id;
+        self
     }
 }
 
