@@ -2,7 +2,7 @@ use {
     crate::{
         nonblocking::{
             connection_rate_limiter::{ConnectionRateLimiter, TotalConnectionRateLimiter},
-            qos::{ConnectionContext, QosController},
+            qos::{ConnectionContext, QosController, QosControllerWithCensor},
             stream_throttle::{ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL},
             swqos::SwQos,
         },
@@ -29,6 +29,7 @@ use {
     solana_transaction_metrics_tracker::signature_if_should_track_packet,
     std::{
         array,
+        collections::HashMap,
         fmt,
         iter::repeat_with,
         net::{IpAddr, SocketAddr, UdpSocket},
@@ -649,6 +650,96 @@ fn handle_connection_error(e: quinn::ConnectionError, stats: &StreamerStats, fro
                 .fetch_add(1, Ordering::Relaxed);
         }
         _ => {}
+    }
+}
+
+/// Feedback sent to the QUIC streamer by consumers.
+/// This can support different type of receivers.
+pub enum StreamerFeedback {
+    // Censor the pubkey
+    CensorClient(Pubkey),
+}
+
+struct ClientCensorInfo {
+    censored_time: Instant,
+}
+
+pub(crate) struct FeedbackManager<Q>
+where
+    Q: QosControllerWithCensor,
+{
+    censored_client: RwLock<HashMap<Pubkey, ClientCensorInfo>>,
+    qos: Arc<Q>,
+}
+
+impl<Q> FeedbackManager<Q>
+where
+    Q: QosControllerWithCensor,
+{
+    pub(crate) fn new(qos: Arc<Q>) -> Self {
+        Self {
+            censored_client: RwLock::new(HashMap::new()),
+            qos,
+        }
+    }
+
+    pub(crate) fn handle_feedback(&self, feedback: StreamerFeedback) {
+        match feedback {
+            StreamerFeedback::CensorClient(address) => {
+                let mut censored_client: std::sync::RwLockWriteGuard<
+                    '_,
+                    HashMap<Pubkey, ClientCensorInfo>,
+                > = self.censored_client.write().unwrap();
+                censored_client.insert(
+                    address,
+                    ClientCensorInfo {
+                        censored_time: Instant::now(),
+                    },
+                );
+            }
+        }
+    }
+
+    pub(crate) fn uncensor_client(&self, client: &Pubkey) {
+        let mut censored_client: std::sync::RwLockWriteGuard<
+            '_,
+            HashMap<Pubkey, ClientCensorInfo>,
+        > = self.censored_client.write().unwrap();
+        censored_client.remove(client);
+    }
+
+    pub(crate) fn censor_client(&self, client: &Pubkey) {
+        self.qos.censor_client(client);
+    }
+}
+
+fn run_feedback_receiver<Q>(
+    feedback_manager: Arc<FeedbackManager<Q>>,
+    feedback_receiver: Receiver<StreamerFeedback>,
+    cancel: CancellationToken,
+) where
+    Q: QosControllerWithCensor,
+{
+    let feedback_timeout = Duration::from_secs(1);
+    info!("Running feedback receiver");
+    loop {
+        if cancel.is_cancelled() {
+            return;
+        }
+        let feedback = feedback_receiver.recv_timeout(feedback_timeout);
+        match feedback {
+            Ok(feedback) => {
+                feedback_manager.handle_feedback(feedback);
+            }
+            Err(error) => match error {
+                crossbeam_channel::RecvTimeoutError::Timeout => {
+                    continue;
+                }
+                crossbeam_channel::RecvTimeoutError::Disconnected => {
+                    break;
+                }
+            },
+        }
     }
 }
 
@@ -1344,6 +1435,19 @@ impl ConnectionTable {
                 e.swap_remove_entry();
             }
             let connections_removed = old_size.saturating_sub(new_size);
+            self.total_size = self.total_size.saturating_sub(connections_removed);
+            connections_removed
+        } else {
+            0
+        }
+    }
+
+    // Remove all connections, Returns number of connections that were removed
+    pub(crate) fn remove_connection_by_key(&mut self, key: ConnectionTableKey) -> usize {
+        if let Entry::Occupied(mut e) = self.table.entry(key) {
+            let e_ref = e.get_mut();
+            let connections_removed = e_ref.len();
+            e.swap_remove_entry();
             self.total_size = self.total_size.saturating_sub(connections_removed);
             connections_removed
         } else {

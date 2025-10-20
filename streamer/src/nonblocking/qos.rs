@@ -4,6 +4,7 @@ use {
         stream_throttle::ConnectionStreamCounter,
     },
     quinn::Connection,
+    solana_pubkey::Pubkey,
     std::{sync::Arc, time::Duration},
     tokio_util::sync::CancellationToken,
 };
@@ -61,4 +62,8 @@ pub(crate) trait QosController<C: ConnectionContext> {
 
     /// The timeout duration to wait for a chunk to arrive on a stream
     fn wait_for_chunk_timeout(&self) -> Duration;
+}
+
+pub(crate) trait QosControllerWithCensor {
+    async fn censor_client(&self, client: &Pubkey);
 }

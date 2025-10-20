@@ -1,7 +1,7 @@
 use {
     crate::{
         nonblocking::{
-            qos::{ConnectionContext, QosController},
+            qos::{ConnectionContext, QosController, QosControllerWithCensor},
             quic::{
                 get_connection_stake, update_open_connections_stat, ClientConnectionTracker,
                 ConnectionHandlerError, ConnectionPeerType, ConnectionTable, ConnectionTableKey,
@@ -13,6 +13,7 @@ use {
         streamer::StakedNodes,
     },
     quinn::Connection,
+    solana_pubkey::Pubkey,
     solana_time_utils as timing,
     std::sync::{
         atomic::{AtomicU64, Ordering},
@@ -226,5 +227,14 @@ impl QosController<SimpleQosConnectionContext> for SimpleQos {
         context
             .last_update
             .store(timing::timestamp(), Ordering::Relaxed);
+    }
+}
+
+impl QosControllerWithCensor for SimpleQos {
+    /// Censor a client connection, remove all connections
+    async fn censor_client(&self, client: &Pubkey) {
+        let mut connection_table = self.staked_connection_table.lock().await;
+        let client = ConnectionTableKey::Pubkey(client.clone());
+        connection_table.remove_connection_by_key(client);
     }
 }
