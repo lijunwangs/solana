@@ -696,6 +696,7 @@ where
                         censored_time: Instant::now(),
                     },
                 );
+                self.qos.censor_client(&address);
             }
         }
     }
@@ -708,8 +709,8 @@ where
         censored_client.remove(client);
     }
 
-    pub(crate) fn censor_client(&self, client: &Pubkey) {
-        self.qos.censor_client(client);
+    pub(crate) async fn censor_client(&self, client: &Pubkey) {
+        self.qos.censor_client(client).await;
     }
 }
 
