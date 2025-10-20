@@ -4,11 +4,12 @@ use {
             qos::{ConnectionContext, QosController},
             quic::{ALPN_TPU_PROTOCOL_ID, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
             simple_qos::{SimpleQos, SimpleQosConfig},
+            streamer_feedback::StreamerFeedback,
             swqos::{SwQos, SwQosConfig},
         },
         streamer::StakedNodes,
     },
-    crossbeam_channel::Sender,
+    crossbeam_channel::{Receiver, Sender},
     pem::Pem,
     quinn::{
         crypto::rustls::{NoInitialCipherSuite, QuicServerConfig},
@@ -641,8 +642,6 @@ pub struct QuicServerParams {
     pub coalesce_channel_size: usize,
     pub num_threads: NonZeroUsize,
     pub max_streams_per_ms: u64,
-    /// Controls if to send the client Id (client's public key) along with packet batches.
-    pub send_client_id: bool,
 }
 
 #[derive(Clone)]
@@ -655,6 +654,8 @@ pub struct QuicStreamerConfig {
     pub coalesce: Duration,
     pub coalesce_channel_size: usize,
     pub num_threads: NonZeroUsize,
+    /// Controls if to send the client Id (client's public key) along with packet batches.
+    pub send_client_id: bool,
 }
 
 #[derive(Clone)]
@@ -682,7 +683,6 @@ impl Default for QuicServerParams {
             coalesce_channel_size: DEFAULT_MAX_COALESCE_CHANNEL_SIZE,
             num_threads: NonZeroUsize::new(num_cpus::get().min(1)).expect("1 is non-zero"),
             max_streams_per_ms: DEFAULT_MAX_STREAMS_PER_MS,
-            send_client_id: false, // Default to false for backward compatibility
         }
     }
 }
@@ -714,6 +714,7 @@ impl Default for QuicStreamerConfig {
             coalesce: DEFAULT_TPU_COALESCE,
             coalesce_channel_size: DEFAULT_MAX_COALESCE_CHANNEL_SIZE,
             num_threads: NonZeroUsize::new(num_cpus::get().min(1)).expect("1 is non-zero"),
+            send_client_id: false,
         }
     }
 }
@@ -756,6 +757,7 @@ impl From<&QuicServerParams> for QuicStreamerConfig {
             coalesce: params.coalesce,
             coalesce_channel_size: params.coalesce_channel_size,
             num_threads: params.num_threads,
+            send_client_id: false,
         }
     }
 }
@@ -893,18 +895,20 @@ pub fn spawn_simple_qos_server_with_cancel(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     quic_server_params: QuicStreamerConfig,
     qos_config: SimpleQosConfig,
+    feedback_receiver: Option<Receiver<StreamerFeedback>>,
     cancel: CancellationToken,
 ) -> Result<SpawnServerResult, QuicServerError> {
     let stats = Arc::<StreamerStats>::default();
 
-    let simple_qos = Arc::new(SimpleQos::new(
+    let simple_qos = SimpleQos::new(
         qos_config,
         quic_server_params.max_connections_per_peer,
         quic_server_params.max_staked_connections,
         stats.clone(),
         staked_nodes,
+        feedback_receiver,
         cancel.clone(),
-    ));
+    );
 
     spawn_server_with_cancel_generic(
         thread_name,

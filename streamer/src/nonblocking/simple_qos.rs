@@ -1,7 +1,7 @@
 use {
     crate::{
         nonblocking::{
-            qos::{ConnectionContext, QosController},
+            qos::{ConnectionContext, QosController, QosControllerWithCensor},
             quic::{
                 get_connection_stake, update_open_connections_stat, ClientConnectionTracker,
                 ConnectionHandlerError, ConnectionPeerType, ConnectionTable, ConnectionTableKey,
@@ -10,11 +10,14 @@ use {
             stream_throttle::{
                 throttle_stream, ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL,
             },
+            streamer_feedback::{run_feedback_receiver, FeedbackManager, StreamerFeedback},
         },
         quic::{StreamerStats, DEFAULT_MAX_STREAMS_PER_MS},
         streamer::StakedNodes,
     },
+    crossbeam_channel::Receiver,
     quinn::Connection,
+    solana_pubkey::Pubkey,
     solana_time_utils as timing,
     std::{
         future::Future,
@@ -23,7 +26,10 @@ use {
             Arc, RwLock,
         },
     },
-    tokio::sync::{Mutex, MutexGuard},
+    tokio::{
+        sync::{Mutex, MutexGuard},
+        task,
+    },
     tokio_util::sync::CancellationToken,
 };
 
@@ -56,9 +62,10 @@ impl SimpleQos {
         max_staked_connections: usize,
         stats: Arc<StreamerStats>,
         staked_nodes: Arc<RwLock<StakedNodes>>,
+        feedback_receiver: Option<Receiver<StreamerFeedback>>,
         cancel: CancellationToken,
-    ) -> Self {
-        Self {
+    ) -> Arc<Self> {
+        let qos = Arc::new(Self {
             max_streams_per_second: qos_config.max_streams_per_second,
             max_connections_per_peer,
             max_staked_connections,
@@ -66,9 +73,20 @@ impl SimpleQos {
             staked_nodes,
             staked_connection_table: Arc::new(Mutex::new(ConnectionTable::new(
                 ConnectionTableType::Staked,
-                cancel,
+                cancel.clone(),
             ))),
+        });
+        if let Some(feedback_receiver) = feedback_receiver {
+            let qos_clone = qos.clone();
+
+            task::spawn_blocking({
+                move || {
+                    let feedback_manager = FeedbackManager::new(qos_clone);
+                    run_feedback_receiver(feedback_manager, feedback_receiver, cancel);
+                }
+            });
         }
+        qos
     }
 
     fn cache_new_connection(
@@ -1118,5 +1136,14 @@ mod tests {
         // The function should complete (may or may not sleep depending on current throttling state)
         // We just verify it doesn't panic and completes successfully
         assert!(elapsed < std::time::Duration::from_secs(1)); // Should not take too long
+    }
+}
+
+impl QosControllerWithCensor for SimpleQos {
+    /// Censor a client connection, remove all connections
+    async fn censor_client(&self, client: &Pubkey) {
+        let mut connection_table = self.staked_connection_table.lock().await;
+        let client = ConnectionTableKey::Pubkey(client.clone());
+        connection_table.remove_connection_by_key(client);
     }
 }

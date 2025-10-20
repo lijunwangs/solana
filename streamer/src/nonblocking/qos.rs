@@ -1,6 +1,7 @@
 use {
     crate::nonblocking::quic::{ClientConnectionTracker, ConnectionPeerType},
     quinn::Connection,
+    solana_pubkey::Pubkey,
     std::future::Future,
     tokio_util::sync::CancellationToken,
 };
@@ -52,4 +53,8 @@ pub(crate) trait QosController<C: ConnectionContext> {
         context: &C,
         connection: Connection,
     ) -> impl Future<Output = usize> + Send;
+}
+
+pub(crate) trait QosControllerWithCensor {
+    async fn censor_client(&self, client: &Pubkey);
 }

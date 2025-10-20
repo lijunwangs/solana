@@ -1349,6 +1349,19 @@ impl ConnectionTable {
             0
         }
     }
+
+    // Remove all connections, Returns number of connections that were removed
+    pub(crate) fn remove_connection_by_key(&mut self, key: ConnectionTableKey) -> usize {
+        if let Entry::Occupied(mut e) = self.table.entry(key) {
+            let e_ref = e.get_mut();
+            let connections_removed = e_ref.len();
+            e.swap_remove_entry();
+            self.total_size = self.total_size.saturating_sub(connections_removed);
+            connections_removed
+        } else {
+            0
+        }
+    }
 }
 
 struct EndpointAccept<'a> {
