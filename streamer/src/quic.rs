@@ -4,11 +4,12 @@ use {
             qos::{ConnectionContext, QosController},
             quic::{ALPN_TPU_PROTOCOL_ID, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
             simple_qos::{SimpleQos, SimpleQosConfig},
+            streamer_feedback::StreamerFeedback,
             swqos::{SwQos, SwQosConfig},
         },
         streamer::StakedNodes,
     },
-    crossbeam_channel::Sender,
+    crossbeam_channel::{Receiver, Sender},
     pem::Pem,
     quinn::{
         crypto::rustls::{NoInitialCipherSuite, QuicServerConfig},
@@ -886,18 +887,20 @@ pub fn spawn_simple_qos_server_with_cancel(
     staked_nodes: Arc<RwLock<StakedNodes>>,
     quic_server_params: QuicStreamerConfig,
     qos_config: SimpleQosConfig,
+    feedback_receiver: Option<Receiver<StreamerFeedback>>,
     cancel: CancellationToken,
 ) -> Result<SpawnServerResult, QuicServerError> {
     let stats = Arc::<StreamerStats>::default();
 
-    let simple_qos = Arc::new(SimpleQos::new(
+    let simple_qos = SimpleQos::new(
         qos_config,
         quic_server_params.max_connections_per_peer,
         quic_server_params.max_staked_connections,
         stats.clone(),
         staked_nodes,
+        feedback_receiver,
         cancel.clone(),
-    ));
+    );
 
     spawn_server_with_cancel_generic(
         thread_name,
