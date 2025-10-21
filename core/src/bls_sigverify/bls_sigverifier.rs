@@ -1,5 +1,4 @@
 //! The BLS signature verifier.
-#![allow(unused_imports)]
 
 use {
     crate::{
@@ -15,11 +14,10 @@ use {
     },
     solana_bls_signatures::{
         pubkey::{Pubkey as BlsPubkey, PubkeyProjective, VerifiablePubkey},
-        signature::{Signature as BlsSignature, SignatureProjective},
+        signature::SignatureProjective,
     },
     solana_clock::Slot,
     solana_measure::measure::Measure,
-    solana_perf::packet::PacketRefMut,
     solana_pubkey::Pubkey,
     solana_rpc::alpenglow_last_voted::AlpenglowLastVoted,
     solana_runtime::{bank::Bank, bank_forks::SharableBanks, epoch_stakes::BLSPubkeyToRankMap},
@@ -27,9 +25,7 @@ use {
     solana_streamer::packet::PacketBatch,
     solana_votor::consensus_metrics::{ConsensusMetricsEvent, ConsensusMetricsEventSender},
     solana_votor_messages::{
-        consensus_message::{
-            Certificate, CertificateMessage, CertificateType, ConsensusMessage, VoteMessage,
-        },
+        consensus_message::{Certificate, CertificateType, ConsensusMessage, VoteMessage},
         vote::Vote,
     },
     std::{
@@ -91,7 +87,7 @@ pub struct BLSSigVerifier {
     message_sender: Sender<ConsensusMessage>,
     sharable_banks: SharableBanks,
     stats: BLSSigVerifierStats,
-    verified_certs: RwLock<HashSet<Certificate>>,
+    verified_certs: RwLock<HashSet<CertificateType>>,
     vote_payload_cache: RwLock<HashMap<Vote, Arc<Vec<u8>>>>,
     consensus_metrics_sender: ConsensusMetricsEventSender,
     last_checked_root_slot: Slot,
@@ -189,9 +185,9 @@ impl BLSSigVerifier {
                         pubkey: *solana_pubkey,
                     });
                 }
-                ConsensusMessage::Certificate(cert_message) => {
+                ConsensusMessage::Certificate(cert) => {
                     // Only need certs newer than root slot
-                    if cert_message.certificate.slot() <= root_bank.slot() {
+                    if cert.cert_type.slot() <= root_bank.slot() {
                         self.stats.received_old.fetch_add(1, Ordering::Relaxed);
                         packet.meta_mut().set_discard(true);
                         continue;
@@ -201,14 +197,14 @@ impl BLSSigVerifier {
                         .verified_certs
                         .read()
                         .unwrap()
-                        .contains(&cert_message.certificate)
+                        .contains(&cert.cert_type)
                     {
                         self.stats.received_verified.fetch_add(1, Ordering::Relaxed);
                         packet.meta_mut().set_discard(true);
                         continue;
                     }
 
-                    certs_to_verify.push(CertToVerify { cert_message });
+                    certs_to_verify.push(cert);
                 }
             }
         }
@@ -434,7 +430,7 @@ impl BLSSigVerifier {
 
     fn verify_and_send_certificates(
         &self,
-        certs_to_verify: Vec<CertToVerify>,
+        certs_to_verify: Vec<Certificate>,
         bank: &Bank,
     ) -> Result<(), BLSSigVerifyServiceError<ConsensusMessage>> {
         let verified_certs = self.verify_certificates(certs_to_verify, bank);
@@ -446,7 +442,7 @@ impl BLSSigVerifier {
             // Send the BLS certificate message to certificate pool.
             match self
                 .message_sender
-                .try_send(ConsensusMessage::Certificate(cert.cert_message))
+                .try_send(ConsensusMessage::Certificate(cert))
             {
                 Ok(()) => {
                     self.stats.sent.fetch_add(1, Ordering::Relaxed);
@@ -464,9 +460,9 @@ impl BLSSigVerifier {
 
     fn verify_certificates(
         &self,
-        certs_to_verify: Vec<CertToVerify>,
+        certs_to_verify: Vec<Certificate>,
         bank: &Bank,
-    ) -> Vec<CertToVerify> {
+    ) -> Vec<Certificate> {
         if certs_to_verify.is_empty() {
             return vec![];
         }
@@ -480,7 +476,7 @@ impl BLSSigVerifier {
                     Err(e) => {
                         trace!(
                             "Failed to verify BLS certificate: {:?}, error: {e}",
-                            cert_to_verify.cert_message.certificate
+                            cert_to_verify.cert_type
                         );
                         self.stats
                             .received_bad_signature_certs
@@ -499,27 +495,27 @@ impl BLSSigVerifier {
 
     fn verify_bls_certificate(
         &self,
-        cert_to_verify: &CertToVerify,
+        cert_to_verify: &Certificate,
         bank: &Bank,
     ) -> Result<(), CertVerifyError> {
         if self
             .verified_certs
             .read()
             .unwrap()
-            .contains(&cert_to_verify.cert_message.certificate)
+            .contains(&cert_to_verify.cert_type)
         {
             self.stats.received_verified.fetch_add(1, Ordering::Relaxed);
             return Ok(());
         }
 
-        let slot = cert_to_verify.cert_message.certificate.slot();
+        let slot = cert_to_verify.cert_type.slot();
         let Some(key_to_rank_map) = get_key_to_rank_map(bank, slot) else {
             return Err(CertVerifyError::KeyToRankMapNotFound(slot));
         };
 
         let max_len = key_to_rank_map.len();
 
-        let decoded_bitmap = match decode(&cert_to_verify.cert_message.bitmap, max_len) {
+        let decoded_bitmap = match decode(&cert_to_verify.bitmap, max_len) {
             Ok(decoded) => decoded,
             Err(e) => {
                 return Err(CertVerifyError::BitmapDecodingFailed(e));
@@ -537,18 +533,18 @@ impl BLSSigVerifier {
         self.verified_certs
             .write()
             .unwrap()
-            .insert(cert_to_verify.cert_message.certificate);
+            .insert(cert_to_verify.cert_type);
 
         Ok(())
     }
 
     fn verify_base2_certificate(
         &self,
-        cert_to_verify: &CertToVerify,
+        cert_to_verify: &Certificate,
         bit_vec: &BitVec<u8, Lsb0>,
         key_to_rank_map: &Arc<BLSPubkeyToRankMap>,
     ) -> Result<(), CertVerifyError> {
-        let original_vote = cert_to_verify.cert_message.certificate.to_source_vote();
+        let original_vote = cert_to_verify.cert_type.to_source_vote();
 
         let Ok(signed_payload) = bincode::serialize(&original_vote) else {
             return Err(CertVerifyError::SerializationFailed);
@@ -559,8 +555,8 @@ impl BLSSigVerifier {
             return Err(CertVerifyError::KeyAggregationFailed);
         };
 
-        if let Ok(true) = aggregate_bls_pubkey
-            .verify_signature(&cert_to_verify.cert_message.signature, &signed_payload)
+        if let Ok(true) =
+            aggregate_bls_pubkey.verify_signature(&cert_to_verify.signature, &signed_payload)
         {
             Ok(())
         } else {
@@ -570,14 +566,14 @@ impl BLSSigVerifier {
 
     fn verify_base3_certificate(
         &self,
-        cert_to_verify: &CertToVerify,
+        cert_to_verify: &Certificate,
         bit_vec1: &BitVec<u8, Lsb0>,
         bit_vec2: &BitVec<u8, Lsb0>,
         key_to_rank_map: &Arc<BLSPubkeyToRankMap>,
     ) -> Result<(), CertVerifyError> {
-        let Some((vote1, vote2)) = cert_to_verify.cert_message.certificate.to_source_votes() else {
+        let Some((vote1, vote2)) = cert_to_verify.cert_type.to_source_votes() else {
             return Err(CertVerifyError::Base3EncodingOnUnexpectedCert(
-                cert_to_verify.cert_message.certificate.certificate_type(),
+                cert_to_verify.cert_type,
             ));
         };
 
@@ -602,7 +598,7 @@ impl BLSSigVerifier {
 
         match SignatureProjective::par_verify_distinct_aggregated(
             &pubkeys_affine,
-            &cert_to_verify.cert_message.signature,
+            &cert_to_verify.signature,
             &messages_to_verify,
         ) {
             Ok(true) => Ok(()),
@@ -636,17 +632,12 @@ struct VoteToVerify {
     pubkey: Pubkey,
 }
 
-struct CertToVerify {
-    cert_message: CertificateMessage,
-}
-
 // Add tests for the BLS signature verifier
 #[cfg(test)]
 mod tests {
     use {
         super::*,
-        crate::{bls_sigverify::stats::STATS_INTERVAL_DURATION, consensus},
-        crossbeam_channel::Receiver,
+        crate::bls_sigverify::stats::STATS_INTERVAL_DURATION,
         solana_bls_signatures::{Signature, Signature as BLSSignature},
         solana_hash::Hash,
         solana_perf::packet::{Packet, PinnedPacketBatch},
@@ -661,12 +652,10 @@ mod tests {
         solana_signer_store::encode_base2,
         solana_votor::consensus_pool::certificate_builder::CertificateBuilder,
         solana_votor_messages::{
-            consensus_message::{
-                Certificate, CertificateMessage, CertificateType, ConsensusMessage, VoteMessage,
-            },
+            consensus_message::{Certificate, CertificateType, ConsensusMessage, VoteMessage},
             vote::Vote,
         },
-        std::time::{Duration, Instant},
+        std::time::Instant,
     };
 
     fn create_keypairs_and_bls_sig_verifier(
@@ -719,12 +708,12 @@ mod tests {
 
     fn create_signed_certificate_message(
         validator_keypairs: &[ValidatorVoteKeypairs],
-        certificate: Certificate,
+        cert_type: CertificateType,
         ranks: &[usize],
-    ) -> CertificateMessage {
-        let mut builder = CertificateBuilder::new(certificate);
+    ) -> Certificate {
+        let mut builder = CertificateBuilder::new(cert_type);
         // Assumes Base2 encoding (single vote type) for simplicity in this helper.
-        let vote = certificate.to_source_vote();
+        let vote = cert_type.to_source_vote();
         let vote_messages: Vec<VoteMessage> = ranks
             .iter()
             .map(|&rank| create_signed_vote_message(validator_keypairs, vote, rank))
@@ -749,17 +738,16 @@ mod tests {
         );
 
         let vote_rank1 = 2;
-        let certificate = Certificate::new(CertificateType::Finalize, 4, None);
+        let cert_type = CertificateType::Finalize(4);
         let vote_message1 = create_signed_vote_message(
             &validator_keypairs,
             Vote::new_finalization_vote(5),
             vote_rank1,
         );
-        let cert_message =
-            create_signed_certificate_message(&validator_keypairs, certificate, &[vote_rank1]);
+        let cert = create_signed_certificate_message(&validator_keypairs, cert_type, &[vote_rank1]);
         let messages1 = vec![
             ConsensusMessage::Vote(vote_message1),
-            ConsensusMessage::Certificate(cert_message),
+            ConsensusMessage::Certificate(cert),
         ];
 
         assert!(verifier
@@ -1251,13 +1239,13 @@ mod tests {
         );
 
         let num_signers = 7; // > 2/3 of 10 validators
-        let certificate = Certificate::Notarize(10, Hash::new_unique());
-        let cert_message = create_signed_certificate_message(
+        let cert_type = CertificateType::Notarize(10, Hash::new_unique());
+        let cert = create_signed_certificate_message(
             &validator_keypairs,
-            certificate,
+            cert_type,
             &(0..num_signers).collect::<Vec<_>>(),
         );
-        let consensus_message = ConsensusMessage::Certificate(cert_message);
+        let consensus_message = ConsensusMessage::Certificate(cert);
         let packet_batches = messages_to_batches(&[consensus_message]);
 
         assert!(verifier.verify_and_send_batches(packet_batches).is_ok());
@@ -1298,13 +1286,13 @@ mod tests {
                 i,
             ))
         });
-        let certificate = Certificate::NotarizeFallback(slot, block_hash);
-        let mut builder = CertificateBuilder::new(certificate);
+        let cert_type = CertificateType::NotarizeFallback(slot, block_hash);
+        let mut builder = CertificateBuilder::new(cert_type);
         builder
             .aggregate(&all_vote_messages)
             .expect("Failed to aggregate votes");
-        let cert_message = builder.build().expect("Failed to build certificate");
-        let consensus_message = ConsensusMessage::Certificate(cert_message);
+        let cert = builder.build().expect("Failed to build certificate");
+        let consensus_message = ConsensusMessage::Certificate(cert);
         let packet_batches = messages_to_batches(&[consensus_message]);
 
         assert!(verifier.verify_and_send_batches(packet_batches).is_ok());
@@ -1329,7 +1317,7 @@ mod tests {
         let num_signers = 7;
         let slot = 10;
         let block_hash = Hash::new_unique();
-        let certificate = Certificate::Notarize(slot, block_hash);
+        let cert_type = CertificateType::Notarize(slot, block_hash);
         let mut bitmap = BitVec::<u8, Lsb0>::new();
         bitmap.resize(num_signers, false);
         for i in 0..num_signers {
@@ -1337,12 +1325,12 @@ mod tests {
         }
         let encoded_bitmap = encode_base2(&bitmap).unwrap();
 
-        let cert_message = CertificateMessage {
-            certificate,
+        let cert = Certificate {
+            cert_type,
             signature: BLSSignature::default(), // Use a default/wrong signature
             bitmap: encoded_bitmap,
         };
-        let consensus_message = ConsensusMessage::Certificate(cert_message);
+        let consensus_message = ConsensusMessage::Certificate(cert);
         let packet_batches = messages_to_batches(&[consensus_message]);
 
         assert!(verifier.verify_and_send_batches(packet_batches).is_ok());
@@ -1390,8 +1378,8 @@ mod tests {
         }
 
         let num_cert_signers = 7;
-        let certificate = Certificate::Notarize(10, Hash::new_unique());
-        let cert_original_vote = Vote::new_notarization_vote(10, certificate.to_block().unwrap().1);
+        let cert_type = CertificateType::Notarize(10, Hash::new_unique());
+        let cert_original_vote = Vote::new_notarization_vote(10, cert_type.to_block().unwrap().1);
         let cert_payload = bincode::serialize(&cert_original_vote).unwrap();
 
         let cert_vote_messages: Vec<VoteMessage> = (0..num_cert_signers)
@@ -1404,12 +1392,12 @@ mod tests {
                 }
             })
             .collect();
-        let mut builder = CertificateBuilder::new(certificate);
+        let mut builder = CertificateBuilder::new(cert_type);
         builder
             .aggregate(&cert_vote_messages)
             .expect("Failed to aggregate votes for certificate");
-        let cert_message = builder.build().expect("Failed to build certificate");
-        let consensus_message_cert = ConsensusMessage::Certificate(cert_message);
+        let cert = builder.build().expect("Failed to build certificate");
+        let consensus_message_cert = ConsensusMessage::Certificate(cert);
         let mut cert_packet = Packet::default();
         cert_packet
             .populate_packet(None, &consensus_message_cert)
@@ -1512,12 +1500,12 @@ mod tests {
         );
         assert_eq!(sig_verifier.stats.received_old.load(Ordering::Relaxed), 1);
 
-        let cert_message = create_signed_certificate_message(
+        let cert = create_signed_certificate_message(
             &validator_keypairs,
-            Certificate::new(CertificateType::Finalize, 3, None),
+            CertificateType::Finalize(3),
             &[0], // Signer rank 0
         );
-        let consensus_message_cert = ConsensusMessage::Certificate(cert_message);
+        let consensus_message_cert = ConsensusMessage::Certificate(cert);
         let packet_batches_cert = messages_to_batches(&[consensus_message_cert]);
 
         assert!(sig_verifier
@@ -1544,7 +1532,7 @@ mod tests {
         let num_signers = 8;
         let slot = 10;
         let block_hash = Hash::new_unique();
-        let certificate = Certificate::Notarize(slot, block_hash);
+        let cert_type = CertificateType::Notarize(slot, block_hash);
         let original_vote = Vote::new_notarization_vote(slot, block_hash);
         let signed_payload = bincode::serialize(&original_vote).unwrap();
         let mut vote_messages: Vec<VoteMessage> = (0..num_signers)
@@ -1558,12 +1546,12 @@ mod tests {
             })
             .collect();
 
-        let mut builder1 = CertificateBuilder::new(certificate);
+        let mut builder1 = CertificateBuilder::new(cert_type);
         builder1
             .aggregate(&vote_messages)
             .expect("Failed to aggregate votes");
-        let cert_message1 = builder1.build().expect("Failed to build certificate");
-        let consensus_message1 = ConsensusMessage::Certificate(cert_message1);
+        let cert1 = builder1.build().expect("Failed to build certificate");
+        let consensus_message1 = ConsensusMessage::Certificate(cert1);
         let packet_batches1 = messages_to_batches(&[consensus_message1]);
 
         assert!(verifier.verify_and_send_batches(packet_batches1).is_ok());
@@ -1576,12 +1564,12 @@ mod tests {
         assert_eq!(verifier.stats.received_verified.load(Ordering::Relaxed), 0);
 
         vote_messages.pop(); // Remove one signature
-        let mut builder2 = CertificateBuilder::new(certificate);
+        let mut builder2 = CertificateBuilder::new(cert_type);
         builder2
             .aggregate(&vote_messages)
             .expect("Failed to aggregate votes");
-        let cert_message2 = builder2.build().expect("Failed to build certificate");
-        let consensus_message2 = ConsensusMessage::Certificate(cert_message2);
+        let cert2 = builder2.build().expect("Failed to build certificate");
+        let consensus_message2 = ConsensusMessage::Certificate(cert2);
         let packet_batches2 = messages_to_batches(&[consensus_message2]);
 
         assert!(verifier.verify_and_send_batches(packet_batches2).is_ok());
