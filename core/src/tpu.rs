@@ -52,8 +52,8 @@ use {
     },
     solana_streamer::{
         quic::{
-            spawn_server_with_cancel, spawn_simple_qos_server_with_cancel, QuicServerParams,
-            SpawnServerResult,
+            spawn_server_with_cancel, spawn_simple_qos_server_with_cancel,
+            SimpleQosQuicStreamerConfig, SpawnServerResult, SwQosQuicStreamerConfig,
         },
         streamer::StakedNodes,
     },
@@ -155,9 +155,9 @@ impl Tpu {
         banking_tracer_channels: Channels,
         tracer_thread_hdl: TracerThread,
         tpu_enable_udp: bool,
-        tpu_quic_server_config: QuicServerParams,
-        tpu_fwd_quic_server_config: QuicServerParams,
-        vote_quic_server_config: QuicServerParams,
+        tpu_quic_server_config: SwQosQuicStreamerConfig,
+        tpu_fwd_quic_server_config: SwQosQuicStreamerConfig,
+        vote_quic_server_config: SimpleQosQuicStreamerConfig,
         prioritization_fee_cache: &Arc<PrioritizationFeeCache>,
         block_production_method: BlockProductionMethod,
         block_production_num_workers: NonZeroUsize,
@@ -225,7 +225,8 @@ impl Tpu {
             keypair,
             vote_packet_sender.clone(),
             staked_nodes.clone(),
-            vote_quic_server_config,
+            vote_quic_server_config.quic_streamer_config,
+            vote_quic_server_config.qos_config,
             cancel.clone(),
         )
         .unwrap();
@@ -243,7 +244,8 @@ impl Tpu {
                 keypair,
                 packet_sender,
                 staked_nodes.clone(),
-                tpu_quic_server_config,
+                tpu_quic_server_config.quic_streamer_config,
+                tpu_quic_server_config.qos_config,
                 cancel.clone(),
             )
             .unwrap();
@@ -265,7 +267,8 @@ impl Tpu {
                 keypair,
                 forwarded_packet_sender,
                 staked_nodes.clone(),
-                tpu_fwd_quic_server_config,
+                tpu_fwd_quic_server_config.quic_streamer_config,
+                tpu_fwd_quic_server_config.qos_config,
                 cancel,
             )
             .unwrap();

@@ -1,12 +1,15 @@
+#[allow(deprecated)]
 use {
     crate::{
         nonblocking::{
             connection_rate_limiter::ConnectionRateLimiter,
             qos::{ConnectionContext, QosController},
             stream_throttle::ConnectionStreamCounter,
-            swqos::SwQos,
+            swqos::{SwQos, SwQosConfig},
         },
-        quic::{configure_server, QuicServerError, QuicServerParams, StreamerStats},
+        quic::{
+            configure_server, QuicServerError, QuicServerParams, QuicStreamerConfig, StreamerStats,
+        },
         streamer::StakedNodes,
     },
     bytes::{BufMut, Bytes, BytesMut},
@@ -128,6 +131,7 @@ pub struct SpawnNonBlockingServerResult {
 }
 
 #[deprecated(since = "3.0.0", note = "Use spawn_server instead")]
+#[allow(deprecated)]
 pub fn spawn_server_multi(
     name: &'static str,
     sockets: impl IntoIterator<Item = UdpSocket>,
@@ -150,6 +154,7 @@ pub fn spawn_server_multi(
 }
 
 #[deprecated(since = "3.1.0", note = "Use spawn_server_with_cancel instead")]
+#[allow(deprecated)]
 pub fn spawn_server(
     name: &'static str,
     sockets: impl IntoIterator<Item = UdpSocket>,
@@ -172,14 +177,18 @@ pub fn spawn_server(
             }
         }
     });
-
+    let quic_server_config = QuicStreamerConfig::from(&quic_server_params);
+    let qos_config = SwQosConfig {
+        max_streams_per_ms: quic_server_params.max_streams_per_ms,
+    };
     spawn_server_with_cancel(
         name,
         sockets,
         keypair,
         packet_sender,
         staked_nodes,
-        quic_server_params,
+        quic_server_config,
+        qos_config,
         cancel,
     )
 }
@@ -191,7 +200,8 @@ pub fn spawn_server_with_cancel(
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
-    quic_server_params: QuicServerParams,
+    quic_server_params: QuicStreamerConfig,
+    qos_config: SwQosConfig,
     cancel: CancellationToken,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError>
 where
@@ -199,7 +209,7 @@ where
     let stats = Arc::<StreamerStats>::default();
 
     let swqos = Arc::new(SwQos::new(
-        quic_server_params.max_streams_per_ms,
+        qos_config,
         quic_server_params.max_staked_connections,
         quic_server_params.max_unstaked_connections,
         quic_server_params.max_connections_per_peer,
@@ -227,7 +237,7 @@ pub(crate) fn spawn_server_with_cancel_and_qos<Q, C>(
     sockets: impl IntoIterator<Item = UdpSocket>,
     keypair: &Keypair,
     packet_sender: Sender<PacketBatch>,
-    quic_server_params: QuicServerParams,
+    quic_server_params: QuicStreamerConfig,
     cancel: CancellationToken,
     qos: Arc<Q>,
 ) -> Result<SpawnNonBlockingServerResult, QuicServerError>
@@ -346,7 +356,7 @@ async fn run_server<Q, C>(
     endpoints: Vec<Endpoint>,
     packet_batch_sender: Sender<PacketAccumulator>,
     stats: Arc<StreamerStats>,
-    quic_server_params: QuicServerParams,
+    quic_server_params: QuicStreamerConfig,
     cancel: CancellationToken,
     qos: Arc<Q>,
 ) -> TaskTracker
@@ -540,7 +550,7 @@ async fn setup_connection<Q, C>(
     client_connection_tracker: ClientConnectionTracker,
     packet_sender: Sender<PacketAccumulator>,
     stats: Arc<StreamerStats>,
-    server_params: Arc<QuicServerParams>,
+    server_params: Arc<QuicStreamerConfig>,
     qos: Arc<Q>,
     tasks: TaskTracker,
 ) where
@@ -1456,7 +1466,11 @@ pub mod test {
             server_address: _,
             stats: _,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
         cancel.cancel();
         join_handle.await.unwrap();
     }
@@ -1470,7 +1484,11 @@ pub mod test {
             server_address,
             stats: _,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
 
         check_timeout(receiver, server_address).await;
         cancel.cancel();
@@ -1537,7 +1555,11 @@ pub mod test {
             server_address,
             stats,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
 
         let conn1 = make_client_endpoint(&server_address, None).await;
         assert_eq!(stats.active_streams.load(Ordering::Relaxed), 0);
@@ -1572,7 +1594,11 @@ pub mod test {
             server_address,
             stats: _,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
         check_block_multiple_connections(server_address).await;
         cancel.cancel();
         join_handle.await.unwrap();
@@ -1590,10 +1616,11 @@ pub mod test {
             cancel,
         } = setup_quic_server(
             None,
-            QuicServerParams {
+            QuicStreamerConfig {
                 max_connections_per_peer: 2,
-                ..QuicServerParams::default_for_tests()
+                ..QuicStreamerConfig::default_for_tests()
             },
+            SwQosConfig::default(),
         );
 
         let client_socket = bind_to_localhost_unique().expect("should bind - client");
@@ -1668,7 +1695,11 @@ pub mod test {
             server_address,
             stats: _,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
         check_multiple_writes(receiver, server_address, None).await;
         cancel.cancel();
         join_handle.await.unwrap();
@@ -1690,7 +1721,11 @@ pub mod test {
             server_address,
             stats,
             cancel,
-        } = setup_quic_server(Some(staked_nodes), QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            Some(staked_nodes),
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
         check_multiple_writes(receiver, server_address, Some(&client_keypair)).await;
         cancel.cancel();
         join_handle.await.unwrap();
@@ -1722,7 +1757,11 @@ pub mod test {
             server_address,
             stats,
             cancel,
-        } = setup_quic_server(Some(staked_nodes), QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            Some(staked_nodes),
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
         check_multiple_writes(receiver, server_address, Some(&client_keypair)).await;
         cancel.cancel();
         join_handle.await.unwrap();
@@ -1746,7 +1785,11 @@ pub mod test {
             server_address,
             stats,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
         check_multiple_writes(receiver, server_address, None).await;
         cancel.cancel();
         join_handle.await.unwrap();
@@ -1781,10 +1824,11 @@ pub mod test {
             &keypair,
             sender,
             staked_nodes,
-            QuicServerParams {
+            QuicStreamerConfig {
                 max_unstaked_connections: 0, // Do not allow any connection from unstaked clients/nodes
-                ..QuicServerParams::default_for_tests()
+                ..QuicStreamerConfig::default_for_tests()
             },
+            SwQosConfig::default(),
             cancel.clone(),
         )
         .unwrap();
@@ -1814,10 +1858,11 @@ pub mod test {
             &keypair,
             sender,
             staked_nodes,
-            QuicServerParams {
+            QuicStreamerConfig {
                 max_connections_per_peer: 2,
-                ..QuicServerParams::default_for_tests()
+                ..QuicStreamerConfig::default_for_tests()
             },
+            SwQosConfig::default(),
             cancel.clone(),
         )
         .unwrap();
@@ -2118,7 +2163,11 @@ pub mod test {
             server_address,
             stats,
             cancel,
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
 
         let client_connection = make_client_endpoint(&server_address, None).await;
 
@@ -2177,7 +2226,11 @@ pub mod test {
             stats,
             cancel,
             ..
-        } = setup_quic_server(None, QuicServerParams::default_for_tests());
+        } = setup_quic_server(
+            None,
+            QuicStreamerConfig::default_for_tests(),
+            SwQosConfig::default(),
+        );
 
         let client_connection = make_client_endpoint(&server_address, None).await;
 
