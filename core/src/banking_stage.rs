@@ -673,7 +673,10 @@ mod tests {
         agave_banking_stage_ingress_types::BankingPacketBatch,
         crossbeam_channel::unbounded,
         itertools::Itertools,
-        solana_entry::entry::{self, EntrySlice},
+        solana_entry::{
+            entry::{self, EntrySlice},
+            entry_marker::EntryMarker,
+        },
         solana_hash::Hash,
         solana_keypair::Keypair,
         solana_ledger::{
@@ -828,7 +831,7 @@ mod tests {
         trace!("getting entries");
         let entries: Vec<_> = entry_receiver
             .iter()
-            .map(|(_bank, (entry, _tick_height))| entry)
+            .filter_map(|(_bank, (entry_marker, _tick_height))| entry_marker.into_entry())
             .collect();
         trace!("done");
         assert_eq!(entries.len(), genesis_config.ticks_per_slot as usize);
@@ -919,7 +922,7 @@ mod tests {
         // capture the entry receiver until we've received all our entries.
         let mut entries = Vec::with_capacity(100);
         loop {
-            if let Ok((_bank, (entry, _))) = entry_receiver.try_recv() {
+            if let Ok((_bank, (EntryMarker::Entry(entry), _))) = entry_receiver.try_recv() {
                 let tx_entry = !entry.transactions.is_empty();
                 entries.push(entry);
                 if tx_entry {
@@ -946,7 +949,7 @@ mod tests {
         entries.extend(
             entry_receiver
                 .iter()
-                .map(|(_bank, (entry, _tick_height))| entry),
+                .filter_map(|(_bank, (entry_marker, _tick_height))| entry_marker.into_entry()),
         );
 
         assert!(entries.verify(&blockhash, &entry::thread_pool_for_tests()));
@@ -1066,7 +1069,7 @@ mod tests {
         // check that the balance is what we expect.
         let entries: Vec<_> = entry_receiver
             .iter()
-            .map(|(_bank, (entry, _tick_height))| entry)
+            .filter_map(|(_bank, (entry_marker, _tick_height))| entry_marker.into_entry())
             .collect();
 
         let (bank, _bank_forks) = Bank::new_no_wallclock_throttle_for_tests(&genesis_config);

@@ -1,6 +1,7 @@
 use {
     super::*,
     crate::cluster_nodes::ClusterNodesCache,
+    solana_entry::block_component::BlockComponent,
     solana_hash::Hash,
     solana_keypair::Keypair,
     solana_ledger::shred::{ProcessShredsStats, ReedSolomonCache, Shredder},
@@ -18,7 +19,7 @@ pub(super) struct FailEntryVerificationBroadcastRun {
     good_shreds: Vec<Shred>,
     current_slot: Slot,
     chained_merkle_root: Hash,
-    carryover_entry: Option<WorkingBankEntry>,
+    carryover_entry: Option<WorkingBankEntryMarker>,
     next_shred_index: u32,
     next_code_index: u32,
     cluster_nodes_cache: Arc<ClusterNodesCache<BroadcastStage>>,
@@ -50,14 +51,14 @@ impl BroadcastRun for FailEntryVerificationBroadcastRun {
         &mut self,
         keypair: &Keypair,
         blockstore: &Blockstore,
-        receiver: &Receiver<WorkingBankEntry>,
+        receiver: &Receiver<WorkingBankEntryMarker>,
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         blockstore_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         _votor_event_sender: &VotorEventSender,
     ) -> Result<()> {
         // 1) Pull entries from banking stage
         let mut stats = ProcessShredsStats::default();
-        let mut receive_results =
+        let receive_results =
             broadcast_utils::recv_slot_entries(receiver, &mut self.carryover_entry, &mut stats)?;
         let bank = receive_results.bank.clone();
         let last_tick_height = receive_results.last_tick_height;
@@ -84,14 +85,23 @@ impl BroadcastRun for FailEntryVerificationBroadcastRun {
 
         // 3) Convert entries to shreds + generate coding shreds. Set a garbage PoH on the last entry
         // in the slot to make verification fail on validators
-        let last_entries = {
+        let (component, last_entries) = {
             if last_tick_height == bank.max_tick_height() && bank.slot() < NUM_BAD_SLOTS {
-                let good_last_entry = receive_results.entries.pop().unwrap();
-                let mut bad_last_entry = good_last_entry.clone();
-                bad_last_entry.hash = Hash::default();
-                Some((good_last_entry, bad_last_entry))
+                // Corrupt the final entry in the component
+                let (good_last_entry, bad_last_entry, component) =
+                    if let BlockComponent::EntryBatch(mut entries) = receive_results.component {
+                        let last_entry = entries.last_mut().expect("Expected at least one entry");
+                        let good = last_entry.clone();
+                        last_entry.hash = Hash::default();
+                        let bad = last_entry.clone();
+                        (good, bad, BlockComponent::EntryBatch(entries))
+                    } else {
+                        panic!("Expected EntryBatch component");
+                    };
+
+                (component, Some((good_last_entry, bad_last_entry)))
             } else {
-                None
+                (receive_results.component, None)
             }
         };
 
@@ -103,9 +113,9 @@ impl BroadcastRun for FailEntryVerificationBroadcastRun {
         )
         .expect("Expected to create a new shredder");
 
-        let (data_shreds, coding_shreds) = shredder.entries_to_merkle_shreds_for_tests(
+        let (data_shreds, coding_shreds) = shredder.component_to_merkle_shreds_for_tests(
             keypair,
-            &receive_results.entries,
+            &component,
             last_tick_height == bank.max_tick_height() && last_entries.is_none(),
             Some(self.chained_merkle_root),
             self.next_shred_index,

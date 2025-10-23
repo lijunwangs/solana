@@ -7,7 +7,7 @@ use {
     },
     crate::cluster_nodes::ClusterNodesCache,
     crossbeam_channel::Sender,
-    solana_entry::entry::Entry,
+    solana_entry::block_component::BlockComponent,
     solana_hash::Hash,
     solana_keypair::Keypair,
     solana_ledger::shred::{
@@ -25,7 +25,7 @@ pub struct StandardBroadcastRun {
     slot: Slot,
     parent: Slot,
     chained_merkle_root: Hash,
-    carryover_entry: Option<WorkingBankEntry>,
+    carryover_entry: Option<WorkingBankEntryMarker>,
     next_shred_index: u32,
     next_code_index: u32,
     // If last_tick_height has reached bank.max_tick_height() for this slot
@@ -111,10 +111,10 @@ impl StandardBroadcastRun {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn entries_to_shreds(
+    fn component_to_shreds(
         &mut self,
         keypair: &Keypair,
-        entries: &[Entry],
+        component: &BlockComponent,
         reference_tick: u8,
         is_slot_end: bool,
         process_stats: &mut ProcessShredsStats,
@@ -124,9 +124,9 @@ impl StandardBroadcastRun {
         let shreds: Vec<_> =
             Shredder::new(self.slot, self.parent, reference_tick, self.shred_version)
                 .unwrap()
-                .make_merkle_shreds_from_entries(
+                .make_merkle_shreds_from_component(
                     keypair,
-                    entries,
+                    component,
                     is_slot_end,
                     Some(self.chained_merkle_root),
                     self.next_shred_index,
@@ -200,7 +200,10 @@ impl StandardBroadcastRun {
         receive_results: ReceiveResults,
         process_stats: &mut ProcessShredsStats,
     ) -> Result<()> {
-        let num_entries = receive_results.entries.len();
+        let num_entries = match &receive_results.component {
+            BlockComponent::EntryBatch(entries) => entries.len(),
+            BlockComponent::BlockMarker(_) => 0,
+        };
         let bank = receive_results.bank.clone();
         let last_tick_height = receive_results.last_tick_height;
         inc_new_counter_info!("broadcast_service-entries_received", num_entries);
@@ -273,9 +276,9 @@ impl StandardBroadcastRun {
             .saturating_add(bank.ticks_per_slot())
             .saturating_sub(bank.max_tick_height());
         let shreds = self
-            .entries_to_shreds(
+            .component_to_shreds(
                 keypair,
-                &receive_results.entries,
+                &receive_results.component,
                 reference_tick as u8,
                 is_last_in_slot,
                 process_stats,
@@ -457,7 +460,7 @@ impl BroadcastRun for StandardBroadcastRun {
         &mut self,
         keypair: &Keypair,
         blockstore: &Blockstore,
-        receiver: &Receiver<WorkingBankEntry>,
+        receiver: &Receiver<WorkingBankEntryMarker>,
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         blockstore_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         votor_event_sender: &VotorEventSender,
@@ -620,7 +623,7 @@ mod test {
         // Insert 1 less than the number of ticks needed to finish the slot
         let ticks0 = create_ticks(genesis_config.ticks_per_slot - 1, 0, genesis_config.hash());
         let receive_results = ReceiveResults {
-            entries: ticks0.clone(),
+            component: BlockComponent::EntryBatch(ticks0.clone()),
             bank: bank0.clone(),
             last_tick_height: (ticks0.len() - 1) as u64,
         };
@@ -690,7 +693,7 @@ mod test {
             genesis_config.hash(),
         );
         let receive_results = ReceiveResults {
-            entries: ticks1.clone(),
+            component: BlockComponent::EntryBatch(ticks1.clone()),
             bank: bank2,
             last_tick_height: (ticks1.len() - 1) as u64,
         };
@@ -765,7 +768,7 @@ mod test {
             let ticks = create_ticks(num_ticks, 0, genesis_config.hash());
             last_tick_height += (ticks.len() - 1) as u64;
             let receive_results = ReceiveResults {
-                entries: ticks,
+                component: BlockComponent::EntryBatch(ticks),
                 bank: bank.clone(),
                 last_tick_height,
             };
@@ -817,7 +820,7 @@ mod test {
         // Insert complete slot of ticks needed to finish the slot
         let ticks = create_ticks(genesis_config.ticks_per_slot, 0, genesis_config.hash());
         let receive_results = ReceiveResults {
-            entries: ticks.clone(),
+            component: BlockComponent::EntryBatch(ticks.clone()),
             bank: bank0,
             last_tick_height: ticks.len() as u64,
         };
@@ -849,9 +852,9 @@ mod test {
         let mut stats = ProcessShredsStats::default();
 
         let (data, coding) = bs
-            .entries_to_shreds(
+            .component_to_shreds(
                 &keypair,
-                &entries[0..entries.len() - 2],
+                &BlockComponent::EntryBatch(entries[0..entries.len() - 2].to_vec()),
                 0,
                 false,
                 &mut stats,
@@ -865,7 +868,15 @@ mod test {
         assert!(!data.is_empty());
         assert!(!coding.is_empty());
 
-        let r = bs.entries_to_shreds(&keypair, &entries, 0, false, &mut stats, 10, 10);
+        let r = bs.component_to_shreds(
+            &keypair,
+            &BlockComponent::EntryBatch(entries),
+            0,
+            false,
+            &mut stats,
+            10,
+            10,
+        );
         info!("{r:?}");
         assert_matches!(r, Err(BroadcastError::TooManyShreds));
     }
