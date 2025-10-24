@@ -22,6 +22,7 @@ use {
     log::*,
     solana_clock::{Slot, NUM_CONSECUTIVE_LEADER_SLOTS},
     solana_entry::{
+        block_component::VersionedBlockMarker,
         entry::Entry,
         entry_marker::EntryMarker,
         poh::{Poh, PohEntry},
@@ -40,7 +41,7 @@ use {
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, Mutex, RwLock,
         },
-        time::Instant,
+        time::{Instant, SystemTime, UNIX_EPOCH},
     },
     thiserror::Error,
 };
@@ -97,7 +98,7 @@ impl Record {
 
 pub struct WorkingBank {
     pub bank: BankWithScheduler,
-    pub start: Arc<Instant>,
+    pub start: Arc<SystemTime>,
     pub min_tick_height: u64,
     pub max_tick_height: u64,
 }
@@ -306,6 +307,23 @@ impl PohRecorder {
         self.leader_last_tick_height = leader_last_tick_height;
     }
 
+    pub fn send_marker(&mut self, marker: VersionedBlockMarker) -> Result<()> {
+        let tick_height = self.tick_height();
+        let working_bank = self
+            .working_bank
+            .as_mut()
+            .ok_or(PohRecorderError::MaxHeightReached)?;
+
+        self.working_bank_sender
+            .send((
+                working_bank.bank.clone(),
+                (EntryMarker::Marker(marker), tick_height),
+            ))
+            .unwrap();
+
+        Ok(())
+    }
+
     // Returns the index of `transactions.first()` in the slot, if being tracked by WorkingBank
     #[cfg_attr(feature = "dev-context-only-utils", qualifiers(pub))]
     pub fn record(
@@ -439,7 +457,7 @@ impl PohRecorder {
             min_tick_height: bank.tick_height(),
             max_tick_height: bank.max_tick_height(),
             bank,
-            start: Arc::new(Instant::now()),
+            start: Arc::new(SystemTime::now()),
         };
         trace!("new working bank");
         assert_eq!(working_bank.bank.ticks_per_slot(), self.ticks_per_slot());
@@ -486,10 +504,20 @@ impl PohRecorder {
                 .store(leader_first_tick_height);
             self.leader_last_tick_height = leader_last_tick_height;
 
+            let elapsed_time = start.elapsed().map(|dur| dur.as_millis());
+            if let Err(err) = elapsed_time.as_ref() {
+                error!("Likely misconfigured system clock. Error: {err:?}");
+            }
+
             datapoint_info!(
                 "leader-slot-start-to-cleared-elapsed-ms",
                 ("slot", bank.slot(), i64),
-                ("elapsed", start.elapsed().as_millis(), i64),
+                (
+                    "elapsed",
+                    // This errors if the clock drifts backwards, in which case we just return 0.
+                    elapsed_time.unwrap_or(0),
+                    i64
+                ),
             );
         }
 
@@ -674,6 +702,10 @@ impl PohRecorder {
 
     pub fn ticks_per_slot(&self) -> u64 {
         self.ticks_per_slot
+    }
+
+    pub fn working_bank(&self) -> Option<&WorkingBank> {
+        self.working_bank.as_ref()
     }
 
     /// Returns a shared reference to the working bank, if it exists.
@@ -900,6 +932,15 @@ impl PohRecorder {
     #[cfg(feature = "dev-context-only-utils")]
     pub fn clear_bank_for_test(&mut self) {
         self.clear_bank();
+    }
+
+    pub fn working_bank_block_producer_time_nanos(&self) -> u64 {
+        self.working_bank()
+            .unwrap()
+            .start
+            .duration_since(UNIX_EPOCH)
+            .expect("Misconfigured system clock; couldn't measure block producer time.")
+            .as_nanos() as u64
     }
 
     pub fn tick_alpenglow(&mut self, slot_max_tick_height: u64) {
