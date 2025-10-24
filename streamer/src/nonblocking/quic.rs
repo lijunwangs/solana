@@ -522,6 +522,7 @@ pub fn get_connection_stake(
     ))
 }
 
+#[derive(Debug)]
 pub(crate) enum ConnectionHandlerError {
     ConnectionAddError,
     MaxStreamError,
