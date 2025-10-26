@@ -674,6 +674,7 @@ fn run_packet_batch_sender(
 
         loop {
             if cancel.is_cancelled() {
+                debug!("packet_batch_sender exiting");
                 return;
             }
             let elapsed = batch_start_time.elapsed();
@@ -687,11 +688,12 @@ fn run_packet_batch_sender(
                     stats
                         .total_packet_batch_send_err
                         .fetch_add(1, Ordering::Relaxed);
-                    trace!("Send error: {e}");
+                    debug!("packet_batch_sender Send error: {e}");
 
                     // The downstream channel is disconnected, this error is not recoverable.
                     if matches!(e, TrySendError::Disconnected(_)) {
                         cancel.cancel();
+                        debug!("packet_batch_sender exiting due to disconnected channel");
                         return;
                     }
                 } else {
@@ -707,7 +709,7 @@ fn run_packet_batch_sender(
                         .total_bytes_sent_to_consumer
                         .fetch_add(total_bytes, Ordering::Relaxed);
 
-                    trace!("Sent {len} packet batch");
+                    debug!("packet_batch_sender Sent {len} packet batch");
                 }
                 break;
             }
@@ -836,6 +838,7 @@ async fn handle_connection<Q, C>(
             _ = cancel.cancelled() => break,
         };
 
+        debug!("Accepted new stream from {}", remote_addr);
         qos.on_new_stream(&context).await;
         qos.on_stream_accepted(&context);
         stats.active_streams.fetch_add(1, Ordering::Relaxed);
