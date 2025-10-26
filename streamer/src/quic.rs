@@ -1,10 +1,7 @@
 use {
     crate::{
         nonblocking::{
-            qos::{ConnectionContext, QosController},
-            quic::{ALPN_TPU_PROTOCOL_ID, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
-            simple_qos::SimpleQos,
-            swqos::SwQos,
+            qos::{ConnectionContext, QosController}, quic::{ALPN_TPU_PROTOCOL_ID, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT}, simple_qos::SimpleQos, streamer_feedback::StreamerFeedback, swqos::SwQos
         },
         streamer::StakedNodes,
     },
@@ -827,6 +824,7 @@ pub fn spawn_simple_qos_server_with_cancel(
     packet_sender: Sender<PacketBatch>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
     quic_server_params: SimpleQosQuicServerParams,
+    feedback_receiver: Option<Receiver<StreamerFeedback>>,
     cancel: CancellationToken,
 ) -> Result<SpawnServerResult, QuicServerError> {
     let stats = Arc::<StreamerStats>::default();

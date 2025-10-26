@@ -8,10 +8,13 @@ use {
                 ConnectionTableType,
             },
             stream_throttle::{ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL},
+            streamer_feedback::{run_feedback_receiver, FeedbackManager, StreamerFeedback},
         },
         quic::StreamerStats,
         streamer::StakedNodes,
     },
+    crossbeam_channel::Receiver,
+    futures::Stream,
     quinn::Connection,
     solana_pubkey::Pubkey,
     solana_time_utils as timing,
@@ -19,6 +22,7 @@ use {
         atomic::{AtomicU64, Ordering},
         Arc, RwLock,
     },
+    tokio::task,
     tokio::sync::{Mutex, MutexGuard},
     tokio_util::sync::CancellationToken,
 };
@@ -41,9 +45,11 @@ impl SimpleQos {
         wait_for_chunk_timeout: std::time::Duration,
         stats: Arc<StreamerStats>,
         staked_nodes: Arc<RwLock<StakedNodes>>,
+        feedback_receiver: Option<Receiver<StreamerFeedback>>,
         cancel: CancellationToken,
-    ) -> Self {
-        Self {
+    ) -> Arc<Self> {
+
+        let qos = Arc::new(Self {
             max_streams_per_second,
             max_connections_per_peer,
             max_staked_connections,
@@ -54,7 +60,24 @@ impl SimpleQos {
                 ConnectionTableType::Staked,
                 cancel,
             ))),
+        });
+        if let Some(feedback_receiver) = feedback_receiver {
+            let qos_clone = qos.clone();
+
+            task::spawn_blocking({
+                let cancel = cancel.clone();
+                let stats = stats.clone();
+                move || {
+                    let feedback_manager = FeedbackManager::new(qos_clone);
+                    run_feedback_receiver(
+                        feedback_manager,
+                        feedback_receiver,
+                        cancel,
+                    );
+                }
+            });
         }
+        qos
     }
 
     fn cache_new_connection(
