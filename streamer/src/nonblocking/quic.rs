@@ -561,7 +561,6 @@ async fn setup_connection<Q, C>(
                     );
                     return;
                 }
-                stats.total_new_connections.fetch_add(1, Ordering::Relaxed);
 
                 if !overall_connection_rate_limiter.is_allowed() {
                     debug!(
@@ -1312,7 +1311,7 @@ pub mod test {
         solana_net_utils::sockets::bind_to_localhost_unique,
         solana_signer::Signer,
         std::collections::HashMap,
-        tokio::time::sleep,
+        tokio::time::sleep, x509_parser::der_parser::rusticata_macros::debug,
     };
 
     pub async fn check_timeout(receiver: Receiver<PacketBatch>, server_address: SocketAddr) {
@@ -1861,12 +1860,20 @@ pub mod test {
         .unwrap();
 
         check_multiple_streams(receiver, server_address, None).await;
+        debug!("done checking multiple streams!!");
         assert_eq!(stats.active_streams.load(Ordering::Relaxed), 0);
+        debug!("active streams is zero");
         assert_eq!(stats.total_new_streams.load(Ordering::Relaxed), 20);
+        debug!("total new streams is 20");
         assert_eq!(stats.total_connections.load(Ordering::Relaxed), 2);
+        debug!("total connections is 2");
         assert_eq!(stats.total_new_connections.load(Ordering::Relaxed), 2);
+        debug!("total new connections is 2");
+        debug!("done checking multiple streams");
         cancel.cancel();
+        debug!("waiting for server thread to exit");
         t.await.unwrap();
+        debug!("server thread exited");
 
         assert_eq!(stats.total_connections.load(Ordering::Relaxed), 0);
         assert_eq!(stats.total_new_connections.load(Ordering::Relaxed), 2);

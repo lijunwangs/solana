@@ -190,4 +190,5 @@ pub async fn check_multiple_streams(
         }
     }
     assert_eq!(total_packets, num_expected_packets);
+    debug!("all packets received!!!");
 }
