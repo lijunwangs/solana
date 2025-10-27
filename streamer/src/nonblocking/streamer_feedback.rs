@@ -1,13 +1,13 @@
 use {
     crate::nonblocking::qos::QosControllerWithCensor,
-    crossbeam_channel::{Receiver},
+    crossbeam_channel::Receiver,
     solana_pubkey::Pubkey,
     std::{
         collections::HashMap,
         sync::{Arc, RwLock},
         time::{Duration, Instant},
     },
-    tokio_util::{sync::CancellationToken},
+    tokio_util::sync::CancellationToken,
 };
 
 /// Feedback sent to the QUIC streamer by consumers.
@@ -25,7 +25,7 @@ pub(crate) struct FeedbackManager<Q>
 where
     Q: QosControllerWithCensor,
 {
-    censored_client: RwLock<HashMap<Pubkey, ClientCensorInfo>>,
+    censored_client: Arc<RwLock<HashMap<Pubkey, ClientCensorInfo>>>,
     qos: Arc<Q>,
 }
 
@@ -35,12 +35,12 @@ where
 {
     pub(crate) fn new(qos: Arc<Q>) -> Self {
         Self {
-            censored_client: RwLock::new(HashMap::new()),
+            censored_client: Arc::new(RwLock::new(HashMap::new())),
             qos,
         }
     }
 
-    pub(crate) fn handle_feedback(&self, feedback: StreamerFeedback) {
+    pub(crate) async fn handle_feedback(&self, feedback: StreamerFeedback) {
         match feedback {
             StreamerFeedback::CensorClient(address) => {
                 let mut censored_client: std::sync::RwLockWriteGuard<
@@ -53,7 +53,7 @@ where
                         censored_time: Instant::now(),
                     },
                 );
-                self.qos.censor_client(&address);
+                self.qos.censor_client(&address).await;
             }
         }
     }
@@ -71,7 +71,7 @@ where
     }
 }
 
-pub(crate) fn run_feedback_receiver<Q>(
+pub(crate) async fn run_feedback_receiver<Q>(
     feedback_manager: FeedbackManager<Q>,
     feedback_receiver: Receiver<StreamerFeedback>,
     cancel: CancellationToken,
@@ -87,7 +87,7 @@ pub(crate) fn run_feedback_receiver<Q>(
         let feedback = feedback_receiver.recv_timeout(feedback_timeout);
         match feedback {
             Ok(feedback) => {
-                feedback_manager.handle_feedback(feedback);
+                feedback_manager.handle_feedback(feedback).await;
             }
             Err(error) => match error {
                 crossbeam_channel::RecvTimeoutError::Timeout => {
