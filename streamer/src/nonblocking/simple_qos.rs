@@ -27,7 +27,7 @@ use {
         },
     },
     tokio::{
-        sync::{Mutex, MutexGuard},
+        sync::{Mutex, MutexGuard, RwLock as TokioRwLock},
         task,
     },
     tokio_util::sync::CancellationToken,
@@ -53,6 +53,7 @@ pub struct SimpleQos {
     stats: Arc<StreamerStats>,
     staked_connection_table: Arc<Mutex<ConnectionTable>>,
     staked_nodes: Arc<RwLock<StakedNodes>>,
+    feedback_manager: TokioRwLock<Option<Arc<FeedbackManager<Self>>>>,
 }
 
 impl SimpleQos {
@@ -75,16 +76,20 @@ impl SimpleQos {
                 ConnectionTableType::Staked,
                 cancel.clone(),
             ))),
+            feedback_manager: TokioRwLock::new(None),
         });
+        let qos_copy = qos.clone();
         if let Some(feedback_receiver) = feedback_receiver {
             let qos_clone = qos.clone();
 
             task::spawn(async move {
-                let feedback_manager = FeedbackManager::new(qos_clone);
+                let feedback_manager = Arc::new(FeedbackManager::new(qos_clone));
+                let mut qos_feedback_manager = qos.feedback_manager.write().await;
+                *qos_feedback_manager = Some(feedback_manager.clone());
                 run_feedback_receiver(feedback_manager, feedback_receiver, cancel).await;
             });
         }
-        qos
+        qos_copy
     }
 
     fn cache_new_connection(
@@ -184,6 +189,22 @@ impl QosController<SimpleQosConnectionContext> for SimpleQos {
         conn_context: &mut SimpleQosConnectionContext,
     ) -> impl Future<Output = Option<CancellationToken>> + Send {
         async move {
+            if let Some(feedback_manager) = &*self.feedback_manager.read().await {
+                let remote_pubkey = match conn_context.remote_pubkey() {
+                    Some(pubkey) => pubkey,
+                    None => return None,
+                };
+                if feedback_manager.is_client_censored(&remote_pubkey).await {
+                    debug!(
+                        "Rejecting connection from censored client {}",
+                        connection.remote_address()
+                    );
+                    self.stats
+                        .num_censored_clients
+                        .fetch_add(1, Ordering::Relaxed);
+                    return None;
+                }
+            }
             const PRUNE_RANDOM_SAMPLE_SIZE: usize = 2;
             match conn_context.peer_type() {
                 ConnectionPeerType::Staked(stake) => {
@@ -295,6 +316,15 @@ impl QosController<SimpleQosConnectionContext> for SimpleQos {
     }
 }
 
+impl QosControllerWithCensor for SimpleQos {
+    /// Censor a client connection, remove all connections
+    async fn censor_client(&self, client: &Pubkey) {
+        let mut connection_table = self.staked_connection_table.lock().await;
+        let client = ConnectionTableKey::Pubkey(client.clone());
+        connection_table.remove_connection_by_key(client);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use {
@@ -398,6 +428,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -451,6 +482,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -528,6 +560,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -584,6 +617,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -623,6 +657,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -665,6 +700,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -723,6 +759,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -787,6 +824,7 @@ mod tests {
             1,  // max_staked_connections (set to 1 to trigger pruning)
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -857,6 +895,7 @@ mod tests {
             1,  // max_staked_connections (set to 1)
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -917,6 +956,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -980,6 +1020,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -1042,6 +1083,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -1104,6 +1146,7 @@ mod tests {
             100, // max_staked_connections
             stats.clone(),
             staked_nodes,
+            None,
             cancel.clone(),
         );
 
@@ -1134,14 +1177,5 @@ mod tests {
         // The function should complete (may or may not sleep depending on current throttling state)
         // We just verify it doesn't panic and completes successfully
         assert!(elapsed < std::time::Duration::from_secs(1)); // Should not take too long
-    }
-}
-
-impl QosControllerWithCensor for SimpleQos {
-    /// Censor a client connection, remove all connections
-    async fn censor_client(&self, client: &Pubkey) {
-        let mut connection_table = self.staked_connection_table.lock().await;
-        let client = ConnectionTableKey::Pubkey(client.clone());
-        connection_table.remove_connection_by_key(client);
     }
 }

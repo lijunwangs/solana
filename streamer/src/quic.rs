@@ -185,6 +185,7 @@ pub struct StreamerStats {
     pub(crate) total_stream_read_errors: AtomicUsize,
     pub(crate) total_stream_read_timeouts: AtomicUsize,
     pub(crate) num_evictions_staked: AtomicUsize,
+    pub(crate) num_censored_clients: AtomicUsize,
     pub(crate) num_evictions_unstaked: AtomicUsize,
     pub(crate) connection_added_from_staked_peer: AtomicUsize,
     pub(crate) connection_added_from_unstaked_peer: AtomicUsize,
@@ -1002,6 +1003,7 @@ mod test {
             staked_nodes,
             server_params.quic_streamer_config,
             server_params.qos_config,
+            None,
             cancel.clone(),
         )
         .unwrap();
