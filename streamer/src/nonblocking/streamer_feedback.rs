@@ -166,11 +166,6 @@ where
         }
     }
 
-    // Add method to manually trigger cleanup (useful for testing)
-    pub(crate) async fn cleanup_now(&self) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-        Self::cleanup_expired_clients(&self.censored_client).await
-    }
-
     pub(crate) async fn handle_feedback(&self, feedback: StreamerFeedback) {
         match feedback {
             StreamerFeedback::CensorClient((address, duration)) => {
