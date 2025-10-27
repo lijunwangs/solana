@@ -79,11 +79,9 @@ impl SimpleQos {
         if let Some(feedback_receiver) = feedback_receiver {
             let qos_clone = qos.clone();
 
-            task::spawn_blocking({
-                move || {
-                    let feedback_manager = FeedbackManager::new(qos_clone);
-                    run_feedback_receiver(feedback_manager, feedback_receiver, cancel);
-                }
+            task::spawn(async move {
+                let feedback_manager = FeedbackManager::new(qos_clone);
+                run_feedback_receiver(feedback_manager, feedback_receiver, cancel).await;
             });
         }
         qos
