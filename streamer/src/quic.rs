@@ -4,7 +4,7 @@ use {
             qos::{ConnectionContext, QosController},
             quic::{ALPN_TPU_PROTOCOL_ID, DEFAULT_WAIT_FOR_CHUNK_TIMEOUT},
             simple_qos::{SimpleQos, SimpleQosConfig},
-            streamer_feedback::StreamerFeedback,
+            streamer_feedback::{CensoringStats, StreamerFeedback},
             swqos::{SwQos, SwQosConfig},
         },
         streamer::StakedNodes,
@@ -229,6 +229,7 @@ pub struct StreamerStats {
     pub(crate) outstanding_incoming_connection_attempts: AtomicUsize,
     pub(crate) total_incoming_connection_attempts: AtomicUsize,
     pub(crate) quic_endpoints_count: AtomicUsize,
+    pub(crate) censoring_stats: Option<CensoringStats>,
 }
 
 impl StreamerStats {
@@ -238,6 +239,16 @@ impl StreamerStats {
             let process_sampled_packets_us_hist = metrics.clone();
             metrics.clear();
             process_sampled_packets_us_hist
+        };
+
+        // Helper function to get censoring stat or 0
+        let censoring_stat = |field: &dyn Fn(&CensoringStats) -> usize| -> i64 {
+            self.censoring_stats.as_ref().map(field).unwrap_or(0) as i64
+        };
+
+        // Helper function to get and reset censoring stat or 0
+        let censoring_stat_swap = |field: &dyn Fn(&CensoringStats) -> usize| -> i64 {
+            self.censoring_stats.as_ref().map(field).unwrap_or(0) as i64
         };
 
         datapoint_info!(
@@ -600,6 +611,53 @@ impl StreamerStats {
                 "refused_connections_too_many_open_connections",
                 self.refused_connections_too_many_open_connections
                     .swap(0, Ordering::Relaxed),
+                i64
+            ),
+            // Censoring stats - always included, 0 if not available
+            (
+                "total_censored_clients",
+                censoring_stat(&|stats| stats.total_censored.load(Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "indefinite_censored_clients",
+                censoring_stat(&|stats| stats.indefinite_count.load(Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "temporary_censored_clients",
+                censoring_stat(&|stats| stats.temporary_count.load(Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "expired_censored_clients",
+                censoring_stat(&|stats| stats.expired_count.load(Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "total_censored_events",
+                censoring_stat_swap(&|stats| stats
+                    .total_censored_events
+                    .swap(0, Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "total_uncensored_events",
+                censoring_stat_swap(&|stats| stats
+                    .total_uncensored_events
+                    .swap(0, Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "auto_cleanup_runs",
+                censoring_stat_swap(&|stats| stats.auto_cleanup_runs.swap(0, Ordering::Relaxed)),
+                i64
+            ),
+            (
+                "clients_auto_uncensored",
+                censoring_stat_swap(&|stats| stats
+                    .clients_auto_uncensored
+                    .swap(0, Ordering::Relaxed)),
                 i64
             ),
         );
