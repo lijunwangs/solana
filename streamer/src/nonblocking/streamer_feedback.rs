@@ -4,7 +4,10 @@ use {
     solana_pubkey::Pubkey,
     std::{
         collections::HashMap,
-        sync::Arc,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
         time::{Duration, Instant},
     },
     tokio::sync::RwLock,
@@ -115,7 +118,8 @@ where
                             actually_removed += 1;
 
                             debug!(
-                                "Auto-uncensored expired client: {} (censored for {:?}, duration: {:?})",
+                                "Auto-uncensored expired client: {} (censored for {:?}, duration: \
+                                 {:?})",
                                 pubkey,
                                 now.duration_since(original_info.censored_time),
                                 original_info.censor_duration
@@ -135,35 +139,6 @@ where
         };
 
         Ok(removed_count)
-    }
-
-    // Add method to get statistics about censored clients
-    pub(crate) async fn get_censor_stats(&self) -> CensorStats {
-        let censored_map = self.censored_client.read().await;
-        let now = Instant::now();
-
-        let mut indefinite_count = 0;
-        let mut temporary_count = 0;
-        let mut expired_count = 0;
-
-        for info in censored_map.values() {
-            if let Some(duration) = info.censor_duration {
-                if now.duration_since(info.censored_time) >= duration {
-                    expired_count += 1;
-                } else {
-                    temporary_count += 1;
-                }
-            } else {
-                indefinite_count += 1;
-            }
-        }
-
-        CensorStats {
-            total_censored: censored_map.len(),
-            indefinite_count,
-            temporary_count,
-            expired_count, // These should be cleaned up soon
-        }
     }
 
     pub(crate) async fn handle_feedback(&self, feedback: StreamerFeedback) {
@@ -240,13 +215,72 @@ pub(crate) async fn run_feedback_receiver<Q>(
     }
 }
 
-// Statistics structure
-#[derive(Debug, Clone)]
-pub struct CensorStats {
-    pub total_censored: usize,
-    pub indefinite_count: usize,
-    pub temporary_count: usize,
-    pub expired_count: usize, // Should be 0 if cleanup is working properly
+// Keep only this:
+#[derive(Debug, Default)]
+pub struct CensoringStats {
+    pub total_censored: AtomicUsize,
+    pub indefinite_count: AtomicUsize,
+    pub temporary_count: AtomicUsize,
+    pub expired_count: AtomicUsize,
+    pub total_censored_events: AtomicUsize,
+    pub total_uncensored_events: AtomicUsize,
+    pub auto_cleanup_runs: AtomicUsize,
+    pub clients_auto_uncensored: AtomicUsize,
+}
+
+impl CensoringStats {
+    // Remove the snapshot method, access fields directly
+    pub fn total_censored(&self) -> usize {
+        self.total_censored.load(Ordering::Relaxed)
+    }
+
+    pub fn indefinite_count(&self) -> usize {
+        self.indefinite_count.load(Ordering::Relaxed)
+    }
+
+    pub fn temporary_count(&self) -> usize {
+        self.temporary_count.load(Ordering::Relaxed)
+    }
+
+    pub fn expired_count(&self) -> usize {
+        self.expired_count.load(Ordering::Relaxed)
+    }
+
+    pub fn total_censored_events(&self) -> usize {
+        self.total_censored_events.load(Ordering::Relaxed)
+    }
+
+    pub fn total_uncensored_events(&self) -> usize {
+        self.total_uncensored_events.load(Ordering::Relaxed)
+    }
+
+    pub fn auto_cleanup_runs(&self) -> usize {
+        self.auto_cleanup_runs.load(Ordering::Relaxed)
+    }
+
+    pub fn clients_auto_uncensored(&self) -> usize {
+        self.clients_auto_uncensored.load(Ordering::Relaxed)
+    }
+
+    // Or keep snapshot but return the same type
+    pub fn get_current_stats(&self) -> CensoringStats {
+        CensoringStats {
+            total_censored: AtomicUsize::new(self.total_censored.load(Ordering::Relaxed)),
+            indefinite_count: AtomicUsize::new(self.indefinite_count.load(Ordering::Relaxed)),
+            temporary_count: AtomicUsize::new(self.temporary_count.load(Ordering::Relaxed)),
+            expired_count: AtomicUsize::new(self.expired_count.load(Ordering::Relaxed)),
+            total_censored_events: AtomicUsize::new(
+                self.total_censored_events.load(Ordering::Relaxed),
+            ),
+            total_uncensored_events: AtomicUsize::new(
+                self.total_uncensored_events.load(Ordering::Relaxed),
+            ),
+            auto_cleanup_runs: AtomicUsize::new(self.auto_cleanup_runs.load(Ordering::Relaxed)),
+            clients_auto_uncensored: AtomicUsize::new(
+                self.clients_auto_uncensored.load(Ordering::Relaxed),
+            ),
+        }
+    }
 }
 
 // Clean shutdown support
