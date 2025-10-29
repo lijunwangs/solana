@@ -539,7 +539,7 @@ mod tests {
         };
 
         // Record initial stats
-        let initial_open_connections = stats.open_staked_connections.load(Ordering::Relaxed);
+        let initial_open_connections = stats.peak_open_staked_connections.load(Ordering::Relaxed);
 
         // Test
         let result = simple_qos.cache_new_connection(
@@ -552,7 +552,8 @@ mod tests {
         if result.is_ok() {
             // Verify stats were updated (open connections should increase)
             assert!(
-                stats.open_staked_connections.load(Ordering::Relaxed) > initial_open_connections
+                stats.peak_open_staked_connections.load(Ordering::Relaxed)
+                    > initial_open_connections
             );
         }
     }
@@ -1046,7 +1047,7 @@ mod tests {
         assert!(add_result.is_some()); // Connection should be added successfully
 
         // Record initial stats
-        let initial_open_connections = stats.open_staked_connections.load(Ordering::Relaxed);
+        let initial_open_connections = stats.peak_open_staked_connections.load(Ordering::Relaxed);
         assert!(initial_open_connections > 0); // Should have at least one connection
 
         // Test - remove the connection
@@ -1056,11 +1057,6 @@ mod tests {
 
         // Verify connection was removed
         assert_eq!(removed_count, 1); // Should have removed exactly 1 connection
-
-        // Verify stats were updated (open connections should decrease)
-        let final_open_connections = stats.open_staked_connections.load(Ordering::Relaxed);
-        assert!(final_open_connections < initial_open_connections);
-        assert_eq!(final_open_connections, initial_open_connections - 1);
     }
 
     #[tokio::test]
