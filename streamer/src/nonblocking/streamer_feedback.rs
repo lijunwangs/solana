@@ -78,7 +78,7 @@ where
 
                 let cleanup_result = Self::cleanup_expired_clients(&censored_client).await;
                 if let Err(e) = cleanup_result {
-                    warn!("Error during client cleanup: {}", e);
+                    warn!("Error during client cleanup: {e}");
                 }
             }
         })
@@ -130,7 +130,7 @@ where
             }
 
             if actually_removed > 0 {
-                info!("Cleaned up {} expired censored clients", actually_removed);
+                info!("Cleaned up {actually_removed} expired censored clients");
             }
 
             actually_removed
@@ -167,13 +167,13 @@ where
         {
             let mut censored_client = self.censored_client.write().await;
             censored_client.insert(
-                client.clone(),
+                *client,
                 ClientCensorInfo {
                     censored_time: Instant::now(),
                     censor_duration: duration,
                 },
             );
-            debug!("Censoring client: {}", client);
+            debug!("Censoring client: {client}");
             drop(censored_client);
         }
         self.qos.censor_client(client).await;

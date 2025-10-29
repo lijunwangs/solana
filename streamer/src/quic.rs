@@ -937,6 +937,7 @@ pub fn spawn_server_with_cancel(
 }
 
 /// Spawns a tokio runtime and a streamer instance inside it.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_simple_qos_server_with_cancel(
     thread_name: &'static str,
     metrics_name: &'static str,

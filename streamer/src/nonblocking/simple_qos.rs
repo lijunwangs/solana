@@ -190,10 +190,7 @@ impl QosController<SimpleQosConnectionContext> for SimpleQos {
     ) -> impl Future<Output = Option<CancellationToken>> + Send {
         async move {
             if let Some(feedback_manager) = &*self.feedback_manager.read().await {
-                let remote_pubkey = match conn_context.remote_pubkey() {
-                    Some(pubkey) => pubkey,
-                    None => return None,
-                };
+                let remote_pubkey = conn_context.remote_pubkey()?;
                 if feedback_manager.is_client_censored(&remote_pubkey).await {
                     debug!(
                         "Rejecting connection from censored client {}",
@@ -320,7 +317,7 @@ impl QosControllerWithCensor for SimpleQos {
     /// Censor a client connection, remove all connections
     async fn censor_client(&self, client: &Pubkey) {
         let mut connection_table = self.staked_connection_table.lock().await;
-        let client = ConnectionTableKey::Pubkey(client.clone());
+        let client = ConnectionTableKey::Pubkey(*client);
         connection_table.remove_connection_by_key(client);
     }
 }
