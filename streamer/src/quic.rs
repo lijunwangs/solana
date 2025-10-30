@@ -584,12 +584,13 @@ impl StreamerStats {
             ),
             (
                 "peak_open_staked_connections",
-                self.peak_open_staked_connections.load(Ordering::Relaxed),
+                self.peak_open_staked_connections.swap(0, Ordering::Relaxed),
                 i64
             ),
             (
                 "peak_open_unstaked_connections",
-                self.peak_open_unstaked_connections.load(Ordering::Relaxed),
+                self.peak_open_unstaked_connections
+                    .swap(0, Ordering::Relaxed),
                 i64
             ),
             (
