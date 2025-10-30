@@ -173,7 +173,7 @@ where
                     censor_duration: duration,
                 },
             );
-            debug!("Censoring client: {client}");
+            debug!("Censoring client: {}", client);
             drop(censored_client);
         }
         self.qos.censor_client(client).await;

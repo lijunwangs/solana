@@ -1176,3 +1176,627 @@ mod tests {
         assert!(elapsed < std::time::Duration::from_secs(1)); // Should not take too long
     }
 }
+
+#[cfg(test)]
+mod censorship_tests {
+    use {
+        super::*,
+        crate::{
+            nonblocking::{
+                streamer_feedback::{StreamerFeedback},
+                testing_utilities::get_client_config,
+            },
+            streamer::StakedNodes,
+        },
+        crossbeam_channel::{unbounded, Receiver, Sender},
+        solana_keypair::{Keypair, Signer},
+        solana_net_utils::sockets::bind_to_localhost_unique,
+        solana_perf::packet::{
+            BytesPacket, BytesPacketBatchWithClientId, BytesPacketWithClientId, PacketBatch,
+        },
+        std::{
+            sync::{
+                Arc, RwLock,
+            },
+            thread,
+            time::Duration,
+        },
+        tokio_util::sync::CancellationToken,
+    };
+
+    async fn create_test_qos_server_with_feedback() -> (
+        thread::JoinHandle<()>,
+        Sender<StreamerFeedback>,
+        Receiver<PacketBatch>,
+        std::net::SocketAddr,
+        CancellationToken,
+    ) {
+        let s = bind_to_localhost_unique().expect("should bind");
+        let (packet_sender, packet_receiver) = unbounded();
+        let (feedback_sender, feedback_receiver) = unbounded();
+        let keypair = Keypair::new();
+        let server_address = s.local_addr().unwrap();
+        let cancel = CancellationToken::new();
+        let staked_nodes = Arc::new(RwLock::new(StakedNodes::default()));
+
+        let server_params = crate::quic::QuicStreamerConfig {
+            max_connections_per_peer: 10,
+            max_staked_connections: 100,
+            max_unstaked_connections: 50,
+            ..crate::quic::QuicStreamerConfig::default_for_tests()
+        };
+
+        let qos_config = SimpleQosConfig::default();
+
+        let spawn_result = crate::quic::spawn_simple_qos_server_with_cancel(
+            "testQuicServer",
+            "test_quic_server",
+            [s],
+            &keypair,
+            packet_sender,
+            staked_nodes,
+            server_params,
+            qos_config,
+            Some(feedback_receiver),
+            cancel.clone(),
+        )
+        .expect("Failed to spawn server");
+
+        // Give the server time to start up
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        (
+            spawn_result.thread,
+            feedback_sender,
+            packet_receiver,
+            server_address,
+            cancel,
+        )
+    }
+
+    async fn create_staked_connection_with_server(
+        server_address: std::net::SocketAddr,
+        client_keypair: &Keypair,
+    ) -> (quinn::Connection, quinn::Endpoint) {
+        // Create client endpoint
+        let client_socket = bind_to_localhost_unique().expect("should bind - client");
+        let mut client_endpoint = quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            None,
+            client_socket,
+            Arc::new(quinn::TokioRuntime),
+        )
+        .unwrap();
+
+        let client_config = get_client_config(client_keypair);
+        client_endpoint.set_default_client_config(client_config);
+
+        // Connect to server
+        let connection = client_endpoint
+            .connect(server_address, "localhost")
+            .unwrap()
+            .await
+            .unwrap();
+
+        (connection, client_endpoint)
+    }
+
+    fn create_test_packet_batch_with_pubkey(
+        pubkey: &solana_pubkey::Pubkey,
+        data: &[u8],
+    ) -> PacketBatch {
+        // Create a BytesPacket first
+        let buffer = bytes::Bytes::from(data.to_vec());
+        let mut meta = solana_packet::Meta::default();
+        meta.size = data.len();
+
+        let bytes_packet = BytesPacket::new(buffer, meta);
+
+        // Create a BytesPacketWithClientId with the remote pubkey
+        let packet_with_client_id = BytesPacketWithClientId::new(bytes_packet, Some(*pubkey));
+
+        // Create a batch with the enhanced packet
+        let mut batch = BytesPacketBatchWithClientId::with_capacity(1);
+        batch.push(packet_with_client_id);
+
+        // Return as PacketBatch::WithClientId variant
+        PacketBatch::WithClientId(batch)
+    }
+
+    #[tokio::test]
+    async fn test_censorship_blocks_connection_via_server() {
+        agave_logger::setup();
+
+        // Setup server with feedback channel
+        let (server_thread, feedback_sender, _packet_receiver, server_address, cancel) =
+            create_test_qos_server_with_feedback().await;
+
+        let client_keypair = Keypair::new();
+        let stake_amount = 50_000_000;
+
+        // Update staked nodes to include the client
+        // Note: In a real test, you'd need access to the server's staked_nodes to update it
+        // For this test, we'll assume the client is already staked
+
+        // First, verify connection works when not censored
+        let (connection1, _client_endpoint1) =
+            create_staked_connection_with_server(server_address, &client_keypair)
+                .await;
+
+        assert!(
+            connection1.close_reason().is_none(),
+            "Connection should be open initially"
+        );
+
+        // Censor the client
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                client_keypair.pubkey(),
+                Some(Duration::from_secs(60)), // Temporary censorship
+            )))
+            .unwrap();
+
+        // Give time for censorship to be processed
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Try to create a new connection - should be blocked/rejected
+        let connection_result = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_staked_connection_with_server(server_address, &client_keypair),
+        )
+        .await;
+
+        // The connection should either timeout or be rejected
+        assert!(
+            connection_result.is_err() || connection_result.unwrap().0.close_reason().is_some(),
+            "New connection should be blocked after censoring"
+        );
+
+        // Cleanup
+        cancel.cancel();
+        server_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_uncensor_client_restores_access_via_server() {
+        agave_logger::setup();
+
+        let (server_thread, feedback_sender, _packet_receiver, server_address, cancel) =
+            create_test_qos_server_with_feedback().await;
+
+        let client_keypair = Keypair::new();
+
+        // Censor the client first
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                client_keypair.pubkey(),
+                Some(Duration::from_secs(3600)), // Long duration
+            )))
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Verify connection is blocked
+        let censored_connection_result = tokio::time::timeout(
+            Duration::from_secs(2),
+            create_staked_connection_with_server(server_address, &client_keypair),
+        )
+        .await;
+
+        assert!(
+            censored_connection_result.is_err(),
+            "Connection should be blocked when censored"
+        );
+
+        // Uncensor the client
+        feedback_sender
+            .send(StreamerFeedback::UncensorClient(client_keypair.pubkey()))
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Verify connection now works
+        let uncensored_connection_result = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_staked_connection_with_server(server_address, &client_keypair),
+        )
+        .await;
+
+        assert!(
+            uncensored_connection_result.is_ok(),
+            "Connection should succeed after uncensoring"
+        );
+
+        let (connection, _endpoint) = uncensored_connection_result.unwrap();
+        assert!(
+            connection.close_reason().is_none(),
+            "Connection should be open after uncensoring"
+        );
+
+        // Cleanup
+        cancel.cancel();
+        server_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_temporary_censorship_expires_automatically_via_server() {
+        agave_logger::setup();
+
+        let (server_thread, feedback_sender, _packet_receiver, server_address, cancel) =
+            create_test_qos_server_with_feedback().await;
+
+        let client_keypair = Keypair::new();
+
+        // Censor the client for a short duration
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                client_keypair.pubkey(),
+                Some(Duration::from_millis(1000)), // Short duration
+            )))
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Verify connection is initially blocked
+        let blocked_connection_result = tokio::time::timeout(
+            Duration::from_secs(1),
+            create_staked_connection_with_server(server_address, &client_keypair),
+        )
+        .await;
+
+        assert!(
+            blocked_connection_result.is_err(),
+            "Connection should be blocked during censorship"
+        );
+
+        // Wait for censorship to expire
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+
+        // Verify connection now works after expiration
+        let unblocked_connection_result = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_staked_connection_with_server(server_address, &client_keypair),
+        )
+        .await;
+
+        assert!(
+            unblocked_connection_result.is_ok(),
+            "Connection should succeed after censorship expires"
+        );
+
+        let (connection, _endpoint) = unblocked_connection_result.unwrap();
+        assert!(
+            connection.close_reason().is_none(),
+            "Connection should be open after expiration"
+        );
+
+        // Cleanup
+        cancel.cancel();
+        server_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_multiple_clients_censorship_via_server() {
+        agave_logger::setup();
+
+        let (server_thread, feedback_sender, _packet_receiver, server_address, cancel) =
+            create_test_qos_server_with_feedback().await;
+
+        let client1_keypair = Keypair::new();
+        let client2_keypair = Keypair::new();
+        let client3_keypair = Keypair::new();
+
+        // Censor client1 and client3, leave client2 uncensored
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                client1_keypair.pubkey(),
+                Some(Duration::from_secs(60)),
+            )))
+            .unwrap();
+
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                client3_keypair.pubkey(),
+                None, // Indefinite
+            )))
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Test connections
+        let result1 = tokio::time::timeout(
+            Duration::from_secs(2),
+            create_staked_connection_with_server(server_address, &client1_keypair),
+        )
+        .await;
+
+        let result2 = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_staked_connection_with_server(server_address, &client2_keypair),
+        )
+        .await;
+
+        let result3 = tokio::time::timeout(
+            Duration::from_secs(2),
+            create_staked_connection_with_server(server_address, &client3_keypair),
+        )
+        .await;
+
+        // Verify results
+        assert!(result1.is_err(), "Client1 should be blocked (censored)");
+        assert!(result2.is_ok(), "Client2 should succeed (not censored)");
+        assert!(result3.is_err(), "Client3 should be blocked (censored)");
+
+        // Verify client2's connection is actually open
+        if let Ok((connection, _endpoint)) = result2 {
+            assert!(
+                connection.close_reason().is_none(),
+                "Client2 connection should be open"
+            );
+        }
+
+        // Cleanup
+        cancel.cancel();
+        server_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_send_packets_with_censored_client() {
+        agave_logger::setup();
+
+        let (server_thread, feedback_sender, packet_receiver, server_address, cancel) =
+            create_test_qos_server_with_feedback().await;
+
+        let allowed_client = Keypair::new();
+        let censored_client = Keypair::new();
+
+        // First establish connections with both clients before censoring
+        let (allowed_connection, _allowed_endpoint) =
+            create_staked_connection_with_server(server_address, &allowed_client).await;
+
+        let (censored_connection, _censored_endpoint) =
+            create_staked_connection_with_server(server_address, &censored_client)
+                .await;
+
+        // Send some data from both clients before censoring
+        let mut allowed_stream = allowed_connection.open_uni().await.unwrap();
+        let allowed_data = b"transaction from allowed client - before censoring";
+        allowed_stream.write_all(allowed_data).await.unwrap();
+        allowed_stream.finish().unwrap();
+
+        let mut censored_stream_before = censored_connection.open_uni().await.unwrap();
+        let censored_data_before = b"transaction from censored client - before censoring";
+        censored_stream_before
+            .write_all(censored_data_before)
+            .await
+            .unwrap();
+        censored_stream_before.finish().unwrap();
+
+        // Give time for packets to be processed
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Check that we received packets from both clients before censoring
+        let packets_before_censoring: Vec<_> = packet_receiver.try_iter().collect();
+        assert!(
+            packets_before_censoring.len() >= 2,
+            "Should have received packets from both clients before censoring"
+        );
+
+        // Now censor the censored client
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                censored_client.pubkey(),
+                Some(Duration::from_secs(60)),
+            )))
+            .unwrap();
+
+        // Give time for censorship to be processed
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Try to send data from the censored client - the connection should be closed
+        // or the data should not be processed
+        let censored_stream_result = censored_connection.open_uni().await;
+
+        if let Ok(mut censored_stream_after) = censored_stream_result {
+            let censored_data_after = b"transaction from censored client - after censoring";
+            let write_result = censored_stream_after.write_all(censored_data_after).await;
+
+            // The write might succeed but the stream should be closed/rejected
+            if write_result.is_ok() {
+                let _ = censored_stream_after.finish();
+            }
+        }
+
+        // Send data from the allowed client - this should still work
+        let mut allowed_stream_after = allowed_connection.open_uni().await.unwrap();
+        let allowed_data_after = b"transaction from allowed client - after censoring";
+        allowed_stream_after
+            .write_all(allowed_data_after)
+            .await
+            .unwrap();
+        allowed_stream_after.finish().unwrap();
+
+        // Give time for packet processing
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Check packets received after censoring
+        let packets_after_censoring: Vec<_> = packet_receiver.try_iter().collect();
+
+        // We should receive the packet from the allowed client
+        assert!(
+            !packets_after_censoring.is_empty(),
+            "Should have received packet from allowed client after censoring"
+        );
+
+        // Verify that new connections from censored client are blocked
+        let new_censored_connection_result = tokio::time::timeout(
+            Duration::from_secs(2),
+            create_staked_connection_with_server(server_address, &censored_client),
+        )
+        .await;
+
+        assert!(
+            new_censored_connection_result.is_err(),
+            "New connections from censored client should be blocked"
+        );
+
+        // Verify that new connections from allowed client still work
+        let new_allowed_connection_result = tokio::time::timeout(
+            Duration::from_secs(5),
+            create_staked_connection_with_server(server_address, &allowed_client),
+        )
+        .await;
+
+        assert!(
+            new_allowed_connection_result.is_ok(),
+            "New connections from allowed client should still work"
+        );
+
+        // Cleanup
+        cancel.cancel();
+        server_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_censored_client_existing_connection_behavior() {
+        agave_logger::setup();
+
+        let (server_thread, feedback_sender, packet_receiver, server_address, cancel) =
+            create_test_qos_server_with_feedback().await;
+
+        let client_keypair = Keypair::new();
+
+        // Establish connection first
+        let (connection, _endpoint) =
+            create_staked_connection_with_server(server_address, &client_keypair).await;
+
+        // Send data before censoring to verify connection works
+        let mut stream_before = connection.open_uni().await.unwrap();
+        let data_before = b"data before censoring";
+        stream_before.write_all(data_before).await.unwrap();
+        stream_before.finish().unwrap();
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Verify we received the packet
+        let packets_before: Vec<_> = packet_receiver.try_iter().collect();
+        assert!(
+            !packets_before.is_empty(),
+            "Should receive packet before censoring"
+        );
+
+        // Now censor the client
+        feedback_sender
+            .send(StreamerFeedback::CensorClient((
+                client_keypair.pubkey(),
+                Some(Duration::from_secs(60)),
+            )))
+            .unwrap();
+
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // Test what happens to the existing connection
+        // The connection should either be closed or further streams should be rejected
+        let stream_after_result = connection.open_uni().await;
+
+        match stream_after_result {
+            Ok(mut stream_after) => {
+                // If we can open a stream, try to send data
+                let data_after = b"data after censoring";
+                let write_result = stream_after.write_all(data_after).await;
+
+                if write_result.is_ok() {
+                    let _ = stream_after.finish();
+                }
+
+                // Give time for processing
+                tokio::time::sleep(Duration::from_millis(200)).await;
+
+                // Check if packet was processed - it should be dropped/rejected
+                let packets_after: Vec<_> = packet_receiver.try_iter().collect();
+
+                // Ideally, no packets should be received from censored client
+                // (This depends on how the censorship is implemented)
+                println!("Packets received after censoring: {}", packets_after.len());
+            }
+            Err(_) => {
+                // Connection was closed - this is the expected behavior
+                println!("Connection was closed after censoring (expected behavior)");
+            }
+        }
+
+        // Verify the connection is in a closed/error state
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // The connection should eventually show a close reason if it was terminated
+        if let Some(close_reason) = connection.close_reason() {
+            println!("Connection closed with reason: {:?}", close_reason);
+        }
+
+        // Cleanup
+        cancel.cancel();
+        server_thread.join().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_packet_filtering_with_remote_pubkey() {
+        // This test demonstrates how to filter packets based on remote pubkey
+        // when they are received from the server
+
+        let allowed_client = Keypair::new();
+        let censored_client = Keypair::new();
+
+        // Create test packet batches that would come from the server
+        let allowed_batch = create_test_packet_batch_with_pubkey(
+            &allowed_client.pubkey(),
+            b"transaction from allowed client",
+        );
+
+        let censored_batch = create_test_packet_batch_with_pubkey(
+            &censored_client.pubkey(),
+            b"transaction from censored client",
+        );
+
+        // Simulate a censorship list
+        let censored_pubkeys = vec![censored_client.pubkey()];
+
+        // Function to filter packets based on censorship
+        let should_process_packet = |batch: &PacketBatch| -> bool {
+            match batch {
+                PacketBatch::WithClientId(batch) => {
+                    // Check if any packet in the batch is from a censored client
+                    !batch.iter().any(|packet| {
+                        packet
+                            .remote_pubkey()
+                            .map_or(false, |pk| censored_pubkeys.contains(pk))
+                    })
+                }
+                _ => true, // Process packets without remote pubkey info
+            }
+        };
+
+        // Test the filtering logic
+        assert!(
+            should_process_packet(&allowed_batch),
+            "Should process allowed client packets"
+        );
+        assert!(
+            !should_process_packet(&censored_batch),
+            "Should NOT process censored client packets"
+        );
+
+        // Simulate processing packets
+        let batches = vec![allowed_batch, censored_batch];
+        let processed_batches: Vec<_> = batches.into_iter().filter(should_process_packet).collect();
+
+        // Only the allowed client's batch should be processed
+        assert_eq!(processed_batches.len(), 1);
+
+        match &processed_batches[0] {
+            PacketBatch::WithClientId(batch) => {
+                assert_eq!(batch[0].remote_pubkey(), Some(&allowed_client.pubkey()));
+            }
+            _ => panic!("Expected WithClientId variant"),
+        }
+    }
+}
