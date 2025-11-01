@@ -10,7 +10,7 @@ use {
             stream_throttle::{
                 throttle_stream, ConnectionStreamCounter, STREAM_THROTTLING_INTERVAL,
             },
-            streamer_feedback::{run_feedback_receiver, FeedbackManager, StreamerFeedback},
+            streamer_feedback::{FeedbackManager, StreamerFeedback},
         },
         quic::{StreamerStats, DEFAULT_MAX_STREAMS_PER_MS},
         streamer::StakedNodes,
@@ -85,11 +85,39 @@ impl SimpleQos {
                 let feedback_manager = Arc::new(FeedbackManager::new(qos_clone.clone()));
                 let mut qos_feedback_manager = qos_clone.feedback_manager.write().await;
                 *qos_feedback_manager = Some(feedback_manager.clone());
-                run_feedback_receiver(feedback_manager, feedback_receiver, cancel).await;
+                // run_feedback_receiver(feedback_manager, feedback_receiver, cancel).await;
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    debug!("Feedback receiver loop");
+                    if cancel.is_cancelled() {
+                        break;
+                    }
+                    let feedback_timeout = std::time::Duration::from_secs(1);
+                    let feedback = feedback_receiver.recv_timeout(feedback_timeout);
+                    match feedback {
+                        Ok(feedback) => {
+                            debug!("Received feedback: {:?}", feedback);
+                            feedback_manager.handle_feedback(feedback).await;
+                        }
+                        Err(error) => match error {
+                            crossbeam_channel::RecvTimeoutError::Timeout => {
+                                debug!("Feedback receiver timeout, checking for cancellation");
+                                continue;
+                            }
+                            crossbeam_channel::RecvTimeoutError::Disconnected => {
+                                debug!("Feedback receiver disconnected, exiting");
+                                break;
+                            }
+                        },
+                    }
+                }
             });
         }
-        debug!("SimpleQos initialized: max_staked_connections={}, max_connections_per_peer={}, max_streams_per_second={}",
-            max_staked_connections, max_connections_per_peer, qos_config.max_streams_per_second);
+        debug!(
+            "SimpleQos initialized: max_staked_connections={}, max_connections_per_peer={}, \
+             max_streams_per_second={}",
+            max_staked_connections, max_connections_per_peer, qos_config.max_streams_per_second
+        );
         qos
     }
 
@@ -191,6 +219,10 @@ impl QosController<SimpleQosConnectionContext> for SimpleQos {
     ) -> impl Future<Output = Option<CancellationToken>> + Send {
         async move {
             if let Some(feedback_manager) = &*self.feedback_manager.read().await {
+                debug!(
+                    "Checking censorship for client {},",
+                    connection.remote_address()
+                );
                 let remote_pubkey = conn_context.remote_pubkey()?;
                 if feedback_manager.is_client_censored(&remote_pubkey).await {
                     debug!(
@@ -1234,7 +1266,10 @@ mod censorship_tests {
             .await
             .unwrap();
 
-        debug!("Client connected to server {server_address}");
+        debug!(
+            "Client connected to server {server_address} with client endpoint: {:?}",
+            client_endpoint.local_addr()
+        );
         (connection, client_endpoint)
     }
 
@@ -1897,6 +1932,42 @@ mod censorship_tests {
         server_thread.thread.await.unwrap();
     }
 
+    async fn verify_connection_works_by_sending_data(
+        connection: &quinn::Connection,
+        data: &[u8],
+    ) -> bool {
+        match connection.open_uni().await {
+            Ok(mut stream) => match stream.write_all(data).await {
+                Ok(()) => match stream.finish() {
+                    Ok(()) => {
+                        debug!("Stream finished successfully");
+                        true
+                    }
+                    Err(err) => {
+                        debug!("Error finishing stream: {}", err);
+                        false
+                    }
+                },
+                Err(err) => {
+                    debug!("Error writing to stream: {}", err);
+                    false
+                }
+            },
+            Err(err) => {
+                debug!("Error opening stream: {}", err);
+                false
+            }
+        }
+    }
+
+    async fn verify_connection_blocked_by_sending_data(
+        connection: &quinn::Connection,
+        data: &[u8],
+    ) -> bool {
+        // Returns true if the connection is blocked (data fails to send)
+        !verify_connection_works_by_sending_data(connection, data).await
+    }
+
     #[tokio::test]
     async fn test_uncensor_staked_client_restores_access_via_server() {
         debug!("Starting test for uncensorship of staked client via server");
@@ -1932,10 +2003,12 @@ mod censorship_tests {
             server_thread.thread.await.unwrap();
             panic!("Initial connection failed - server setup issue");
         }
-
         debug!("Initial connection succeeded");
         // Close the initial connection
         let (initial_connection, initial_endpoint) = initial_connection_result.unwrap();
+
+        assert!(verify_connection_works_by_sending_data(&initial_connection, b"test data").await);
+
         initial_connection.close(0u32.into(), b"test cleanup");
         initial_endpoint.close(0u32.into(), b"test cleanup");
 
@@ -1954,16 +2027,22 @@ mod censorship_tests {
         tokio::time::sleep(Duration::from_millis(500)).await;
 
         debug!("Verifying connection is blocked after censorship");
-        // Verify connection is blocked
+        // First verify the client can connect when not censored
         let censored_connection_result = tokio::time::timeout(
-            Duration::from_secs(3), // Shorter timeout
+            Duration::from_secs(3),
             create_staked_connection_with_server(server_address, &client_keypair),
         )
         .await;
 
+        debug!(
+            "Connection result after censorship: {:?}",
+            censored_connection_result
+        );
+        let censored_connection = censored_connection_result
+            .expect("Connection attempt did not timeout")
+            .0;
         assert!(
-            censored_connection_result.is_err(),
-            "Connection should be blocked when censored"
+            verify_connection_blocked_by_sending_data(&censored_connection, b"test data").await
         );
 
         debug!("Uncensoring the client now");

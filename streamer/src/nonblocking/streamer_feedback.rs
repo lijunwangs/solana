@@ -18,6 +18,7 @@ pub const DEFAULT_CENSOR_CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Feedback sent to the QUIC streamer by consumers.
 /// This can support different type of receivers.
+#[derive(Debug)]
 pub enum StreamerFeedback {
     /// Censor the pubkey for an optional duration
     /// If duration is None, censor indefinitely, unless
@@ -165,6 +166,10 @@ where
 
     pub(crate) async fn censor_client(&self, client: &Pubkey, duration: Option<Duration>) {
         {
+            debug!(
+                "Censoring client: {} for duration: {:?} {:p}",
+                client, duration, self
+            );
             let mut censored_client = self.censored_client.write().await;
             censored_client.insert(
                 *client,
@@ -173,7 +178,11 @@ where
                     censor_duration: duration,
                 },
             );
-            debug!("Censoring client: {}", client);
+            debug!(
+                "Censoring client: {}, censored_keys: {:?}",
+                client,
+                censored_client.keys()
+            );
             drop(censored_client);
         }
         self.qos.censor_client(client).await;
@@ -181,6 +190,12 @@ where
 
     pub(crate) async fn is_client_censored(&self, client: &Pubkey) -> bool {
         let censored_client = self.censored_client.read().await;
+        debug!(
+            "Checking if client is censored: {} censored_keys: {:?} {:p}",
+            client,
+            censored_client.keys(),
+            self
+        );
         censored_client.contains_key(client)
     }
 }
@@ -205,6 +220,7 @@ pub(crate) async fn run_feedback_receiver<Q>(
             }
             Err(error) => match error {
                 crossbeam_channel::RecvTimeoutError::Timeout => {
+                    debug!("Feedback receiver timeout, checking for cancellation");
                     continue;
                 }
                 crossbeam_channel::RecvTimeoutError::Disconnected => {
