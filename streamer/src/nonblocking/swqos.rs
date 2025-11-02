@@ -278,6 +278,10 @@ impl SwQos {
             stats
                 .num_evictions_unstaked
                 .fetch_add(num_pruned, Ordering::Relaxed);
+            info!(
+                "Pruned {} unstaked connections, new size: {}, max_unstaked_connections: {max_unstaked_connections}",
+                num_pruned, unstaked_connection_table.total_size
+            );
         }
     }
 
