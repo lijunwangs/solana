@@ -466,6 +466,12 @@ fn sign_shreds_gpu(
         .map(|batch| match batch {
             PacketBatch::Pinned(batch) => Cow::Borrowed(batch),
             PacketBatch::Bytes(batch) => Cow::Owned(batch.to_pinned_packet_batch()),
+            PacketBatch::Single(packet) => {
+                // this is ugly, but unused (gpu code) and will be removed shortly in follow up PR
+                let mut batch = BytesPacketBatch::with_capacity(1);
+                batch.push(packet.clone());
+                Cow::Owned(batch.to_pinned_packet_batch())
+            }
         })
         .collect::<Vec<_>>();
     elems.extend(pinned_batches.iter().map(|batch| perf_libs::Elems {
