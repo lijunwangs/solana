@@ -5,15 +5,15 @@ use {
             qos::{ConnectionContext, QosController},
             stream_throttle::ConnectionStreamCounter,
         },
-        quic::{QuicServerError, QuicStreamerConfig, StreamerStats, configure_server},
+        quic::{configure_server, QuicServerError, QuicStreamerConfig, StreamerStats},
         streamer::StakedNodes,
     },
     bytes::{BufMut, Bytes, BytesMut},
     crossbeam_channel::{Sender, TrySendError},
-    futures::{Future, StreamExt as _, stream::FuturesUnordered},
+    futures::{stream::FuturesUnordered, Future, StreamExt as _},
     indexmap::map::{Entry, IndexMap},
     quinn::{Accept, Connecting, Connection, Endpoint, EndpointConfig, TokioRuntime},
-    rand::{Rng, thread_rng},
+    rand::{thread_rng, Rng},
     smallvec::SmallVec,
     solana_keypair::Keypair,
     solana_measure::measure::Measure,
@@ -30,7 +30,8 @@ use {
         net::{IpAddr, SocketAddr, UdpSocket},
         pin::Pin,
         sync::{
-            Arc, RwLock, atomic::{AtomicU64, Ordering}
+            atomic::{AtomicU64, Ordering},
+            Arc, RwLock,
         },
         task::Poll,
         time::{Duration, Instant},
@@ -44,7 +45,9 @@ use {
         // but if we do, the scope of the RwLock must always be a subset of the async Mutex
         // (i.e. lock order is always async Mutex -> RwLock). Also, be careful not to
         // introduce any other awaits while holding the RwLock.
-        select, task::JoinHandle, time::timeout
+        select,
+        task::JoinHandle,
+        time::timeout,
     },
     tokio_util::{sync::CancellationToken, task::TaskTracker},
 };
