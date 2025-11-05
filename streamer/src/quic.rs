@@ -163,8 +163,6 @@ pub struct StreamerStats {
     pub(crate) active_streams: AtomicUsize,
     pub(crate) total_new_streams: AtomicUsize,
     pub(crate) invalid_stream_size: AtomicUsize,
-    pub(crate) total_packets_allocated: AtomicUsize,
-    pub(crate) total_packet_batches_allocated: AtomicUsize,
     pub(crate) total_staked_chunks_received: AtomicUsize,
     pub(crate) total_unstaked_chunks_received: AtomicUsize,
     pub(crate) total_packet_batch_send_err: AtomicUsize,
@@ -374,17 +372,6 @@ impl StreamerStats {
             (
                 "invalid_stream_size",
                 self.invalid_stream_size.swap(0, Ordering::Relaxed),
-                i64
-            ),
-            (
-                "packets_allocated",
-                self.total_packets_allocated.swap(0, Ordering::Relaxed),
-                i64
-            ),
-            (
-                "packet_batches_allocated",
-                self.total_packet_batches_allocated
-                    .swap(0, Ordering::Relaxed),
                 i64
             ),
             (
