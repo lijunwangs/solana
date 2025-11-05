@@ -189,7 +189,7 @@ impl PacketBatch {
         match self {
             Self::Pinned(batch) => batch.get(index).map(PacketRef::from),
             Self::Bytes(batch) => batch.get(index).map(PacketRef::from),
-            Self::Single(packet) => Some(PacketRef::from(packet)),
+            Self::Single(packet) => (index == 0).then_some(PacketRef::from(packet)),
         }
     }
 
@@ -197,7 +197,7 @@ impl PacketBatch {
         match self {
             Self::Pinned(batch) => batch.get_mut(index).map(PacketRefMut::from),
             Self::Bytes(batch) => batch.get_mut(index).map(PacketRefMut::from),
-            Self::Single(packet) => Some(PacketRefMut::from(packet)),
+            Self::Single(packet) => (index == 0).then_some(PacketRefMut::from(packet)),
         }
     }
 
