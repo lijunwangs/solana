@@ -804,17 +804,17 @@ fn handle_chunks(
 
     if let Err(err) = packet_sender.try_send(packet_batch) {
         stats
-            .total_handle_chunk_to_packet_batcher_send_err
+            .total_handle_chunk_to_packet_send_err
             .fetch_add(1, Ordering::Relaxed);
         match err {
             TrySendError::Full(_) => {
                 stats
-                    .total_handle_chunk_to_packet_batcher_send_full_err
+                    .total_handle_chunk_to_packet_send_full_err
                     .fetch_add(1, Ordering::Relaxed);
             }
             TrySendError::Disconnected(_) => {
                 stats
-                    .total_handle_chunk_to_packet_batcher_send_disconnected_err
+                    .total_handle_chunk_to_packet_send_disconnected_err
                     .fetch_add(1, Ordering::Relaxed);
             }
         }
