@@ -1226,4 +1226,292 @@ mod test {
         cancel.cancel();
         t.join().unwrap();
     }
+
+    #[test]
+    fn test_quic_server_censorship_with_simple_qos() {
+        agave_logger::setup();
+
+        let censored_client_keypair = Keypair::new();
+        let allowed_client_keypair = Keypair::new();
+
+        // Set up stakes for both clients
+        let stakes = HashMap::from([
+            (censored_client_keypair.pubkey(), 50_000_000), // substantial stake
+            (allowed_client_keypair.pubkey(), 50_000_000),  // substantial stake
+        ]);
+        let staked_nodes = StakedNodes::new(
+            Arc::new(stakes),
+            HashMap::<Pubkey, u64>::default(), // overrides
+        );
+
+        let server_params = QuicStreamerConfig {
+            max_unstaked_connections: 0,
+            ..QuicStreamerConfig::default_for_tests()
+        };
+        let qos_config = SimpleQosConfig {
+            max_streams_per_second: 100, // high enough to not be the limiting factor
+        };
+
+        // Create feedback channel for censorship control
+        let (feedback_sender, feedback_receiver) = unbounded();
+
+        let s = bind_to_localhost_unique().expect("should bind");
+        let (packet_sender, packet_receiver) = unbounded();
+        let keypair = Keypair::new();
+        let server_address = s.local_addr().unwrap();
+        let cancel = CancellationToken::new();
+
+        let SpawnServerResult {
+            endpoints: _,
+            thread: t,
+            key_updater: _,
+        } = spawn_simple_qos_server_with_cancel(
+            "solQuicTest",
+            "quic_streamer_test",
+            [s],
+            &keypair,
+            packet_sender,
+            Arc::new(RwLock::new(staked_nodes)),
+            server_params,
+            qos_config,
+            Some(feedback_receiver), // Enable feedback for censorship
+            cancel.clone(),
+        )
+        .unwrap();
+
+        let runtime = rt_for_test();
+        runtime.block_on(async {
+            // First, verify both clients can send packets normally
+            let num_packets_before = 5;
+
+            // Send packets from allowed client
+            let allowed_packets_before = send_packets_from_client(
+                server_address,
+                &allowed_client_keypair,
+                num_packets_before,
+            )
+            .await;
+
+            // Send packets from client that will be censored
+            let censored_packets_before = send_packets_from_client(
+                server_address,
+                &censored_client_keypair,
+                num_packets_before,
+            )
+            .await;
+
+            // Verify both clients' packets were received
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let packets_before_censorship: Vec<_> = packet_receiver.try_iter().collect();
+            assert!(
+                packets_before_censorship.len() >= (num_packets_before * 2),
+                "Should receive packets from both clients before censorship: expected >= {}, got \
+                 {}",
+                num_packets_before * 2,
+                packets_before_censorship.len()
+            );
+
+            // Now censor one client
+            feedback_sender
+                .send(StreamerFeedback::CensorClient((
+                    censored_client_keypair.pubkey(),
+                    Some(Duration::from_secs(60)), // Censor for 60 seconds
+                )))
+                .unwrap();
+
+            // Give time for censorship to take effect
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+
+            // Send packets from both clients after censorship
+            let num_packets_after = 5;
+
+            // Allowed client should still work
+            let allowed_packets_after = send_packets_from_client(
+                server_address,
+                &allowed_client_keypair,
+                num_packets_after,
+            )
+            .await;
+
+            // Censored client should be blocked (packets won't reach server)
+            let censored_packets_after = send_packets_from_client(
+                server_address,
+                &censored_client_keypair,
+                num_packets_after,
+            )
+            .await;
+
+            // Give time for packet processing
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            // Check packets received after censorship
+            let packets_after_censorship: Vec<_> = packet_receiver.try_iter().collect();
+
+            // Should only receive packets from allowed client
+            assert!(
+                packets_after_censorship.len() >= num_packets_after,
+                "Should receive packets from allowed client after censorship: expected >= {}, got \
+                 {}",
+                num_packets_after,
+                packets_after_censorship.len()
+            );
+
+            // The number should be much less than if both clients were working
+            assert!(
+                packets_after_censorship.len() < (num_packets_after * 2),
+                "Should not receive packets from censored client: got {} packets, expected < {}",
+                packets_after_censorship.len(),
+                num_packets_after * 2
+            );
+
+            // Test uncensoring
+            feedback_sender
+                .send(StreamerFeedback::UncensorClient(
+                    censored_client_keypair.pubkey(),
+                ))
+                .unwrap();
+
+            // Give time for uncensoring to take effect
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+
+            // Send packets from both clients after uncensoring
+            let num_packets_final = 5;
+
+            let allowed_packets_final = send_packets_from_client(
+                server_address,
+                &allowed_client_keypair,
+                num_packets_final,
+            )
+            .await;
+
+            let uncensored_packets_final = send_packets_from_client(
+                server_address,
+                &censored_client_keypair,
+                num_packets_final,
+            )
+            .await;
+
+            // Give time for packet processing
+            tokio::time::sleep(Duration::from_millis(500)).await;
+
+            // Check packets received after uncensoring
+            let packets_after_uncensoring: Vec<_> = packet_receiver.try_iter().collect();
+
+            // Should receive packets from both clients again
+            assert!(
+                packets_after_uncensoring.len() >= (num_packets_final * 2),
+                "Should receive packets from both clients after uncensoring: expected >= {}, got \
+                 {}",
+                num_packets_final * 2,
+                packets_after_uncensoring.len()
+            );
+        });
+
+        cancel.cancel();
+        t.join().unwrap();
+    }
+
+    // Helper function to send packets from a specific client
+    async fn send_packets_from_client(
+        server_address: SocketAddr,
+        client_keypair: &Keypair,
+        num_packets: usize,
+    ) -> usize {
+        use crate::nonblocking::testing_utilities::*;
+
+        let client_socket = bind_to_localhost_unique().expect("should bind - client");
+        let mut client_endpoint = quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            None,
+            client_socket,
+            Arc::new(quinn::TokioRuntime),
+        )
+        .unwrap();
+
+        let client_config = get_client_config(client_keypair);
+        client_endpoint.set_default_client_config(client_config);
+
+        // Try to connect to server
+        let connection_result = tokio::time::timeout(
+            Duration::from_secs(5),
+            client_endpoint
+                .connect(server_address, "localhost")
+                .unwrap(),
+        )
+        .await;
+
+        let connection = match connection_result {
+            Ok(Ok(conn)) => conn,
+            Ok(Err(_)) => {
+                debug!("Connection failed for client {}", client_keypair.pubkey());
+                return 0; // Connection failed (likely censored)
+            }
+            Err(_) => {
+                debug!(
+                    "Connection timed out for client {}",
+                    client_keypair.pubkey()
+                );
+                return 0; // Connection timed out (likely censored)
+            }
+        };
+
+        let mut packets_sent = 0;
+
+        // Send multiple packets
+        for i in 0..num_packets {
+            let stream_result =
+                tokio::time::timeout(Duration::from_secs(2), connection.open_uni()).await;
+
+            let mut stream = match stream_result {
+                Ok(Ok(stream)) => stream,
+                _ => {
+                    debug!(
+                        "Failed to open stream {} for client {}",
+                        i,
+                        client_keypair.pubkey()
+                    );
+                    break; // Stream opening failed (likely censored)
+                }
+            };
+
+            let data = format!("test packet {} from {}", i, client_keypair.pubkey());
+            let write_result =
+                tokio::time::timeout(Duration::from_secs(2), stream.write_all(data.as_bytes()))
+                    .await;
+
+            match write_result {
+                Ok(Ok(())) => {
+                    if let Ok(()) = stream.finish() {
+                        packets_sent += 1;
+                    } else {
+                        debug!(
+                            "Failed to finish stream {} for client {}",
+                            i,
+                            client_keypair.pubkey()
+                        );
+                        break;
+                    }
+                }
+                _ => {
+                    debug!(
+                        "Failed to write to stream {} for client {}",
+                        i,
+                        client_keypair.pubkey()
+                    );
+                    break; // Write failed (likely censored)
+                }
+            }
+        }
+
+        // Close connection
+        connection.close(0u32.into(), b"test complete");
+        client_endpoint.close(0u32.into(), b"test complete");
+
+        debug!(
+            "Client {} successfully sent {} packets",
+            client_keypair.pubkey(),
+            packets_sent
+        );
+        packets_sent
+    }
 }
