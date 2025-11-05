@@ -823,15 +823,6 @@ fn handle_chunks(
         if let Some(ppm) = &packet_perf_measure {
             track_streamer_fetch_packet_performance(core::array::from_ref(ppm), stats);
         }
-        // stats
-        //     .total_packets_sent_for_batching
-        //     .fetch_add(1, Ordering::Relaxed);
-        // stats
-        //     .total_bytes_sent_for_batching
-        //     .fetch_add(bytes_sent, Ordering::Relaxed);
-        // stats
-        //     .total_chunks_sent_for_batching
-        //     .fetch_add(chunks_sent, Ordering::Relaxed);
 
         stats
             .total_bytes_sent_to_consumer
