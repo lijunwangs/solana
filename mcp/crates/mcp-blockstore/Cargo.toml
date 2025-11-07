@@ -1,7 +1,16 @@
 [package]
 name = "mcp-blockstore"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+
+[features]
+default = ["mem"]
+mem = []
+solana-ledger = ["dep:rocksdb", "dep:bincode", "dep:serde"]
 
 [dependencies]
 mcp-types = { path = "../mcp-types" }
+parking_lot = "0.12"
+serde = { workspace = true, features=["derive"], optional = true }
+bincode = { workspace = true, optional = true }
+rocksdb = { version = "0.23", optional = true }

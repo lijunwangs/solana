@@ -1,11 +1,13 @@
 [package]
-name = "mcp-reconstructor"
+name = "mcp-stage"
 version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+bincode = { workspace = true }
+crossbeam-channel = "0.5"
+mcp-wire = { path = "../mcp-wire" }
 mcp-types = { path = "../mcp-types" }
-mcp-wire  = { path = "../mcp-wire" }
 mcp-crypto-vc = { path = "../mcp-crypto-vc" }
 mcp-blockstore = { path = "../mcp-blockstore" }
-mcp-hecc-mock = { path = "../mcp-hecc-mock" }
+mcp-reconstructor = { path = "../mcp-reconstructor" }

@@ -1,18 +1,17 @@
 use std::collections::{HashMap, HashSet};
 use mcp_types::{BatchKey, CommitmentRoot, Params};
 use mcp_wire::{LeaderBlockPayload, RevealShred, RelayAttestation};
-use mcp_blockstore::{Blockstore, CommitMeta};
+use mcp_blockstore::{McpStore, CommitMeta as StoreCommitMeta};
 use mcp_crypto_vc::VectorCommitment;
-use mcp_hecc_mock::decode_degree1;
 
-pub struct Reconstructor<V: VectorCommitment> {
+pub struct Reconstructor<V: VectorCommitment, S: McpStore> {
     pub params: Params,
-    pub bs: Blockstore,
+    pub store: S,
     pub _vc: std::marker::PhantomData<V>,
 }
 
-impl<V: VectorCommitment> Reconstructor<V> {
-    pub fn new(params: Params) -> Self { Self { params, bs: Blockstore::default(), _vc: Default::default() } }
+impl<V: VectorCommitment, S: McpStore> Reconstructor<V, S> {
+    pub fn new(params: Params, store: S) -> Self { Self { params, store, _vc: Default::default() } }
 
     pub fn on_block_finalized(&mut self, payload: &LeaderBlockPayload) -> HashSet<BatchKey> {
         let need_mu = (self.params.mu * self.params.n_relays as f32).ceil() as usize;
@@ -36,8 +35,8 @@ impl<V: VectorCommitment> Reconstructor<V> {
         for (key, relays) in per_key_relays {
             let phi_ok = relays.len() >= need_phi;
             if phi_ok {
-                let meta = CommitMeta { C: per_key_C[&key].clone(), finalized: true, phi_ok, K, T };
-                self.bs.put_commit_meta(key.clone(), meta);
+                let meta = StoreCommitMeta { C: per_key_C[&key].clone(), finalized: true, phi_ok, K, T };
+                self.store.put_commit_meta(key.clone(), meta);
                 available.insert(key);
             }
         }
@@ -45,7 +44,7 @@ impl<V: VectorCommitment> Reconstructor<V> {
     }
 
     pub fn on_reveal(&mut self, rs: RevealShred) -> bool {
-        let Some(meta) = self.bs.get_commit_meta(&rs.key) else { return false; };
+        let Some(meta) = self.store.get_commit_meta(&rs.key) else { return false; };
         if !meta.finalized || !meta.phi_ok { return false; }
         let C = rs.opt_commitment.unwrap_or_else(|| meta.C.clone());
 
@@ -53,26 +52,22 @@ impl<V: VectorCommitment> Reconstructor<V> {
             return false;
         }
 
-        let count = self.bs.reveal_insert(&rs.key, rs.index, rs.c_i, rs.r_i, rs.w_i);
+        let count = self.store.reveal_insert(&rs.key, rs.index, rs.c_i, rs.r_i, rs.w_i);
         count >= (meta.K + meta.T)
     }
 
     pub fn reconstruct_bytes(&self, key: &BatchKey) -> Option<Vec<u8>> {
-        let meta = self.bs.get_commit_meta(key)?;
-        let reveals = self.bs.get_reveals(key)?;
-        if reveals.present.len() < (meta.K + meta.T) { return None; }
-        // Collect first two distinct indices to interpolate (degree-1).
+        let meta = self.store.get_commit_meta(key)?;
+        if self.store.reveal_count(key) < (meta.K + meta.T) { return None; }
         let mut pts: Vec<(u8, Vec<u8>)> = Vec::new();
-        for (ix, (c_i, _r_i, _w_i)) in reveals.present.iter() {
-            let x = (*ix as u8) + 1; // x = index+1
-            pts.push((x, c_i.clone()));
+        for (ix, (c_i, _r_i, _w_i)) in self.store.iter_reveals(key) {
+            let x = (ix as u8) + 1;
+            pts.push((x, c_i));
             if pts.len() == 2 { break; }
         }
         if pts.len() < 2 { return None; }
-        let (a0, a1) = decode_degree1(&pts);
-        let mut out = Vec::new();
-        out.extend_from_slice(&a0);
-        out.extend_from_slice(&a1);
+        let (a0, a1) = mcp_hecc_mock::decode_degree1(&pts);
+        let mut out = a0; out.extend_from_slice(&a1);
         Some(out)
     }
 }

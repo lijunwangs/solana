@@ -12,7 +12,6 @@ pub struct Params {
     pub phi:   f32,
     pub n_relays: u16,
 }
-
 impl Params {
     pub fn k_t(&self) -> (usize, usize) {
         let n = self.n_relays as f32;

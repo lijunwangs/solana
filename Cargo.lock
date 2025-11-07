@@ -461,7 +461,7 @@ dependencies = [
  "jsonrpc-derive",
  "jsonrpc-ipc-server",
  "libc",
- "libloading",
+ "libloading 0.7.4",
  "log",
  "num_cpus",
  "predicates 2.1.5",
@@ -1715,6 +1715,7 @@ checksum = "0b023947811758c97c59bf9d1c188fd619ad4718dcaa767947df1cadb14f39f4"
 dependencies = [
  "glob",
  "libc",
+ "libloading 0.8.9",
 ]
 
 [[package]]
@@ -4262,6 +4263,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "libloading"
+version = "0.8.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
+dependencies = [
+ "cfg-if 1.0.3",
+ "windows-link 0.2.0",
+]
+
+[[package]]
 name = "libm"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4290,6 +4301,7 @@ dependencies = [
  "libc",
  "libz-sys",
  "lz4-sys",
+ "zstd-sys",
 ]
 
 [[package]]
@@ -4454,6 +4466,84 @@ name = "matchit"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0e7465ac9959cc2b1404e8e2367b43684a6d13790fe23056cc8c6c5a6b7bcb94"
+
+[[package]]
+name = "mcp-blockstore"
+version = "0.2.0"
+dependencies = [
+ "bincode",
+ "mcp-types",
+ "parking_lot 0.12.4",
+ "rocksdb",
+ "serde",
+]
+
+[[package]]
+name = "mcp-crypto-vc"
+version = "0.2.0"
+dependencies = [
+ "mcp-types",
+ "rand 0.8.5",
+ "sha2 0.10.9",
+]
+
+[[package]]
+name = "mcp-hecc-mock"
+version = "0.2.0"
+
+[[package]]
+name = "mcp-node"
+version = "0.2.0"
+dependencies = [
+ "bincode",
+ "crossbeam-channel",
+ "mcp-blockstore",
+ "mcp-crypto-vc",
+ "mcp-hecc-mock",
+ "mcp-reconstructor",
+ "mcp-types",
+ "mcp-wire",
+]
+
+[[package]]
+name = "mcp-reconstructor"
+version = "0.2.0"
+dependencies = [
+ "mcp-blockstore",
+ "mcp-crypto-vc",
+ "mcp-hecc-mock",
+ "mcp-types",
+ "mcp-wire",
+]
+
+[[package]]
+name = "mcp-stage"
+version = "0.2.0"
+dependencies = [
+ "bincode",
+ "crossbeam-channel",
+ "mcp-blockstore",
+ "mcp-crypto-vc",
+ "mcp-reconstructor",
+ "mcp-types",
+ "mcp-wire",
+]
+
+[[package]]
+name = "mcp-types"
+version = "0.2.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "mcp-wire"
+version = "0.2.0"
+dependencies = [
+ "bincode",
+ "mcp-types",
+ "serde",
+]
 
 [[package]]
 name = "memchr"
@@ -8711,7 +8801,7 @@ dependencies = [
  "crossbeam-channel",
  "json5",
  "jsonrpc-core",
- "libloading",
+ "libloading 0.7.4",
  "log",
  "serde_json",
  "solana-account",

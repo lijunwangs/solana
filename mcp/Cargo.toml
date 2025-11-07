@@ -3,13 +3,10 @@ members = [
   "crates/mcp-types",
   "crates/mcp-wire",
   "crates/mcp-crypto-vc",
-  "crates/mcp-crypto-te",
-  "crates/mcp-blockstore",
-  "crates/mcp-proposer",
-  "crates/mcp-relay",
-  "crates/mcp-consensus",
-  "crates/mcp-reconstructor",
   "crates/mcp-hecc-mock",
+  "crates/mcp-blockstore",
+  "crates/mcp-reconstructor",
+  "crates/mcp-stage",
   "crates/mcp-node",
 ]
 resolver = "2"

@@ -1,13 +1,14 @@
 [package]
 name = "mcp-node"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
+crossbeam-channel = "0.5"
+bincode = "1.3"
 mcp-types = { path = "../mcp-types" }
 mcp-wire  = { path = "../mcp-wire" }
-mcp-consensus = { path = "../mcp-consensus" }
-mcp-reconstructor = { path = "../mcp-reconstructor" }
 mcp-crypto-vc = { path = "../mcp-crypto-vc" }
-
 mcp-hecc-mock = { path = "../mcp-hecc-mock" }
+mcp-blockstore = { path = "../mcp-blockstore" }
+mcp-reconstructor = { path = "../mcp-reconstructor" }
