@@ -1,0 +1,8 @@
+[package]
+name = "mcp-proposer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mcp-types = { path = "../mcp-types" }
+mcp-wire  = { path = "../mcp-wire" }

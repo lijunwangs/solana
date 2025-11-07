@@ -1,0 +1,12 @@
+[package]
+name = "mcp-reconstructor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mcp-types = { path = "../mcp-types" }
+mcp-wire  = { path = "../mcp-wire" }
+mcp-blockstore = { path = "../mcp-blockstore" }
+mcp-crypto-vc = { path = "../mcp-crypto-vc" }
+
+mcp-hecc-mock = { path = "../mcp-hecc-mock" }

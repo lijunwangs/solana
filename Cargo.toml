@@ -53,6 +53,7 @@ members = [
     "ledger-tool",
     "local-cluster",
     "low-pass-filter",
+    "mcp",
     "measure",
     "memory-management",
     "merkle-tree",
