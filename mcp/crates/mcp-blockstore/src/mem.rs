@@ -17,10 +17,10 @@ impl McpStore for MemStore {
     fn get_commit_meta(&self, key: &BatchKey) -> Option<CommitMeta> {
         self.commit_meta.read().get(key).cloned()
     }
-    fn reveal_insert(&self, key: &BatchKey, index: u32, c: Vec<u8>, r: Vec<u8>, w: Vec<[u8;32]>) -> usize {
+    fn reveal_insert(&self, key: &BatchKey, index: u32, coded_symbol: Vec<u8>, leaf_randomizer: Vec<u8>, merkle_path: Vec<[u8;32]>) -> usize {
         let mut g = self.reveals.write();
         let entry = g.entry(key.clone()).or_default();
-        entry.entry(index).or_insert((c, r, w));
+        entry.entry(index).or_insert((coded_symbol, leaf_randomizer, merkle_path));
         entry.len()
     }
     fn iter_reveals(&self, key: &BatchKey) -> Box<dyn Iterator<Item=(u32,(Vec<u8>,Vec<u8>,Vec<[u8;32]>))> + Send> {

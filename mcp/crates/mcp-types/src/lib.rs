@@ -6,18 +6,19 @@ pub type RelayId = [u8; 32];
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Params {
-    pub gamma: f32,
-    pub tau:   f32,
-    pub mu:    f32,
-    pub phi:   f32,
+    pub gamma: f32,          // total coded ratio = data + tolerance
+    pub tau:   f32,          // adversarial tolerance ratio
+    pub mu:    f32,          // leader->relay attestation threshold fraction
+    pub phi:   f32,          // per-batch relay quorum fraction
     pub n_relays: u16,
 }
 impl Params {
+    /// Returns (min_symbols_to_decode, adversary_tolerance)
     pub fn k_t(&self) -> (usize, usize) {
         let n = self.n_relays as f32;
-        let k = ((self.gamma - self.tau) * n).round() as usize;
-        let t = (self.tau * n).round() as usize;
-        (k, t)
+        let min_symbols_to_decode = ((self.gamma - self.tau) * n).round() as usize;
+        let adversary_tolerance   = (self.tau * n).round() as usize;
+        (min_symbols_to_decode, adversary_tolerance)
     }
 }
 

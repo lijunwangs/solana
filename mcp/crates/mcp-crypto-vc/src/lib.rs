@@ -4,15 +4,15 @@ use sha2::{Digest, Sha256};
 
 pub trait VectorCommitment {
     fn commit(leaves: &[Vec<u8>]) -> (CommitmentRoot, Vec<Vec<u8>>);
-    fn open(leaves: &[Vec<u8>], index: usize, r_i: &[u8]) -> Vec<[u8;32]>;
-    fn verify(C: &CommitmentRoot, index: usize, leaf_bytes: &[u8], r_i: &[u8], w_i: &[[u8;32]]) -> bool;
+    fn open(leaves: &[Vec<u8>], index: usize, leaf_randomizer: &[u8]) -> Vec<[u8;32]>;
+    fn verify(commitment_root: &CommitmentRoot, index: usize, leaf_bytes: &[u8], leaf_randomizer: &[u8], merkle_path: &[[u8;32]]) -> bool;
 }
 
-fn hash_leaf(index: usize, r_i: &[u8], leaf: &[u8]) -> [u8; 32] {
+fn hash_leaf(index: usize, leaf_randomizer: &[u8], leaf: &[u8]) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update([0x00]);
     h.update((index as u32).to_be_bytes());
-    h.update(r_i);
+    h.update(leaf_randomizer);
     h.update(leaf);
     h.finalize().into()
 }
@@ -55,34 +55,34 @@ pub struct MerkleVC;
 impl VectorCommitment for MerkleVC {
     fn commit(leaves: &[Vec<u8>]) -> (CommitmentRoot, Vec<Vec<u8>>) {
         let mut rng = rand::thread_rng();
-        let mut r_vec = Vec::with_capacity(leaves.len());
+        let mut leaf_randomizers = Vec::with_capacity(leaves.len());
         let mut leaf_hashes: Vec<[u8;32]> = Vec::with_capacity(leaves.len());
         for (i, leaf) in leaves.iter().enumerate() {
-            let mut r_i = vec![0u8; 16];
-            rng.fill_bytes(&mut r_i);
-            let h = hash_leaf(i, &r_i, leaf);
-            r_vec.push(r_i);
+            let mut leaf_randomizer = vec![0u8; 16];
+            rng.fill_bytes(&mut leaf_randomizer);
+            let h = hash_leaf(i, &leaf_randomizer, leaf);
+            leaf_randomizers.push(leaf_randomizer);
             leaf_hashes.push(h);
         }
         let tree = build_tree(&leaf_hashes);
-        (CommitmentRoot(root_of(&tree)), r_vec)
+        (CommitmentRoot(root_of(&tree)), leaf_randomizers)
     }
-    fn open(leaves: &[Vec<u8>], index: usize, r_i: &[u8]) -> Vec<[u8;32]> {
+    fn open(leaves: &[Vec<u8>], index: usize, leaf_randomizer: &[u8]) -> Vec<[u8;32]> {
         let mut leaf_hashes: Vec<[u8;32]> = Vec::with_capacity(leaves.len());
         for (i, leaf) in leaves.iter().enumerate() {
-            let h = if i == index { hash_leaf(i, r_i, leaf) } else { hash_leaf(i, &vec![0u8;16], leaf) };
+            let h = if i == index { hash_leaf(i, leaf_randomizer, leaf) } else { hash_leaf(i, &vec![0u8;16], leaf) };
             leaf_hashes.push(h);
         }
         let tree = build_tree(&leaf_hashes);
         path_for(index, &tree)
     }
-    fn verify(C: &CommitmentRoot, index: usize, leaf_bytes: &[u8], r_i: &[u8], w_i: &[[u8;32]]) -> bool {
-        let mut cur = hash_leaf(index, r_i, leaf_bytes);
+    fn verify(commitment_root: &CommitmentRoot, index: usize, leaf_bytes: &[u8], leaf_randomizer: &[u8], merkle_path: &[[u8;32]]) -> bool {
+        let mut cur = hash_leaf(index, leaf_randomizer, leaf_bytes);
         let mut idx = index;
-        for sib in w_i {
+        for sib in merkle_path {
             cur = if idx % 2 == 0 { hash_node(&cur, sib) } else { hash_node(sib, &cur) };
             idx /= 2
         }
-        cur == C.0
+        cur == commitment_root.0
     }
 }

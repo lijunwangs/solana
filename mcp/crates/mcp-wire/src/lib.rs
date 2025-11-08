@@ -19,10 +19,10 @@ pub struct LeaderBlockPayload {
 pub struct RevealShred {
     pub key: BatchKey,
     pub index: u32,
-    pub c_i: Vec<u8>,
-    pub r_i: Vec<u8>,
-    pub w_i: Vec<[u8;32]>,
-    pub opt_commitment: Option<CommitmentRoot>,
+    pub coded_symbol: Vec<u8>,
+    pub leaf_randomizer: Vec<u8>,
+    pub merkle_path: Vec<[u8;32]>,
+    pub opt_commitment_root: Option<CommitmentRoot>,
 }
 
 #[repr(u8)]
