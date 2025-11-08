@@ -1,8 +1,10 @@
-use crossbeam_channel::{Receiver, Sender};
-use mcp_wire::{McpEnvelope, McpDiscriminant, RevealShred};
-use mcp_reconstructor::Reconstructor;
-use mcp_crypto_vc::MerkleVC;
-use mcp_blockstore::McpStore;
+use {
+    crossbeam_channel::{Receiver, Sender},
+    mcp_blockstore::McpStore,
+    mcp_crypto_vc::MerkleVC,
+    mcp_reconstructor::Reconstructor,
+    mcp_wire::{McpDiscriminant, McpEnvelope, RevealShred},
+};
 
 pub struct McpPacketForwarder {
     pub in_envelopes: Receiver<Vec<u8>>,

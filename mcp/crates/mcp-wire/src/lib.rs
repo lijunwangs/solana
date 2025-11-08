@@ -1,5 +1,7 @@
-use serde::{Serialize, Deserialize};
-use mcp_types::{BatchKey, CommitmentRoot, RelayId};
+use {
+    mcp_types::{BatchKey, CommitmentRoot, RelayId},
+    serde::{Deserialize, Serialize},
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RelayAttestation {
@@ -21,7 +23,7 @@ pub struct RevealShred {
     pub index: u32,
     pub coded_symbol: Vec<u8>,
     pub leaf_randomizer: Vec<u8>,
-    pub merkle_path: Vec<[u8;32]>,
+    pub merkle_path: Vec<[u8; 32]>,
     pub opt_commitment_root: Option<CommitmentRoot>,
 }
 
