@@ -2,3 +2,15 @@
 name = "mcp-crypto-te"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1"
+zeroize = "1"
+bincode = "1"
+blsttc = { version = "8", default-features = false }
+aes-gcm = { version = "0.10" }
+getrandom = "0.2"
+
+[dev-dependencies]
+rand = "0.8"
