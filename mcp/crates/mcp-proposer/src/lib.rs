@@ -1,5 +1,5 @@
 // mcp-proposer/src/lib.rs
-use mcp_wire::{EncryptedReveal, FinalKeyCapsule, RelayAttestation}; // you'll add these messages in mcp-wire
+use mcp_wire::{EncryptedReveal, FinalKeyCapsule, RelayAttestation};
 use {
     blsttc::PublicKeySet,
     crossbeam_channel::{Receiver, Sender},
@@ -61,12 +61,11 @@ impl Proposer {
             std::time::Duration::from_millis(self.cfg.batch_max_millis),
         );
 
-        // One symmetric key per block (or per batch if you prefer)
         let sym_key = te::sym_keygen();
 
         while let Ok(vtx) = rx_verified_txs.recv() {
             if let Some(batch) = batcher.push_and_maybe_cut(vtx) {
-                // 1) Serialize batch into bytes (you may choose a canonical format)
+                // 1) Serialize batch into bytes
                 let batch_bytes = crate::encode::serialize_batch(&batch);
 
                 // 2) HECC encode: produces coded symbols
@@ -87,7 +86,7 @@ impl Proposer {
                     let encrypted_symbol =
                         te_wrap::sym_encrypt_with_aad(&sym_key, symbol, &aad).expect("aes-gcm");
 
-                    // 5) Emit EncryptedReveal to your relayer set (any policy)
+                    // 5) Emit EncryptedReveal to relayer set (any policy)
                     for (relay_id, addr) in &self.cfg.relayers {
                         let msg = EncryptedReveal {
                             key: batch_key.clone(),
@@ -117,7 +116,6 @@ impl Proposer {
                 let _ = self.tx_capsule.send(capsule);
 
                 // 7) Build proposer->leader attestation stub (one per relay if required)
-                // (You already have this helper; keep the descriptive names)
                 let entries = vec![(batch_key.clone(), commitment_root.clone(), vec![])];
                 for (relay_id, _addr) in &self.cfg.relayers {
                     let att = RelayAttestation {
