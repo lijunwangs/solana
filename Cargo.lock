@@ -4577,6 +4577,7 @@ dependencies = [
  "bincode",
  "blsttc",
  "getrandom 0.2.16",
+ "mcp-wire",
  "rand 0.8.5",
  "serde",
  "thiserror 1.0.69",
@@ -4608,6 +4609,23 @@ dependencies = [
  "mcp-reconstructor",
  "mcp-types",
  "mcp-wire",
+]
+
+[[package]]
+name = "mcp-proposer"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "bincode",
+ "blsttc",
+ "crossbeam-channel",
+ "getrandom 0.3.3",
+ "mcp-crypto-te",
+ "mcp-crypto-vc",
+ "mcp-hecc-mock",
+ "mcp-types",
+ "mcp-wire",
+ "solana-transaction",
 ]
 
 [[package]]

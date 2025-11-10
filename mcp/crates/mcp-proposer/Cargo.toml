@@ -4,5 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+aes-gcm = { version = "0.10" }
+bincode = { workspace = true }
+blsttc = { version = "8", default-features = false }
+crossbeam-channel = { workspace = true }
+getrandom = { workspace = true }
+mcp-crypto-te = { path = "../mcp-crypto-te" }
+mcp-crypto-vc = { path = "../mcp-crypto-vc" }
+mcp-hecc-mock = { path = "../mcp-hecc-mock" }
 mcp-types = { path = "../mcp-types" }
 mcp-wire  = { path = "../mcp-wire" }
+solana-transaction = { workspace = true }

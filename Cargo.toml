@@ -53,15 +53,16 @@ members = [
     "ledger-tool",
     "local-cluster",
     "low-pass-filter",
-    "mcp/crates/mcp-types",
-    "mcp/crates/mcp-wire",
-    "mcp/crates/mcp-crypto-vc",
-    "mcp/crates/mcp-crypto-te",
-    "mcp/crates/mcp-hecc-mock",
     "mcp/crates/mcp-blockstore",
+    "mcp/crates/mcp-crypto-te",
+    "mcp/crates/mcp-crypto-vc",
+    "mcp/crates/mcp-hecc-mock",
+    "mcp/crates/mcp-node",  
+    "mcp/crates/mcp-proposer",
     "mcp/crates/mcp-reconstructor",
     "mcp/crates/mcp-stage",
-    "mcp/crates/mcp-node",  
+    "mcp/crates/mcp-types",
+    "mcp/crates/mcp-wire",
     "measure",
     "memory-management",
     "merkle-tree",
@@ -320,6 +321,10 @@ light-poseidon = "0.2.0"
 log = "0.4.28"
 lru = "0.7.7"
 lz4 = "1.28.1"
+mcp-blockstore = { path = "mcp/crates/mcp-blockstore" }
+mcp-crypto-te = { path = "mcp/crates/mcp-crypto-te" }
+mcp-crypto-vc = { path = "mcp/crates/mcp-crypto-vc" }
+
 memmap2 = "0.9.8"
 memoffset = "0.9"
 merlin = { version = "3", default-features = false }

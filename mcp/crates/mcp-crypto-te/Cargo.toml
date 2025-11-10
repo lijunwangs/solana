@@ -11,6 +11,7 @@ bincode = "1"
 blsttc = { version = "8", default-features = false }
 aes-gcm = { version = "0.10" }
 getrandom = "0.2"
+mcp-wire = { path = "../mcp-wire" }
 
 [dev-dependencies]
 rand = "0.8"
