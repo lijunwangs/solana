@@ -4640,6 +4640,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp-rotor"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "mcp-wire",
+ "solana-packet",
+ "solana-streamer",
+]
+
+[[package]]
 name = "mcp-stage"
 version = "0.2.0"
 dependencies = [

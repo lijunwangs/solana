@@ -1,0 +1,10 @@
+[package]
+name = "mcp-rotor"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bincode = { workspace = true }
+mcp-wire = { path = "../mcp-wire" }
+solana-packet = { workspace = true }
+solana-streamer = { workspace = true }

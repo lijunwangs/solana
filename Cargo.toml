@@ -60,6 +60,7 @@ members = [
     "mcp/crates/mcp-node",  
     "mcp/crates/mcp-proposer",
     "mcp/crates/mcp-reconstructor",
+    "mcp/crates/mcp-rotor",
     "mcp/crates/mcp-stage",
     "mcp/crates/mcp-types",
     "mcp/crates/mcp-wire",
